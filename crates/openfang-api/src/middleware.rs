@@ -96,6 +96,7 @@ pub async fn auth(
         || (path == "/api/budget" && is_get)
         || (path == "/api/budget/agents" && is_get)
         || (path.starts_with("/api/budget/agents/") && is_get)
+        || (path == "/api/usage" && is_get)
         || (path == "/api/network/status" && is_get)
         || (path == "/api/a2a/agents" && is_get)
         || (path == "/api/approvals" && is_get)
@@ -110,6 +111,9 @@ pub async fn auth(
         || (path == "/api/integrations/available" && is_get)
         || (path == "/api/integrations/health" && is_get)
         || (path == "/api/workflows" && is_get)
+        || (path == "/api/logs" && is_get)
+        || (path == "/api/analytics" && is_get)
+        || (path == "/api/scheduler/tasks" && is_get)
         || path == "/api/logs/stream"  // SSE stream, read-only
         || (path.starts_with("/api/cron/") && is_get)
         || path.starts_with("/api/providers/github-copilot/oauth/");
@@ -202,7 +206,7 @@ pub async fn security_headers(request: Request<Body>, next: Next) -> Response<Bo
     // All JS/CSS is bundled inline — only external resource is Google Fonts.
     headers.insert(
         "content-security-policy",
-        "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' ws://localhost:* ws://127.0.0.1:* wss://localhost:* wss://127.0.0.1:*; font-src 'self' https://fonts.gstatic.com; media-src 'self' blob:; frame-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'"
+        "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' ws://localhost:* ws://127.0.0.1:* wss://localhost:* wss://127.0.0.1:*; font-src 'self' https://fonts.gstatic.com; media-src 'self' blob:; frame-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'"
             .parse()
             .unwrap(),
     );

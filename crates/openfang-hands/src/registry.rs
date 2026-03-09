@@ -366,11 +366,27 @@ fn check_requirement(req: &HandRequirement) -> bool {
             }
             if req.check_value == "chromium" {
                 // Try common Chromium/Chrome binary names across platforms
-                return which_binary("chromium-browser")
+                if which_binary("chromium-browser")
                     || which_binary("google-chrome")
                     || which_binary("google-chrome-stable")
                     || which_binary("chrome")
-                    || std::env::var("CHROME_PATH").map(|v| !v.is_empty()).unwrap_or(false);
+                    || std::env::var("CHROME_PATH").map(|v| !v.is_empty()).unwrap_or(false)
+                {
+                    return true;
+                }
+                // macOS: Chrome is installed as an .app bundle, not on PATH
+                #[cfg(target_os = "macos")]
+                {
+                    let home = std::env::var("HOME").unwrap_or_default();
+                    return std::path::Path::new("/Applications/Google Chrome.app").exists()
+                        || std::path::Path::new("/Applications/Chromium.app").exists()
+                        || (!home.is_empty()
+                            && std::path::Path::new(&format!("{}/Applications/Google Chrome.app", home)).exists())
+                        || (!home.is_empty()
+                            && std::path::Path::new(&format!("{}/Applications/Chromium.app", home)).exists());
+                }
+                #[cfg(not(target_os = "macos"))]
+                return false;
             }
             false
         }

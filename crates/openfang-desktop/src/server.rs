@@ -43,8 +43,8 @@ impl Drop for ServerHandle {
 
 /// Boot the kernel and start the embedded API server on a background thread.
 ///
-/// Binds to `127.0.0.1:0` on the calling thread so the port is known before
-/// any Tauri window is created. The actual axum server runs on a dedicated
+/// Binds to `127.0.0.1:4200` first (for dev/prod consistency), falls back to
+/// random port if unavailable. The actual axum server runs on a dedicated
 /// thread with its own tokio runtime.
 pub fn start_server() -> Result<ServerHandle, Box<dyn std::error::Error>> {
     // Boot kernel (sync — no tokio needed)
@@ -52,9 +52,19 @@ pub fn start_server() -> Result<ServerHandle, Box<dyn std::error::Error>> {
     let kernel = Arc::new(kernel);
     kernel.set_self_handle();
 
-    // Bind to a random free port on localhost (main thread — guarantees port)
-    let std_listener = TcpListener::bind("127.0.0.1:0")?;
-    let port = std_listener.local_addr()?.port();
+    // Try to bind to fixed port 4200 first, fallback to random port if unavailable
+    let (std_listener, port) = match TcpListener::bind("127.0.0.1:4200") {
+        Ok(listener) => {
+            info!("OpenFang embedded server bound to fixed port 4200");
+            (listener, 4200u16)
+        }
+        Err(e) => {
+            tracing::warn!("Failed to bind to port 4200: {e}, using random port");
+            let listener = TcpListener::bind("127.0.0.1:0")?;
+            let port = listener.local_addr()?.port();
+            (listener, port)
+        }
+    };
     let listen_addr: SocketAddr = std_listener.local_addr()?;
 
     info!("OpenFang embedded server bound to http://127.0.0.1:{port}");

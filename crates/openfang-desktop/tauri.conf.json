@@ -3,7 +3,12 @@
   "productName": "OpenFang",
   "version": "0.1.0",
   "identifier": "ai.openfang.desktop",
-  "build": {},
+  "build": {
+    "beforeDevCommand": "cd ../openfang-webui && pnpm dev",
+    "beforeBuildCommand": "cd ../openfang-webui && pnpm build",
+    "devUrl": "http://localhost:5173",
+    "frontendDist": "../openfang-webui/dist"
+  },
   "app": {
     "windows": [],
     "security": {

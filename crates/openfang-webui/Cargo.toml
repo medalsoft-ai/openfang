@@ -1,0 +1,11 @@
+[package]
+name = "openfang-webui"
+version = "0.1.0"
+edition = "2021"
+description = "OpenFang Web UI - React 19 + Tailwind CSS + shadcn/ui"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+# 空crate，构建产物由pnpm生成

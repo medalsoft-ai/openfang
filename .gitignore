@@ -43,3 +43,10 @@ Thumbs.db
 *.swp
 *.swo
 *~
+
+#claude code
+.omc
+
+#web ui 
+**/node_modules
+crates/openfang-webui/dist

@@ -1,0 +1,130 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+    --primary: 222.2 47.4% 11.2%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+    --accent: 210 40% 96.1%;
+    --accent-foreground: 222.2 47.4% 11.2%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 222.2 84% 4.9%;
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 210 40% 98%;
+    --primary-foreground: 222.2 47.4% 11.2%;
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 212.7 26.8% 83.9%;
+  }
+}
+
+@layer base {
+  * {
+    border-color: hsl(var(--border));
+  }
+  html {
+    background-color: #ffffff;
+  }
+  html.dark {
+    background-color: #0a0a0a;
+  }
+  body {
+    background-color: #ffffff;
+    color: #0a0a0a;
+  }
+  .dark body {
+    background-color: #0a0a0a;
+    color: #fafafa;
+  }
+}
+
+/* Tauri WebKit compatibility: explicit fallback for CSS variables */
+@layer base {
+  .bg-background { background-color: #ffffff !important; }
+  .dark .bg-background { background-color: #0a0a0a !important; }
+  .bg-card { background-color: #ffffff !important; }
+  .dark .bg-card { background-color: #0a0a0a !important; }
+  .bg-popover { background-color: #ffffff !important; }
+  .dark .bg-popover { background-color: #0a0a0a !important; }
+  .bg-primary { background-color: #18181b !important; }
+  .dark .bg-primary { background-color: #fafafa !important; }
+  .text-primary-foreground { color: #fafafa !important; }
+  .dark .text-primary-foreground { color: #18181b !important; }
+  .text-primary { color: #18181b !important; }
+  .dark .text-primary { color: #fafafa !important; }
+  .text-secondary-foreground { color: #18181b !important; }
+  .dark .text-secondary-foreground { color: #fafafa !important; }
+  .text-accent-foreground { color: #18181b !important; }
+  .dark .text-accent-foreground { color: #fafafa !important; }
+  .text-destructive-foreground { color: #fafafa !important; }
+  .dark .text-destructive-foreground { color: #18181b !important; }
+  .text-card-foreground { color: #0a0a0a !important; }
+  .dark .text-card-foreground { color: #fafafa !important; }
+  .text-popover-foreground { color: #0a0a0a !important; }
+  .dark .text-popover-foreground { color: #fafafa !important; }
+  .bg-secondary { background-color: #f4f4f5 !important; }
+  .dark .bg-secondary { background-color: #27272a !important; }
+  .bg-muted { background-color: #f4f4f5 !important; }
+  .dark .bg-muted { background-color: #27272a !important; }
+  .bg-accent { background-color: #f4f4f5 !important; }
+  .dark .bg-accent { background-color: #27272a !important; }
+  .bg-destructive { background-color: #ef4444 !important; }
+  .bg-input { background-color: #ffffff !important; }
+  .dark .bg-input { background-color: #0a0a0a !important; }
+  .text-foreground { color: #0a0a0a !important; }
+  .dark .text-foreground { color: #fafafa !important; }
+  .text-muted-foreground { color: #71717a !important; }
+  .dark .text-muted-foreground { color: #a1a1aa !important; }
+  .border-input { border-color: #e4e4e7 !important; }
+  .dark .border-input { border-color: #27272a !important; }
+}
+
+/* Streaming animation for chat messages */
+@keyframes stream-pulse {
+  0%, 100% {
+    border-left-color: hsl(var(--primary));
+    box-shadow: -2px 0 8px hsl(var(--primary) / 0.4);
+  }
+  50% {
+    border-left-color: hsl(var(--primary) / 0.5);
+    box-shadow: none;
+  }
+}
+
+.streaming-bubble {
+  animation: stream-pulse 2s ease-in-out infinite;
+}
+
+/* Message grouping - hide timestamp on grouped messages */
+.mt-[-14px] .text-xs.text-muted-foreground:first-child {
+  display: none;
+}

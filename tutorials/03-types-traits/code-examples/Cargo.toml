@@ -1,0 +1,21 @@
+[package]
+name = "type-system-examples"
+version = "0.1.0"
+edition = "2021"
+
+[workspace]
+
+[dependencies]
+uuid = { version = "1.0", features = ["v4", "serde"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+async-trait = "0.1"
+tokio = { version = "1.0", features = ["full"] }
+
+[[bin]]
+name = "newtype_demo"
+path = "newtype_demo.rs"
+
+[[bin]]
+name = "trait_demo"
+path = "trait_demo.rs"

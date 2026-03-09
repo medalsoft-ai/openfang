@@ -47,8 +47,6 @@ pub fn run() {
 
     info!("OpenFang server running on port {port}");
 
-    let url = format!("http://127.0.0.1:{port}");
-
     let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_shell::init())
@@ -105,21 +103,20 @@ pub fn run() {
             commands::open_logs_dir,
         ])
         .setup(move |app| {
-            // Create the main window pointing directly at the embedded HTTP server.
-            // We do NOT define windows in tauri.conf.json because Tauri would try to
-            // load index.html from embedded assets (which don't exist), causing a race
-            // condition where AssetNotFound overwrites the navigated page.
-            let _window = WebviewWindowBuilder::new(
-                app,
-                "main",
-                WebviewUrl::External(url.parse().expect("Invalid server URL")),
-            )
-            .title("OpenFang")
-            .inner_size(1280.0, 800.0)
-            .min_inner_size(800.0, 600.0)
-            .center()
-            .visible(true)
-            .build()?;
+            // HTTP服务器仍然启动（提供API）
+            info!("OpenFang API server running on port {port}");
+
+            // WebviewWindowBuilder使用默认URL，Tauri自动处理开发和生产模式
+            // - 开发模式：自动使用tauri.conf.json中的devUrl (localhost:5173)
+            // - 生产模式：自动使用frontendDist (../openfang-webui/dist)
+            let _window = WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
+                .title("OpenFang")
+                .inner_size(1280.0, 800.0)
+                .min_inner_size(800.0, 600.0)
+                .center()
+                .visible(true)
+                .devtools(true)
+                .build()?;
 
             // Set up system tray (desktop only)
             #[cfg(desktop)]
