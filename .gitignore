@@ -48,5 +48,5 @@ Thumbs.db
 .omc
 
 #web ui 
-**/node_modules
+**/node_modules/
 crates/openfang-webui/dist
