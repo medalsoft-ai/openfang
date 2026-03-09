@@ -1143,7 +1143,12 @@ fn classify_streaming_error(err: &openfang_kernel::error::KernelError) -> String
             }
         }
         llm_errors::LlmErrorCategory::Format => {
-            "LLM request failed. Check your API key and model configuration in Settings.".to_string()
+            // Claude Code CLI errors have actionable messages — pass them through
+            if inner.contains("Claude Code CLI") || inner.contains("claude auth") {
+                classified.raw_message.clone()
+            } else {
+                "LLM request failed. Check your API key and model configuration in Settings.".to_string()
+            }
         }
         _ => classified.sanitized_message,
     }
