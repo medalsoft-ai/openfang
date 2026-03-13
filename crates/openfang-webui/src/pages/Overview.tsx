@@ -1,20 +1,22 @@
-// Overview Dashboard - 100% Alpine.js feature parity
+// Overview Dashboard - Bento Grid Style with Cyber-Neon Theme
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Progress } from '@/components/ui/progress';
+import { motion } from 'framer-motion';
 import { api } from '@/api/client';
 import { useNavigate } from 'react-router';
+import { SpotlightCard } from '@/components/motion/SpotlightCard';
+import { NeonText } from '@/components/motion/NeonText';
+import { AnimatedList } from '@/components/motion/AnimatedList';
+import { staggerContainer, staggerItem, cyberColors } from '@/lib/animations';
 import {
   Activity, Bot, Zap, DollarSign, Server,
   Radio, Puzzle, CheckCircle, XCircle, AlertCircle, Clock,
   TrendingUp, MessageSquare, Settings, Shield, Layers,
-  ChevronRight, RefreshCw, CheckCircle2
+  ChevronRight, RefreshCw, CheckCircle2, Command
 } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
-// Types matching Alpine implementation
+// Types (unchanged)
 interface HealthStatus {
   status: 'healthy' | 'degraded' | 'unhealthy' | 'unreachable' | 'ok';
   version?: string;
@@ -67,7 +69,7 @@ interface AuditEntry {
   details?: string;
 }
 
-// Helper functions (matching Alpine)
+// Helper functions (unchanged)
 function formatUptime(seconds: number): string {
   if (!seconds) return '-';
   const d = Math.floor(seconds / 86400);
@@ -129,48 +131,164 @@ function friendlyAction(action: string): string {
   return map[action] || action.replace(/([A-Z])/g, ' $1').trim();
 }
 
-function actionBadgeClass(action: string): string {
-  if (!action) return 'bg-gray-100 text-gray-800';
-  if (action === 'AgentSpawn' || action === 'AuthSuccess') return 'bg-green-100 text-green-800';
-  if (action === 'AgentKill' || action === 'AgentTerminated' || action === 'AuthFailure' || action === 'CapabilityDenied') return 'bg-red-100 text-red-800';
-  if (action === 'RateLimited' || action === 'ToolInvoke') return 'bg-yellow-100 text-yellow-800';
-  return 'bg-blue-100 text-blue-800';
+// Bento Card Component
+function BentoCard({
+  children,
+  className,
+  glowColor = cyberColors.cyan,
+  onClick,
+  colSpan = 1,
+  rowSpan = 1
+}: {
+  children: React.ReactNode;
+  className?: string;
+  glowColor?: string;
+  onClick?: () => void;
+  colSpan?: number;
+  rowSpan?: number;
+}) {
+  // Handle CSS variables - use color-mix for transparency
+  const processedGlowColor = glowColor.startsWith('var(')
+    ? glowColor
+    : glowColor.replace(')', ', 0.15)');
+
+  return (
+    <motion.div
+      className={cn(
+        'relative rounded-2xl overflow-hidden',
+        colSpan === 2 && 'md:col-span-2',
+        rowSpan === 2 && 'md:row-span-2',
+        className
+      )}
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      whileHover={{ scale: 1.01, y: -2 }}
+      transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+    >
+      <SpotlightCard
+        glowColor={processedGlowColor}
+        onClick={onClick}
+        className="h-full"
+      >
+        {children}
+      </SpotlightCard>
+    </motion.div>
+  );
 }
 
-function providerBadgeClass(p: Provider): string {
-  if (p.auth_status === 'configured') {
-    if (p.health === 'cooldown' || p.health === 'open') return 'bg-yellow-100 text-yellow-800 border-yellow-300';
-    return 'bg-green-100 text-green-800 border-green-300';
-  }
-  if (p.auth_status === 'not_set' || p.auth_status === 'missing') return 'bg-gray-100 text-gray-600 border-gray-300';
-  return 'bg-gray-100 text-gray-500 border-gray-200';
+// Stat Card with animated number
+function StatCard({
+  value,
+  label,
+  icon: Icon,
+  color = 'cyan',
+  onClick
+}: {
+  value: string | number;
+  label: string;
+  icon: React.ElementType;
+  color?: 'cyan' | 'amber' | 'green' | 'magenta';
+  onClick?: () => void;
+}) {
+  const colorMap = {
+    cyan: 'text-[var(--neon-cyan)] bg-[var(--neon-cyan)]/10',
+    amber: 'text-[var(--neon-amber)] bg-[var(--neon-amber)]/10',
+    green: 'text-[var(--neon-green)] bg-[var(--neon-green)]/10',
+    magenta: 'text-[var(--neon-magenta)] bg-[var(--neon-magenta)]/10',
+  };
+
+  return (
+    <BentoCard onClick={onClick} glowColor={cyberColors[color]}>
+      <div className="p-6">
+        <div className="flex items-start justify-between">
+          <div>
+            <motion.div
+              className="text-3xl font-bold text-[var(--text-primary)] mb-1"
+              initial={{ opacity: 0, scale: 0.5 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ delay: 0.1, duration: 0.3 }}
+            >
+              {value}
+            </motion.div>
+            <div className="text-sm text-[var(--text-muted)]">{label}</div>
+          </div>
+          <div className={cn('w-10 h-10 rounded-xl flex items-center justify-center', colorMap[color])}>
+            <Icon className="w-5 h-5" />
+          </div>
+        </div>
+      </div>
+    </BentoCard>
+  );
 }
 
-function providerTooltip(p: Provider): string {
-  if (p.health === 'cooldown') return `${p.display_name} — cooling down (rate limited)`;
-  if (p.health === 'open') return `${p.display_name} — circuit breaker open`;
-  if (p.auth_status === 'configured') return `${p.display_name} — ready`;
-  return `${p.display_name} — not configured`;
+// Provider Badge
+function ProviderBadge({ provider }: { provider: Provider }) {
+  const getStatusColor = () => {
+    if (provider.auth_status !== 'configured') return 'bg-[var(--surface-secondary)] text-[var(--text-muted)] border-[var(--border-default)]';
+    if (provider.health === 'cooldown' || provider.health === 'open') {
+      return 'bg-[var(--neon-amber)]/10 text-[var(--neon-amber)] border-[var(--neon-amber)]/30';
+    }
+    return 'bg-[var(--neon-green)]/10 text-[var(--neon-green)] border-[var(--neon-green)]/30';
+  };
+
+  return (
+    <motion.span
+      className={cn(
+        'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border',
+        getStatusColor()
+      )}
+      whileHover={{ scale: 1.05 }}
+      whileTap={{ scale: 0.95 }}
+    >
+      {provider.auth_status === 'configured' && (
+        <span className={cn(
+          'w-1.5 h-1.5 rounded-full',
+          provider.health === 'cooldown' || provider.health === 'open'
+            ? 'bg-[var(--neon-amber)]'
+            : 'bg-[var(--neon-green)]'
+        )} />
+      )}
+      {provider.display_name}
+    </motion.span>
+  );
 }
 
-// Action icon component
-function ActionIcon({ action }: { action: string }) {
-  const iconClass = "h-3 w-3";
-  switch (action) {
-    case 'AgentSpawn':
-      return <CheckCircle className={iconClass} />;
-    case 'AgentKill':
-    case 'AgentTerminated':
-      return <XCircle className={iconClass} />;
-    case 'ToolInvoke':
-      return <Zap className={iconClass} />;
-    case 'MessageReceived':
-      return <MessageSquare className={iconClass} />;
-    case 'MessageSent':
-      return <TrendingUp className={iconClass} />;
-    default:
-      return <Activity className={iconClass} />;
-  }
+// Activity Item
+function ActivityItem({ entry, index }: { entry: AuditEntry; index: number }) {
+  const getActionColor = (action: string) => {
+    if (action.includes('Spawn') || action.includes('Success')) return 'var(--neon-green)';
+    if (action.includes('Kill') || action.includes('Terminated') || action.includes('Failure')) return 'var(--neon-magenta)';
+    if (action.includes('Rate') || action.includes('Tool')) return 'var(--neon-amber)';
+    return 'var(--neon-cyan)';
+  };
+
+  return (
+    <motion.div
+      className="flex items-center gap-3 py-3 border-b border-[var(--border-subtle)] last:border-0"
+      initial={{ opacity: 0, x: -20 }}
+      animate={{ opacity: 1, x: 0 }}
+      transition={{ delay: index * 0.05 }}
+    >
+      <div
+        className="w-2 h-2 rounded-full"
+        style={{ backgroundColor: getActionColor(entry.action), boxShadow: `0 0 8px ${getActionColor(entry.action)}` }}
+      />
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-[var(--text-secondary)]">{friendlyAction(entry.action)}</span>
+          {entry.agent_id && (
+            <span className="text-xs text-[var(--text-muted)] font-mono">
+              {entry.agent_id.substring(0, 8)}…
+            </span>
+          )}
+        </div>
+        {entry.detail && (
+          <p className="text-xs text-[var(--text-muted)] truncate">{entry.detail}</p>
+        )}
+      </div>
+      <span className="text-xs text-[var(--text-muted)] whitespace-nowrap font-mono">{timeAgo(entry.timestamp)}</span>
+    </motion.div>
+  );
 }
 
 export function Overview() {
@@ -181,8 +299,8 @@ export function Overview() {
     localStorage.getItem('of-checklist-dismissed') === 'true'
   );
 
-  // Fetch health status
-  const { data: health, isLoading: healthLoading } = useQuery<HealthStatus>({
+  // All data queries (unchanged)
+  const { data: health } = useQuery<HealthStatus>({
     queryKey: ['health'],
     queryFn: async () => {
       try {
@@ -194,15 +312,13 @@ export function Overview() {
     refetchInterval: 30000,
   });
 
-  // Fetch system status
-  const { data: status, isLoading: statusLoading } = useQuery<SystemStatus>({
+  const { data: status } = useQuery<SystemStatus>({
     queryKey: ['status'],
     queryFn: () => api.get<SystemStatus>('/api/status'),
     refetchInterval: 30000,
   });
 
-  // Fetch usage summary
-  const { data: usage, isLoading: usageLoading } = useQuery<UsageSummary>({
+  const { data: usage } = useQuery<UsageSummary>({
     queryKey: ['usage-summary'],
     queryFn: async () => {
       const data = await api.get<{ agents: { total_tokens?: number; tool_calls?: number; cost_usd?: number }[] }>('/api/usage');
@@ -220,8 +336,7 @@ export function Overview() {
     refetchInterval: 30000,
   });
 
-  // Fetch providers
-  const { data: providers = [], isLoading: providersLoading } = useQuery<Provider[]>({
+  const { data: providers = [] } = useQuery<Provider[]>({
     queryKey: ['overview-providers'],
     queryFn: async () => {
       const res = await api.get<{ providers: Provider[] }>('/api/providers');
@@ -230,8 +345,7 @@ export function Overview() {
     refetchInterval: 30000,
   });
 
-  // Fetch channels
-  const { data: channels = [], isLoading: channelsLoading } = useQuery<Channel[]>({
+  const { data: channels = [] } = useQuery<Channel[]>({
     queryKey: ['overview-channels'],
     queryFn: async () => {
       const res = await api.get<{ channels: Channel[] }>('/api/channels');
@@ -240,8 +354,7 @@ export function Overview() {
     refetchInterval: 30000,
   });
 
-  // Fetch MCP servers
-  const { data: mcpServers = [], isLoading: mcpLoading } = useQuery<McpServer[]>({
+  const { data: mcpServers = [] } = useQuery<McpServer[]>({
     queryKey: ['overview-mcp'],
     queryFn: async () => {
       try {
@@ -254,8 +367,7 @@ export function Overview() {
     refetchInterval: 30000,
   });
 
-  // Fetch skills count
-  const { data: skillCount = 0, isLoading: skillsLoading } = useQuery<number>({
+  const { data: skillCount = 0 } = useQuery<number>({
     queryKey: ['overview-skills'],
     queryFn: async () => {
       try {
@@ -268,15 +380,13 @@ export function Overview() {
     refetchInterval: 60000,
   });
 
-  // Fetch agents for checklist
   const { data: agents = [] } = useQuery<Array<{ id: string }>>({
     queryKey: ['overview-agents-count'],
     queryFn: async () => api.listAgents(),
     refetchInterval: 30000,
   });
 
-  // Fetch recent audit entries
-  const { data: auditEntries = [], isLoading: auditLoading } = useQuery<AuditEntry[]>({
+  const { data: auditEntries = [] } = useQuery<AuditEntry[]>({
     queryKey: ['audit-recent'],
     queryFn: async () => {
       try {
@@ -289,7 +399,6 @@ export function Overview() {
     refetchInterval: 30000,
   });
 
-  // Manual refresh function
   const handleRefresh = async () => {
     setIsRefreshing(true);
     await queryClient.invalidateQueries({ queryKey: ['health'] });
@@ -303,13 +412,11 @@ export function Overview() {
     setIsRefreshing(false);
   };
 
-  // Dismiss checklist
   const dismissChecklist = () => {
     setChecklistDismissed(true);
     localStorage.setItem('of-checklist-dismissed', 'true');
   };
 
-  // Computed values
   const configuredProviders = useMemo(() =>
     providers.filter((p) => p.auth_status === 'configured'),
     [providers]
@@ -320,7 +427,6 @@ export function Overview() {
     [mcpServers]
   );
 
-  // Setup checklist
   const setupChecklist = useMemo(() => [
     { key: 'provider', label: 'Configure an LLM provider', done: configuredProviders.length > 0, action: '/settings' },
     { key: 'agent', label: 'Create your first agent', done: agents.length > 0, action: '/agents' },
@@ -339,423 +445,316 @@ export function Overview() {
     [setupChecklist]
   );
 
-  const isLoading = healthLoading || statusLoading || usageLoading || providersLoading ||
-                    channelsLoading || mcpLoading || skillsLoading || auditLoading;
-
   return (
     <div className="flex-1 overflow-auto p-6">
-      <div className="max-w-6xl mx-auto space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Overview</h1>
-          <p className="text-muted-foreground">
-            System overview and status
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Badge variant={health?.status === 'ok' || health?.status === 'healthy' ? 'default' : 'destructive'}>
-            {health?.status === 'ok' || health?.status === 'healthy' ? (
-              <><CheckCircle className="w-3 h-3 mr-1" /> Healthy</>
-            ) : health?.status === 'unreachable' ? (
-              <><XCircle className="w-3 h-3 mr-1" /> Unreachable</>
-            ) : (
-              <><AlertCircle className="w-3 h-3 mr-1" /> {health?.status || 'Unknown'}</>
-            )}
-          </Badge>
-          <Button variant="ghost" size="sm" onClick={handleRefresh} disabled={isRefreshing || isLoading}>
-            <RefreshCw className={`h-4 w-4 ${isRefreshing || isLoading ? 'animate-spin' : ''}`} />
-          </Button>
-        </div>
-      </div>
-
-      {/* Setup Checklist */}
-      {!checklistDismissed && setupProgress < 100 && (
-        <Card className="border-l-4 border-l-primary">
-          <CardHeader className="pb-2">
-            <div className="flex justify-between items-start">
-              <div>
-                <CardTitle className="text-lg">Getting Started</CardTitle>
-                <CardDescription>{setupDoneCount} of 5 steps completed</CardDescription>
-              </div>
-              <div className="flex gap-2">
-                <Button size="sm" onClick={() => navigate('/wizard')}>Setup Wizard</Button>
-                <Button variant="ghost" size="sm" onClick={dismissChecklist}>Dismiss</Button>
-              </div>
+      <div className="max-w-7xl mx-auto space-y-6">
+        {/* Header */}
+        <motion.div
+          className="flex items-center justify-between"
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4 }}
+        >
+          <div>
+            <h1 className="text-3xl font-bold">
+              <NeonText color="cyan">Dashboard</NeonText>
+            </h1>
+            <p className="text-[var(--text-muted)] mt-1">System overview and real-time metrics</p>
+          </div>
+          <div className="flex items-center gap-3">
+            <motion.button
+              onClick={handleRefresh}
+              disabled={isRefreshing}
+              className="p-2 rounded-xl bg-[var(--surface-secondary)] border border-[var(--border-default)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--border-hover)] transition-colors"
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+            >
+              <RefreshCw className={cn('w-5 h-5', isRefreshing && 'animate-spin')} />
+            </motion.button>
+            <div className={cn(
+              'flex items-center gap-2 px-4 py-2 rounded-xl border text-sm font-medium',
+              health?.status === 'ok' || health?.status === 'healthy'
+                ? 'bg-[var(--neon-green)]/10 text-[var(--neon-green)] border-[var(--neon-green)]/30'
+                : 'bg-[var(--neon-magenta)]/10 text-[var(--neon-magenta)] border-[var(--neon-magenta)]/30'
+            )}>
+              <span className={cn(
+                'w-2 h-2 rounded-full',
+                health?.status === 'ok' || health?.status === 'healthy' ? 'bg-[var(--neon-green)]' : 'bg-[var(--neon-magenta)]'
+              )} style={{ boxShadow: health?.status === 'ok' || health?.status === 'healthy' ? '0 0 8px var(--neon-green)' : '0 0 8px var(--neon-magenta)' }} />
+              {health?.status === 'ok' || health?.status === 'healthy' ? 'System Online' : health?.status || 'Unknown'}
             </div>
-            <Progress value={setupProgress} className="mt-2" />
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              {setupChecklist.map((item) => (
-                <div key={item.key} className="flex items-center gap-3">
-                  <div className={`flex items-center justify-center w-5 h-5 rounded-full ${item.done ? 'bg-green-500 text-white' : 'border-2 border-gray-300'}`}>
-                    {item.done && <CheckCircle2 className="w-3 h-3" />}
-                  </div>
-                  <span className={`flex-1 ${item.done ? 'line-through text-muted-foreground' : ''}`}>{item.label}</span>
-                  {!item.done && (
-                    <Button variant="ghost" size="sm" onClick={() => navigate(item.action)}>Go</Button>
-                  )}
+          </div>
+        </motion.div>
+
+        {/* Setup Progress (if not complete) */}
+        {!checklistDismissed && setupProgress < 100 && (
+          <BentoCard colSpan={2} glowColor={cyberColors.amber}>
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h3 className="text-lg font-semibold text-[var(--text-primary)]">Getting Started</h3>
+                  <p className="text-sm text-[var(--text-muted)]">{setupDoneCount} of 5 steps completed</p>
                 </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Primary Stats Row */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card className="cursor-pointer hover:border-primary transition-colors" onClick={() => navigate('/agents')}>
-          <CardContent className="p-6">
-            <div className="flex items-center gap-4">
-              <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                <Bot className="h-5 w-5 text-primary" />
+                <div className="flex gap-2">
+                  <motion.button
+                    onClick={() => navigate('/wizard')}
+                    className="px-4 py-2 rounded-xl bg-[var(--neon-amber)] text-black font-medium text-sm"
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                  >
+                    Setup Wizard
+                  </motion.button>
+                  <motion.button
+                    onClick={dismissChecklist}
+                    className="px-4 py-2 rounded-xl bg-[var(--surface-secondary)] text-[var(--text-secondary)] text-sm hover:bg-[var(--surface-tertiary)]"
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                  >
+                    Dismiss
+                  </motion.button>
+                </div>
               </div>
-              <div>
-                <div className="text-2xl font-bold">{status?.agent_count || 0}</div>
-                <div className="text-sm text-muted-foreground">Agents Running</div>
+              <div className="h-2 bg-[var(--surface-secondary)] rounded-full overflow-hidden">
+                <motion.div
+                  className="h-full bg-gradient-to-r from-[var(--neon-amber)] to-[var(--neon-magenta)]"
+                  initial={{ width: 0 }}
+                  animate={{ width: `${setupProgress}%` }}
+                  transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
+                />
               </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center gap-4">
-              <div className="w-10 h-10 rounded-lg bg-blue-500/10 flex items-center justify-center">
-                <Layers className="h-5 w-5 text-blue-500" />
-              </div>
-              <div>
-                <div className="text-2xl font-bold">{formatNumber(usage?.total_tokens || 0)}</div>
-                <div className="text-sm text-muted-foreground">Tokens Used</div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center gap-4">
-              <div className="w-10 h-10 rounded-lg bg-green-500/10 flex items-center justify-center">
-                <DollarSign className="h-5 w-5 text-green-500" />
-              </div>
-              <div>
-                <div className="text-2xl font-bold text-green-600">{formatCost(usage?.total_cost || 0)}</div>
-                <div className="text-sm text-muted-foreground">Total Cost</div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center gap-4">
-              <div className="w-10 h-10 rounded-lg bg-purple-500/10 flex items-center justify-center">
-                <Clock className="h-5 w-5 text-purple-500" />
-              </div>
-              <div>
-                <div className="text-2xl font-bold">{formatUptime(status?.uptime_seconds || 0)}</div>
-                <div className="text-sm text-muted-foreground">Uptime</div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Secondary Stats Row */}
-      <div className="grid gap-4 md:grid-cols-5">
-        <Card className="cursor-pointer hover:border-primary transition-colors" onClick={() => navigate('/channels')}>
-          <CardContent className="p-4">
-            <div className="text-lg font-bold">{channels.length}</div>
-            <div className="text-xs text-muted-foreground">Channels</div>
-          </CardContent>
-        </Card>
-        <Card className="cursor-pointer hover:border-primary transition-colors" onClick={() => navigate('/skills')}>
-          <CardContent className="p-4">
-            <div className="text-lg font-bold">{skillCount}</div>
-            <div className="text-xs text-muted-foreground">Skills</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <div className="text-lg font-bold">{connectedMcp.length}</div>
-            <div className="text-xs text-muted-foreground">MCP Servers</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <div className="text-lg font-bold">{formatNumber(usage?.total_tools || 0)}</div>
-            <div className="text-xs text-muted-foreground">Tool Calls</div>
-          </CardContent>
-        </Card>
-        <Card className="cursor-pointer hover:border-primary transition-colors" onClick={() => navigate('/settings')}>
-          <CardContent className="p-4">
-            <div className="text-lg font-bold">{configuredProviders.length}</div>
-            <div className="text-xs text-muted-foreground">Providers</div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Provider Status */}
-      {providers.length > 0 && (
-        <Card>
-          <CardHeader className="pb-2">
-            <div className="flex justify-between items-center">
-              <CardTitle className="text-base flex items-center gap-2">
-                <Server className="h-4 w-4" />
-                LLM Providers
-              </CardTitle>
-              <span className="text-xs text-muted-foreground">
-                {configuredProviders.length}/{providers.length} configured
-              </span>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="flex flex-wrap gap-2">
-              {providers.map((p) => (
-                <Badge
-                  key={p.id}
-                  variant="outline"
-                  className={`cursor-pointer ${providerBadgeClass(p)}`}
-                  title={providerTooltip(p)}
-                  onClick={() => navigate('/settings')}
-                >
-                  {p.auth_status === 'configured' && (
-                    <span
-                      className={`w-1.5 h-1.5 rounded-full mr-1.5 ${
-                        p.health === 'cooldown' || p.health === 'open'
-                          ? 'bg-yellow-500'
-                          : 'bg-green-500'
-                      }`}
-                    />
-                  )}
-                  {p.display_name}
-                </Badge>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* System Health & Security */}
-      <div className="grid gap-4 md:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <Activity className="h-4 w-4" />
-              System Health
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2 text-sm">
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Status</span>
-                <Badge variant={health?.status === 'ok' || health?.status === 'healthy' ? 'default' : 'destructive'}>
-                  {health?.status || 'unknown'}
-                </Badge>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Version</span>
-                <span className="font-mono">{status?.version || health?.version || '-'}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Provider</span>
-                <span>{status?.default_provider || '-'}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Model</span>
-                <span className="font-mono text-xs">{status?.default_model || '-'}</span>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <Shield className="h-4 w-4 text-green-500" />
-              Security Systems
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex flex-wrap gap-1.5">
-              {['Merkle Audit', 'Taint Tracking', 'WASM Sandbox', 'GCRA Rate Limit', 'Ed25519 Signing',
-                'SSRF Protection', 'Secret Zeroize', 'Loop Guard', 'Session Repair'].map((sys) => (
-                <Badge key={sys} variant="secondary" className="text-xs">
-                  {sys}
-                </Badge>
-              ))}
-            </div>
-            <p className="text-xs text-muted-foreground mt-3">9 defense-in-depth systems active</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Connected Channels & MCP */}
-      {channels.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <Radio className="h-4 w-4" />
-              Connected Channels
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex flex-wrap gap-1.5">
-              {channels.map((ch) => (
-                <Badge key={ch.name} variant="outline" className="capitalize">
-                  {ch.display_name || ch.name}
-                </Badge>
-              ))}
-            </div>
-            <p className="text-xs text-muted-foreground mt-2">{channels.length} channel(s) connected</p>
-          </CardContent>
-        </Card>
-      )}
-
-      {mcpServers.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <Server className="h-4 w-4" />
-              MCP Servers
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex flex-wrap gap-1.5">
-              {mcpServers.map((s) => (
-                <Badge key={s.name} variant={s.status === 'connected' ? 'default' : 'secondary'} className="text-xs">
-                  <span className={`w-1 h-1 rounded-full mr-1 ${s.status === 'connected' ? 'bg-green-400' : 'bg-gray-400'}`} />
-                  {s.name}
-                  {s.tool_count && <span className="text-muted-foreground ml-1">({s.tool_count})</span>}
-                </Badge>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Quick Actions */}
-      <Card className="bg-muted/50">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-base">Quick Actions</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex flex-wrap gap-2">
-            <Button variant="ghost" size="sm" onClick={() => navigate('/agents')}>
-              <Bot className="h-4 w-4 mr-1" /> New Agent
-            </Button>
-            <Button variant="ghost" size="sm" onClick={() => navigate('/skills')}>
-              <Puzzle className="h-4 w-4 mr-1" /> Browse Skills
-            </Button>
-            <Button variant="ghost" size="sm" onClick={() => navigate('/channels')}>
-              <Radio className="h-4 w-4 mr-1" /> Add Channel
-            </Button>
-            <Button variant="ghost" size="sm" onClick={() => navigate('/workflows')}>
-              <Layers className="h-4 w-4 mr-1" /> Create Workflow
-            </Button>
-            <Button variant="ghost" size="sm" onClick={() => navigate('/settings')}>
-              <Settings className="h-4 w-4 mr-1" /> Settings
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Recent Activity */}
-      <Card>
-        <CardHeader className="pb-2">
-          <div className="flex justify-between items-center">
-            <CardTitle className="text-base flex items-center gap-2">
-              <Clock className="h-4 w-4" />
-              Recent Activity
-            </CardTitle>
-            <Button variant="ghost" size="sm" onClick={() => navigate('/logs')}>
-              View All <ChevronRight className="h-4 w-4 ml-1" />
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent>
-          {auditEntries.length === 0 ? (
-            <div className="text-center py-6">
-              <Clock className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
-              <p className="text-sm text-muted-foreground">No Recent Activity</p>
-              <p className="text-xs text-muted-foreground">Activity will appear here once agents start processing.</p>
-              <Button size="sm" className="mt-3" onClick={() => navigate('/agents')}>
-                Chat with an Agent
-              </Button>
-            </div>
-          ) : (
-            <div className="space-y-1">
-              {auditEntries.map((entry, idx) => (
-                <div
-                  key={idx}
-                  className="flex items-center gap-3 py-2 border-b last:border-0 hover:bg-muted/50 transition-colors"
-                >
-                  <div className="w-6 h-6 rounded bg-muted flex items-center justify-center text-muted-foreground">
-                    <ActionIcon action={entry.action} />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <Badge className={`text-xs ${actionBadgeClass(entry.action)}`}>
-                        {friendlyAction(entry.action)}
-                      </Badge>
-                      {entry.agent_id && (
-                        <span className="text-xs text-muted-foreground truncate">
-                          {entry.agent_id.substring(0, 8)}…
-                        </span>
-                      )}
-                    </div>
-                    {entry.detail && (
-                      <p className="text-xs text-muted-foreground truncate mt-0.5">{entry.detail}</p>
+              <div className="grid grid-cols-5 gap-2 mt-4">
+                {setupChecklist.map((item, idx) => (
+                  <motion.div
+                    key={item.key}
+                    className={cn(
+                      'flex items-center gap-2 p-2 rounded-lg border',
+                      item.done
+                        ? 'bg-[var(--neon-green)]/10 border-[var(--neon-green)]/30 text-[var(--neon-green)]'
+                        : 'bg-[var(--surface-secondary)] border-[var(--border-default)] text-[var(--text-muted)]'
                     )}
-                  </div>
-                  <span className="text-xs text-muted-foreground whitespace-nowrap">
-                    {timeAgo(entry.timestamp)}
-                  </span>
-                </div>
-              ))}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: idx * 0.1 }}
+                  >
+                    {item.done ? <CheckCircle2 className="w-4 h-4" /> : <div className="w-4 h-4 rounded-full border-2 border-current" />}
+                    <span className="text-xs">{item.label}</span>
+                  </motion.div>
+                ))}
+              </div>
             </div>
-          )}
-        </CardContent>
-      </Card>
+          </BentoCard>
+        )}
 
-      {/* Quick Action Cards */}
-      <div className="grid gap-4 md:grid-cols-3">
-        <Card className="cursor-pointer hover:border-primary transition-colors" onClick={() => navigate('/agents')}>
-          <CardContent className="p-4 flex items-center gap-4">
-            <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
-              <Bot className="h-5 w-5 text-primary" />
+        {/* Bento Grid Stats */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <StatCard
+            value={status?.agent_count || 0}
+            label="Active Agents"
+            icon={Bot}
+            color="cyan"
+            onClick={() => navigate('/agents')}
+          />
+          <StatCard
+            value={formatNumber(usage?.total_tokens || 0)}
+            label="Tokens Used"
+            icon={Layers}
+            color="amber"
+          />
+          <StatCard
+            value={formatCost(usage?.total_cost || 0)}
+            label="Total Cost"
+            icon={DollarSign}
+            color="green"
+          />
+          <StatCard
+            value={formatUptime(status?.uptime_seconds || 0)}
+            label="System Uptime"
+            icon={Clock}
+            color="magenta"
+          />
+        </div>
+
+        {/* Secondary Stats */}
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+          {[
+            { label: 'Channels', value: channels.length, path: '/channels' },
+            { label: 'Skills', value: skillCount, path: '/skills' },
+            { label: 'MCP Servers', value: connectedMcp.length },
+            { label: 'Tool Calls', value: formatNumber(usage?.total_tools || 0) },
+            { label: 'Providers', value: configuredProviders.length, path: '/settings' },
+          ].map((stat, idx) => (
+            <motion.div
+              key={stat.label}
+              className={cn(
+                'p-4 rounded-xl bg-[var(--surface-secondary)] border border-[var(--border-subtle)]',
+                stat.path && 'cursor-pointer hover:border-[var(--border-default)] hover:bg-[var(--surface-tertiary)]'
+              )}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: idx * 0.05 }}
+              onClick={() => stat.path && navigate(stat.path)}
+            >
+              <div className="text-2xl font-bold text-[var(--text-primary)]">{stat.value}</div>
+              <div className="text-xs text-[var(--text-muted)]">{stat.label}</div>
+            </motion.div>
+          ))}
+        </div>
+
+        {/* Main Content Grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Left Column - Providers & System */}
+          <div className="lg:col-span-2 space-y-6">
+            {/* Providers */}
+            {providers.length > 0 && (
+              <BentoCard glowColor={cyberColors.cyan}>
+                <div className="p-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <Server className="w-5 h-5 text-[var(--neon-cyan)]" />
+                      <h3 className="text-lg font-semibold text-[var(--text-primary)]">LLM Providers</h3>
+                    </div>
+                    <span className="text-xs text-[var(--text-muted)]">{configuredProviders.length}/{providers.length} configured</span>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {providers.map((p) => (
+                      <ProviderBadge key={p.id} provider={p} />
+                    ))}
+                  </div>
+                </div>
+              </BentoCard>
+            )}
+
+            {/* System Info */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <BentoCard glowColor={cyberColors.green}>
+                <div className="p-6">
+                  <div className="flex items-center gap-2 mb-4">
+                    <Activity className="w-5 h-5 text-[var(--neon-green)]" />
+                    <h3 className="text-lg font-semibold text-[var(--text-primary)]">System Info</h3>
+                  </div>
+                  <div className="space-y-3 text-sm">
+                    {[
+                      { label: 'Version', value: status?.version || health?.version || '-' },
+                      { label: 'Provider', value: status?.default_provider || '-' },
+                      { label: 'Model', value: status?.default_model || '-' },
+                    ].map((item) => (
+                      <div key={item.label} className="flex justify-between">
+                        <span className="text-[var(--text-muted)]">{item.label}</span>
+                        <span className="text-[var(--text-secondary)] font-mono">{item.value}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </BentoCard>
+
+              <BentoCard glowColor={cyberColors.magenta}>
+                <div className="p-6">
+                  <div className="flex items-center gap-2 mb-4">
+                    <Shield className="w-5 h-5 text-[var(--neon-magenta)]" />
+                    <h3 className="text-lg font-semibold text-[var(--text-primary)]">Security</h3>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {['Merkle Audit', 'Taint Tracking', 'WASM Sandbox', 'GCRA Rate Limit', 'Ed25519 Signing'].map((sys) => (
+                      <span key={sys} className="px-2 py-1 rounded-lg bg-[var(--surface-secondary)] text-xs text-[var(--text-secondary)] border border-[var(--border-default)]">
+                        {sys}
+                      </span>
+                    ))}
+                  </div>
+                  <p className="text-xs text-[var(--text-muted)] mt-3">Defense-in-depth active</p>
+                </div>
+              </BentoCard>
             </div>
-            <div>
-              <div className="font-medium">Create Agent</div>
-              <div className="text-xs text-muted-foreground">Spawn a new agent</div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="cursor-pointer hover:border-primary transition-colors" onClick={() => navigate('/settings')}>
-          <CardContent className="p-4 flex items-center gap-4">
-            <div className="w-10 h-10 rounded-lg bg-green-500/10 flex items-center justify-center">
-              <Server className="h-5 w-5 text-green-500" />
-            </div>
-            <div>
-              <div className="font-medium">Configure Provider</div>
-              <div className="text-xs text-muted-foreground">Set up an LLM provider</div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="cursor-pointer hover:border-primary transition-colors" onClick={() => navigate('/skills')}>
-          <CardContent className="p-4 flex items-center gap-4">
-            <div className="w-10 h-10 rounded-lg bg-blue-500/10 flex items-center justify-center">
-              <Puzzle className="h-5 w-5 text-blue-500" />
-            </div>
-            <div>
-              <div className="font-medium">Browse Skills</div>
-              <div className="text-xs text-muted-foreground">Explore available skills</div>
-            </div>
-          </CardContent>
-        </Card>
+
+            {/* Channels & MCP */}
+            {channels.length > 0 && (
+              <BentoCard glowColor={cyberColors.amber}>
+                <div className="p-6">
+                  <div className="flex items-center gap-2 mb-4">
+                    <Radio className="w-5 h-5 text-[var(--neon-amber)]" />
+                    <h3 className="text-lg font-semibold text-[var(--text-primary)]">Connected Channels</h3>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {channels.map((ch) => (
+                      <span key={ch.name} className="px-3 py-1.5 rounded-full bg-[var(--surface-secondary)] text-sm text-[var(--text-secondary)] border border-[var(--border-default)]">
+                        {ch.display_name || ch.name}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </BentoCard>
+            )}
+          </div>
+
+          {/* Right Column - Activity */}
+          <div className="space-y-6">
+            <BentoCard glowColor={cyberColors.cyan} className="h-full min-h-[400px]">
+              <div className="p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <Clock className="w-5 h-5 text-[var(--neon-cyan)]" />
+                    <h3 className="text-lg font-semibold text-[var(--text-primary)]">Recent Activity</h3>
+                  </div>
+                  <motion.button
+                    onClick={() => navigate('/logs')}
+                    className="text-xs text-[var(--neon-cyan)] hover:text-[var(--neon-cyan-dim)] flex items-center gap-1"
+                    whileHover={{ x: 2 }}
+                  >
+                    View All <ChevronRight className="w-3 h-3" />
+                  </motion.button>
+                </div>
+
+                {auditEntries.length === 0 ? (
+                  <div className="text-center py-12">
+                    <Clock className="w-12 h-12 mx-auto text-[var(--text-muted)] mb-3" />
+                    <p className="text-[var(--text-muted)] text-sm">No Recent Activity</p>
+                    <p className="text-[var(--text-muted)]/50 text-xs mt-1">Activity will appear here</p>
+                  </div>
+                ) : (
+                  <div className="space-y-1">
+                    {auditEntries.map((entry, idx) => (
+                      <ActivityItem key={idx} entry={entry} index={idx} />
+                    ))}
+                  </div>
+                )}
+              </div>
+            </BentoCard>
+          </div>
+        </div>
+
+        {/* Quick Actions */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {[
+            { label: 'Create Agent', desc: 'Spawn a new agent', icon: Bot, color: 'var(--neon-cyan)', path: '/agents' },
+            { label: 'Configure Provider', desc: 'Set up LLM provider', icon: Server, color: 'var(--neon-green)', path: '/settings' },
+            { label: 'Browse Skills', desc: 'Explore skills', icon: Puzzle, color: 'var(--neon-amber)', path: '/skills' },
+          ].map((action, idx) => (
+            <motion.div
+              key={action.label}
+              className="group cursor-pointer"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.5 + idx * 0.1 }}
+              onClick={() => navigate(action.path)}
+            >
+              <div className="p-6 rounded-2xl bg-[var(--surface-secondary)] border border-[var(--border-subtle)] hover:border-[var(--border-default)] transition-all duration-300 group-hover:bg-[var(--surface-tertiary)]">
+                <div className="flex items-center gap-4">
+                  <div
+                    className="w-12 h-12 rounded-xl flex items-center justify-center"
+                    style={{ backgroundColor: `${action.color}15` }}
+                  >
+                    <action.icon className="w-6 h-6" style={{ color: action.color }} />
+                  </div>
+                  <div>
+                    <div className="font-medium text-[var(--text-primary)] group-hover:text-[var(--text-secondary)]">{action.label}</div>
+                    <div className="text-xs text-[var(--text-muted)]">{action.desc}</div>
+                  </div>
+                  <ChevronRight className="w-5 h-5 text-[var(--text-muted)] ml-auto group-hover:text-[var(--text-secondary)] transition-colors" />
+                </div>
+              </div>
+            </motion.div>
+          ))}
+        </div>
       </div>
-    </div>
     </div>
   );
 }

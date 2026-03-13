@@ -1,19 +1,21 @@
-// OpenFang Runtime Page — System runtime info and provider status
-// 100% Alpine.js feature parity
+// Runtime - System Status Style
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
+import { motion } from 'framer-motion';
 import { api } from '@/api/client';
-import { Loader2, RefreshCw } from 'lucide-react';
+import { NeonText } from '@/components/motion/NeonText';
+import { SpotlightCard } from '@/components/motion/SpotlightCard';
+import { cyberColors } from '@/lib/animations';
+import {
+  Cpu, Clock, Layers, Globe, Loader2, RefreshCw,
+  Server, Database, Shield, Zap
+} from 'lucide-react';
+import { cn } from '@/lib/utils';
 
-// Types matching Alpine implementation
 interface StatusData {
   uptime_seconds: number;
   default_model?: string;
   api_listen?: string;
-  listen?: string;
   home_dir?: string;
   log_level?: string;
   network_enabled?: boolean;
@@ -35,16 +37,6 @@ interface Provider {
   latency_ms?: number;
 }
 
-interface ProvidersData {
-  providers: Provider[];
-}
-
-interface Agent {
-  id: string;
-  name?: string;
-}
-
-// Helper function to format uptime
 function formatUptime(seconds: number): string {
   if (!seconds || seconds < 0) return '-';
   if (seconds < 60) return `${seconds}s`;
@@ -63,77 +55,53 @@ function formatUptime(seconds: number): string {
   return `${d}d ${h}h`;
 }
 
-// Get badge variant based on provider status
-function getProviderBadgeClass(provider: Provider): string {
-  if (provider.reachable) {
-    return 'bg-green-100 text-green-800 border-green-300';
-  }
-  if (provider.auth_status === 'Configured') {
-    return 'bg-green-100 text-green-800 border-green-300';
-  }
-  return 'bg-gray-100 text-gray-600 border-gray-300';
-}
+function StatusIndicator({ status }: { status: 'online' | 'offline' | 'warning' }) {
+  const colors = {
+    online: 'var(--neon-green)',
+    offline: 'var(--neon-magenta)',
+    warning: 'var(--neon-amber)'
+  };
 
-// Get provider status text
-function getProviderStatusText(provider: Provider): string {
-  if (provider.reachable) return 'Online';
-  if (provider.auth_status === 'Configured') return 'Ready';
-  return 'Not configured';
+  return (
+    <span className="relative flex h-2.5 w-2.5">
+      <span
+        className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75"
+        style={{ backgroundColor: colors[status] }}
+      />
+      <span
+        className="relative inline-flex rounded-full h-2.5 w-2.5"
+        style={{ backgroundColor: colors[status] }}
+      />
+    </span>
+  );
 }
 
 export function Runtime() {
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  // Fetch all data in parallel (matching Alpine's Promise.all)
-  const {
-    data: status,
-    isLoading: statusLoading,
-    error: statusError,
-    refetch: refetchStatus,
-  } = useQuery<StatusData>({
+  const { data: status, isLoading: statusLoading, refetch: refetchStatus } = useQuery<StatusData>({
     queryKey: ['runtime-status'],
-    queryFn: () => api.get<StatusData>('/api/status'),
+    queryFn: () => api.get('/api/status'),
   });
 
-  const {
-    data: version,
-    isLoading: versionLoading,
-    error: versionError,
-    refetch: refetchVersion,
-  } = useQuery<VersionData>({
+  const { data: version, isLoading: versionLoading, refetch: refetchVersion } = useQuery<VersionData>({
     queryKey: ['runtime-version'],
-    queryFn: () => api.get<VersionData>('/api/version'),
+    queryFn: () => api.get('/api/version'),
   });
 
-  const {
-    data: providersData,
-    isLoading: providersLoading,
-    error: providersError,
-    refetch: refetchProviders,
-  } = useQuery<ProvidersData>({
+  const { data: providersData, isLoading: providersLoading, refetch: refetchProviders } = useQuery<{ providers: Provider[] }>({
     queryKey: ['runtime-providers'],
-    queryFn: () => api.get<ProvidersData>('/api/providers'),
+    queryFn: () => api.get('/api/providers'),
   });
 
-  const {
-    data: agents,
-    isLoading: agentsLoading,
-    error: agentsError,
-    refetch: refetchAgents,
-  } = useQuery<Agent[]>({
+  const { data: agents, isLoading: agentsLoading, refetch: refetchAgents } = useQuery<Array<{ id: string; name?: string }>>({
     queryKey: ['runtime-agents'],
     queryFn: () => api.listAgents(),
   });
 
   const isLoading = statusLoading || versionLoading || providersLoading || agentsLoading;
-  const hasError = statusError || versionError || providersError || agentsError;
+  const providers = providersData?.providers || [];
 
-  // Filter providers (matching Alpine filter)
-  const providers = (providersData?.providers || []).filter((p) => {
-    return p.auth_status === 'Configured' || p.reachable || p.is_local;
-  });
-
-  // Refresh all data
   const handleRefresh = async () => {
     setIsRefreshing(true);
     await Promise.all([
@@ -145,190 +113,197 @@ export function Runtime() {
     setIsRefreshing(false);
   };
 
-  // Computed values (matching Alpine data properties)
-  const uptime = status?.uptime_seconds ? formatUptime(status.uptime_seconds) : '-';
-  const agentCount = Array.isArray(agents) ? agents.length : 0;
-  const versionStr = version?.version || '-';
-  const defaultModel = status?.default_model || '-';
-  const platform = version?.platform || '-';
-  const arch = version?.arch || '-';
-  const apiListen = status?.api_listen || status?.listen || '-';
-  const homeDir = status?.home_dir || '-';
-  const logLevel = status?.log_level || '-';
-  const networkEnabled = !!status?.network_enabled;
+  if (isLoading) {
+    return (
+      <div className="h-full flex items-center justify-center">
+        <div className="w-8 h-8 border-2 border-[var(--neon-cyan)] border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
 
   return (
-    <div className="flex-1 overflow-auto p-6">
-      <div className="max-w-6xl mx-auto space-y-6">
+    <div className="h-full overflow-auto p-6">
+      <div className="max-w-6xl mx-auto">
         {/* Header */}
-        <div className="flex items-center justify-between">
+        <motion.div
+          className="flex items-center justify-between mb-8"
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+        >
           <div>
-            <h1 className="text-2xl font-bold">Runtime</h1>
-            <p className="text-muted-foreground">System runtime information and provider status</p>
+            <h1 className="text-3xl font-bold">
+              <NeonText color="cyan">Runtime</NeonText>
+            </h1>
+            <p className="text-[var(--text-muted)] mt-1">System status and diagnostics</p>
           </div>
+
+          <motion.button
+            onClick={handleRefresh}
+            disabled={isRefreshing}
+            className="p-2 rounded-lg bg-[var(--surface-secondary)] text-[var(--text-secondary)] hover:bg-[var(--surface-tertiary)]"
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+          >
+            <RefreshCw className={cn('w-5 h-5', isRefreshing && 'animate-spin')} />
+          </motion.button>
+        </motion.div>
+
+        {/* Stats Row */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0 }}
+          >
+            <SpotlightCard glowColor="rgba(0, 240, 255, 0.1)">
+              <div className="p-5">
+                <div className="flex items-center gap-2 mb-2">
+                  <Clock className="w-4 h-4 text-[var(--neon-cyan)]" />
+                  <span className="text-xs text-[var(--text-muted)] uppercase">Uptime</span>
+                </div>
+                <div className="text-2xl font-bold font-mono text-[var(--text-primary)]">
+                  {formatUptime(status?.uptime_seconds || 0)}
+                </div>
+              </div>
+            </SpotlightCard>
+          </motion.div>
+
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 }}
+          >
+            <SpotlightCard glowColor="rgba(0, 255, 136, 0.1)">
+              <div className="p-5">
+                <div className="flex items-center gap-2 mb-2">
+                  <Cpu className="w-4 h-4 text-[var(--neon-green)]" />
+                  <span className="text-xs text-[var(--text-muted)] uppercase">Agents</span>
+                </div>
+                <div className="text-2xl font-bold font-mono text-[var(--text-primary)]">
+                  {agents?.length || 0}
+                </div>
+              </div>
+            </SpotlightCard>
+          </motion.div>
+
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.2 }}
+          >
+            <SpotlightCard glowColor="rgba(255, 184, 0, 0.1)">
+              <div className="p-5">
+                <div className="flex items-center gap-2 mb-2">
+                  <Layers className="w-4 h-4 text-[var(--neon-amber)]" />
+                  <span className="text-xs text-[var(--text-muted)] uppercase">Version</span>
+                </div>
+                <div className="text-2xl font-bold font-mono text-[var(--text-primary)]">
+                  {version?.version || '-'}
+                </div>
+              </div>
+            </SpotlightCard>
+          </motion.div>
+
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.3 }}
+          >
+            <SpotlightCard glowColor="rgba(255, 0, 110, 0.1)">
+              <div className="p-5">
+                <div className="flex items-center gap-2 mb-2">
+                  <Database className="w-4 h-4 text-[var(--neon-magenta)]" />
+                  <span className="text-xs text-[var(--text-muted)] uppercase">Model</span>
+                </div>
+                <div className="text-lg font-bold font-mono text-[var(--text-primary)] truncate">
+                  {status?.default_model?.split('/').pop() || '-'}
+                </div>
+              </div>
+            </SpotlightCard>
+          </motion.div>
         </div>
 
-        {/* Loading state */}
-        {isLoading && !hasError && (
-          <div className="flex items-center justify-center py-12">
-            <Loader2 className="h-8 w-8 animate-spin mr-3" />
-            <span className="text-muted-foreground">Loading runtime info...</span>
-          </div>
-        )}
-
-        {/* Error state */}
-        {hasError && !isLoading && (
-          <Card className="border-destructive">
-            <CardContent className="p-6">
-              <div className="text-center">
-                <p className="text-destructive font-medium">Failed to load runtime information</p>
-                <p className="text-sm text-muted-foreground mt-1">
-                  {statusError instanceof Error ? statusError.message : 'Please try again later'}
-                </p>
-                <Button variant="outline" size="sm" onClick={handleRefresh} className="mt-4">
-                  <RefreshCw className="h-4 w-4 mr-2" />
-                  Retry
-                </Button>
+        {/* System Info */}
+        <div className="grid gap-6 md:grid-cols-2">
+          {/* System Details */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.4 }}
+          >
+            <SpotlightCard glowColor="rgba(255, 255, 255, 0.05)">
+              <div className="p-5">
+                <h3 className="text-sm font-medium text-[var(--text-secondary)] mb-4 flex items-center gap-2">
+                  <Server className="w-4 h-4" />
+                  System
+                </h3>
+                <div className="space-y-3">
+                  {[
+                    { label: 'Platform', value: version?.platform || '-' },
+                    { label: 'Architecture', value: version?.arch || '-' },
+                    { label: 'API Listen', value: status?.api_listen || '-' },
+                    { label: 'Log Level', value: status?.log_level || '-', badge: true },
+                    { label: 'Network', value: status?.network_enabled ? 'Enabled' : 'Disabled' },
+                  ].map((item) => (
+                    <div key={item.label} className="flex justify-between items-center py-2 border-b border-[var(--border-subtle)] last:border-0">
+                      <span className="text-sm text-[var(--text-muted)]">{item.label}</span>
+                      {item.badge ? (
+                        <span className="px-2 py-0.5 rounded text-xs bg-[var(--surface-tertiary)] text-[var(--text-secondary)] font-mono">
+                          {item.value}
+                        </span>
+                      ) : (
+                        <span className="text-sm text-[var(--text-primary)] font-mono">{item.value}</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
               </div>
-            </CardContent>
-          </Card>
-        )}
+            </SpotlightCard>
+          </motion.div>
 
-        {/* Content */}
-        {!isLoading && (
-          <>
-            {/* Stats Row - 4 columns matching Alpine */}
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-              <Card>
-                <CardContent className="p-6">
-                  <div className="text-sm text-muted-foreground mb-1">Uptime</div>
-                  <div className="text-2xl font-bold">{uptime}</div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardContent className="p-6">
-                  <div className="text-sm text-muted-foreground mb-1">Agents</div>
-                  <div className="text-2xl font-bold">{agentCount}</div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardContent className="p-6">
-                  <div className="text-sm text-muted-foreground mb-1">Version</div>
-                  <div className="text-2xl font-bold">{versionStr}</div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardContent className="p-6">
-                  <div className="text-sm text-muted-foreground mb-1">Default Model</div>
-                  <div className="text-lg font-bold truncate" title={defaultModel}>
-                    {defaultModel}
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-
-            {/* System Info Table */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">System</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <table className="w-full text-sm">
-                  <tbody className="divide-y">
-                    <tr>
-                      <td className="py-2 font-medium text-muted-foreground w-[180px]">Platform</td>
-                      <td className="py-2">{platform}</td>
-                    </tr>
-                    <tr>
-                      <td className="py-2 font-medium text-muted-foreground">Architecture</td>
-                      <td className="py-2">{arch}</td>
-                    </tr>
-                    <tr>
-                      <td className="py-2 font-medium text-muted-foreground">API Listen</td>
-                      <td className="py-2">{apiListen}</td>
-                    </tr>
-                    <tr>
-                      <td className="py-2 font-medium text-muted-foreground">Home Directory</td>
-                      <td className="py-2 font-mono text-xs">{homeDir}</td>
-                    </tr>
-                    <tr>
-                      <td className="py-2 font-medium text-muted-foreground">Log Level</td>
-                      <td className="py-2">
-                        <Badge variant="outline">{logLevel}</Badge>
-                      </td>
-                    </tr>
-                    <tr>
-                      <td className="py-2 font-medium text-muted-foreground">Network</td>
-                      <td className="py-2">{networkEnabled ? 'Enabled' : 'Disabled'}</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </CardContent>
-            </Card>
-
-            {/* Providers Table */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Providers</CardTitle>
-              </CardHeader>
-              <CardContent>
+          {/* Providers */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.5 }}
+          >
+            <SpotlightCard glowColor="rgba(0, 240, 255, 0.1)">
+              <div className="p-5">
+                <h3 className="text-sm font-medium text-[var(--text-secondary)] mb-4 flex items-center gap-2">
+                  <Globe className="w-4 h-4" />
+                  Providers
+                </h3>
                 {providers.length === 0 ? (
-                  <div className="text-center py-8 text-muted-foreground">
+                  <div className="text-center py-8 text-[var(--text-muted)] text-sm">
                     No providers configured
                   </div>
                 ) : (
-                  <div className="border rounded-md overflow-hidden">
-                    <table className="w-full text-sm">
-                      <thead className="bg-muted">
-                        <tr>
-                          <th className="text-left p-3 font-medium">Provider</th>
-                          <th className="text-left p-3 font-medium">Status</th>
-                          <th className="text-left p-3 font-medium">Models</th>
-                          <th className="text-left p-3 font-medium">Latency</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y">
-                        {providers.map((p) => (
-                          <tr key={p.id} className="hover:bg-muted/50">
-                            <td className="p-3">{p.display_name || p.id}</td>
-                            <td className="p-3">
-                              <Badge
-                                variant="outline"
-                                className={getProviderBadgeClass(p)}
-                              >
-                                {getProviderStatusText(p)}
-                              </Badge>
-                            </td>
-                            <td className="p-3">{p.model_count ?? '-'}</td>
-                            <td className="p-3">
-                              {p.latency_ms ? `${p.latency_ms}ms` : '-'}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                  <div className="space-y-2">
+                    {providers.map((provider) => (
+                      <div
+                        key={provider.id}
+                        className="flex items-center justify-between p-3 rounded-lg bg-[var(--text-primary)]/[0.02] border border-[var(--border-subtle)]"
+                      >
+                        <div className="flex items-center gap-3">
+                          <StatusIndicator status={provider.reachable ? 'online' : 'offline'} />
+                          <span className="text-sm text-[var(--text-primary)]">{provider.display_name || provider.id}</span>
+                        </div>
+                        <div className="flex items-center gap-3 text-xs text-[var(--text-muted)]">
+                          {provider.model_count !== undefined && (
+                            <span>{provider.model_count} models</span>
+                          )}
+                          {provider.latency_ms && (
+                            <span className="font-mono">{provider.latency_ms}ms</span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 )}
-              </CardContent>
-            </Card>
-
-            {/* Refresh Button */}
-            <div className="flex gap-2">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleRefresh}
-                disabled={isRefreshing}
-              >
-                <RefreshCw className={`h-4 w-4 mr-2 ${isRefreshing ? 'animate-spin' : ''}`} />
-                Refresh
-              </Button>
-            </div>
-          </>
-        )}
+              </div>
+            </SpotlightCard>
+          </motion.div>
+        </div>
       </div>
     </div>
   );

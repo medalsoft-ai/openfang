@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Routes, Route, Navigate } from 'react-router'
+import { useTheme } from '@/hooks'
 import { Layout } from '@/components/layout/Layout'
 import { Overview } from '@/pages/Overview'
 import { Agents } from '@/pages/Agents'
@@ -25,6 +26,9 @@ import { api, setAuthErrorCallback } from '@/api/client'
 function App() {
   const [showAuthPrompt, setShowAuthPrompt] = useState(false)
 
+  // Initialize theme on mount
+  useTheme()
+
   // Load saved API key on mount
   useEffect(() => {
     const savedKey = localStorage.getItem('openfang-api-key')
@@ -42,13 +46,16 @@ function App() {
     // Set up auth error callback
     setAuthErrorCallback(handleAuthError)
 
-    // Also check if we need auth on load
+    // Also check if we need auth on load (use non-public endpoint like Alpine)
     const checkAuth = async () => {
       try {
-        await api.health()
+        await api.listTools()
       } catch (err: unknown) {
-        const error = err as { response?: { status: number } }
-        if (error.response?.status === 401) {
+        const error = err as { response?: { status: number }; message?: string }
+        if (error.response?.status === 401 ||
+            error.message?.includes('Not authorized') ||
+            error.message?.includes('Missing Authorization') ||
+            error.message?.includes('Unauthorized')) {
           setShowAuthPrompt(true)
         }
       }

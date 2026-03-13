@@ -1,201 +1,493 @@
+// Chat - Immersive Terminal Style with Sessions
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { useSearchParams } from 'react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Card, CardContent } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { motion, AnimatePresence } from 'framer-motion';
 import { api, wsManager } from '@/api/client';
-import type { Agent, Session, Message, ToolCall } from '@/api/types';
-import { useToast } from '@/hooks/useToast';
-import { ToastContainer } from '@/components/ui/toast';
+import type { Agent, Session, Message, ToolCall, SlashCommand, ThinkingMode, Attachment } from '@/api/types';
+import { NeonText } from '@/components/motion/NeonText';
+import { SpotlightCard } from '@/components/motion/SpotlightCard';
+import { cyberColors } from '@/lib/animations';
+import { MessageContent } from '@/components/chat/MessageContent';
 import {
-  Send, Plus, Loader2, Bot, User, ChevronLeft, MessageSquare,
-  Search, X, Copy, Check, Mic, Paperclip, StopCircle, Settings,
-  ChevronDown, ChevronUp, Maximize, Minimize, ArrowDown, Pencil, Save, Trash2,
-  ImageIcon, Terminal, Globe, FileText, Brain, Clock, Container, Image, Wrench
+  Send, Bot, User, ChevronLeft, Terminal, Plus, MessageSquare,
+  Loader2, Settings, Sparkles, Trash2, Clock, MoreHorizontal,
+  RefreshCw, ChevronDown, Search, Command, Mic, Paperclip, X,
+  Brain, HelpCircle, Users, FileText, Zap
 } from 'lucide-react';
-import { Dialog, DialogContent } from '@/components/ui/dialog';
-
-// Tool icon helper function
-const getToolIcon = (toolName: string) => {
-  if (toolName.startsWith('file_') || toolName.startsWith('directory_')) return <FileText className="h-4 w-4" style={{ color: '#60A5FA' }} />;
-  if (toolName.startsWith('web_') || toolName.startsWith('link_')) return <Globe className="h-4 w-4" style={{ color: '#34D399' }} />;
-  if (toolName.startsWith('shell') || toolName.startsWith('exec_')) return <Terminal className="h-4 w-4" style={{ color: '#FBBF24' }} />;
-  if (toolName.startsWith('agent_')) return <Bot className="h-4 w-4" style={{ color: '#A78BFA' }} />;
-  if (toolName.startsWith('memory_') || toolName.startsWith('knowledge_')) return <Brain className="h-4 w-4" style={{ color: '#F472B6' }} />;
-  if (toolName.startsWith('cron_') || toolName.startsWith('schedule_')) return <Clock className="h-4 w-4" style={{ color: '#FB923C' }} />;
-  if (toolName.startsWith('browser_') || toolName.startsWith('playwright_')) return <Globe className="h-4 w-4" style={{ color: '#2DD4BF' }} />;
-  if (toolName.startsWith('container_') || toolName.startsWith('docker_')) return <Container className="h-4 w-4" style={{ color: '#38BDF8' }} />;
-  if (toolName.startsWith('image_') || toolName.startsWith('tts_')) return <Image className="h-4 w-4" style={{ color: '#E879F9' }} />;
-  if (toolName.startsWith('hand_')) return <Wrench className="h-4 w-4" />;
-  return <Wrench className="h-4 w-4" />;
-};
-
-// Tool border color helper
-const getToolBorderColor = (toolName: string): string => {
-  if (toolName.startsWith('file_') || toolName.startsWith('directory_')) return '#60A5FA';
-  if (toolName.startsWith('web_') || toolName.startsWith('link_')) return '#34D399';
-  if (toolName.startsWith('shell') || toolName.startsWith('exec_')) return '#FBBF24';
-  if (toolName.startsWith('agent_')) return '#A78BFA';
-  if (toolName.startsWith('memory_') || toolName.startsWith('knowledge_')) return '#F472B6';
-  if (toolName.startsWith('cron_') || toolName.startsWith('schedule_')) return '#FB923C';
-  if (toolName.startsWith('browser_') || toolName.startsWith('playwright_')) return '#2DD4BF';
-  if (toolName.startsWith('container_') || toolName.startsWith('docker_')) return '#38BDF8';
-  if (toolName.startsWith('image_') || toolName.startsWith('tts_')) return '#E879F9';
-  return 'hsl(var(--primary))';
-};
-
-// Image URL regex for auto-detecting images in messages
-const imageUrlRegex = /(https?:\/\/[^\s]+\.(?:jpg|jpeg|png|gif|webp|svg))/gi;
-
-// Slash commands definition
-const SLASH_COMMANDS = [
-  { cmd: '/help', desc: 'Show available commands' },
-  { cmd: '/agents', desc: 'Switch to Agents page' },
-  { cmd: '/new', desc: 'Reset session (clear history)' },
-  { cmd: '/compact', desc: 'Trigger LLM session compaction' },
-  { cmd: '/model', desc: 'Show or switch model (/model [name])' },
-  { cmd: '/stop', desc: 'Cancel current agent run' },
-  { cmd: '/usage', desc: 'Show session token usage & cost' },
-  { cmd: '/think', desc: 'Toggle extended thinking (/think [on|off|stream])' },
-  { cmd: '/context', desc: 'Show context window usage & pressure' },
-  { cmd: '/verbose', desc: 'Cycle tool detail level (/verbose [off|on|full])' },
-  { cmd: '/queue', desc: 'Check if agent is processing' },
-  { cmd: '/status', desc: 'Show system status' },
-  { cmd: '/clear', desc: 'Clear chat display' },
-  { cmd: '/exit', desc: 'Disconnect from agent' },
-  { cmd: '/budget', desc: 'Show spending limits and current costs' },
-  { cmd: '/peers', desc: 'Show OFP peer network status' },
-  { cmd: '/a2a', desc: 'List discovered external A2A agents' },
-];
-
-// Tips for the tip bar
-const TIPS = [
-  'Type / for commands',
-  '/think on for reasoning',
-  'Ctrl+Shift+F for focus mode',
-  'Drag files to attach',
-  '/model to switch models',
-  '/context to check usage',
-  '/verbose off to hide tool details',
-];
+import { cn } from '@/lib/utils';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { toaster } from '@/lib/toast';
 
 interface ExtendedMessage extends Message {
   isStreaming?: boolean;
-  _copied?: boolean;
   inputTokens?: number;
   outputTokens?: number;
   cost?: number;
-  iterations?: number;
-  ts?: number;
-  edited?: boolean;
+  tools?: ToolCall[];
 }
 
-interface Attachment {
-  file: File;
-  preview?: string;
-  uploading?: boolean;
+// Terminal-style message component
+function TerminalMessage({
+  message,
+  index,
+  id,
+  isSearchResult,
+  isCurrentSearch,
+  searchQuery
+}: {
+  message: ExtendedMessage;
+  index: number;
+  id?: string;
+  isSearchResult?: boolean;
+  isCurrentSearch?: boolean;
+  searchQuery?: string;
+}) {
+  const isUser = message.role === 'user';
+  const isAssistant = message.role === 'assistant';
+  const isSystem = message.role === 'system';
+
+  return (
+    <motion.div
+      id={id}
+      initial={{ opacity: 0, x: isUser ? 20 : -20 }}
+      animate={{ opacity: 1, x: 0 }}
+      transition={{ delay: index * 0.05, duration: 0.3 }}
+      className={cn(
+        'mb-4 p-2 rounded-lg transition-colors',
+        isUser && 'ml-auto max-w-[80%]',
+        isCurrentSearch && 'bg-[var(--neon-cyan)]/20 ring-1 ring-[var(--neon-cyan)]',
+        isSearchResult && !isCurrentSearch && 'bg-[var(--neon-amber)]/10'
+      )}
+    >
+      {/* Message header */}
+      <div className="flex items-center gap-2 mb-2">
+        <div
+          className={cn(
+            'w-6 h-6 rounded flex items-center justify-center text-xs font-mono',
+            isUser && 'bg-[var(--neon-cyan)]/20 text-[var(--neon-cyan)]',
+            isAssistant && 'bg-[var(--neon-green)]/20 text-[var(--neon-green)]',
+            isSystem && 'bg-[var(--neon-amber)]/20 text-[var(--neon-amber)]'
+          )}
+        >
+          {isUser ? <User className="w-3 h-3" /> : isAssistant ? <Bot className="w-3 h-3" /> : <Terminal className="w-3 h-3" />}
+        </div>
+        <span className="text-xs font-mono text-[var(--text-muted)]">
+          {isUser ? 'USER' : isAssistant ? 'AGENT' : 'SYSTEM'}
+        </span>
+        <span className="text-xs font-mono text-[var(--text-muted)]">
+          {message.timestamp ? new Date(message.timestamp).toLocaleTimeString() : ''}
+        </span>
+        {message.thinking && (
+          <span className="text-xs font-mono text-[var(--neon-magenta)]">
+            <Brain className="w-3 h-3 inline mr-1" />THINKING
+          </span>
+        )}
+        {message.cost != null && (
+          <span className="text-xs font-mono text-[var(--neon-amber)]">
+            ${message.cost.toFixed(4)}
+          </span>
+        )}
+      </div>
+
+      {/* Message content */}
+      <MessageContent
+        message={message}
+        isStreaming={message.isStreaming}
+        searchQuery={isSearchResult ? searchQuery : undefined}
+      />
+
+      {/* Meta info */}
+      {(message.inputTokens || message.outputTokens) && (
+        <div className="flex gap-3 mt-1 text-[10px] font-mono text-[var(--text-muted)]">
+          {message.inputTokens && <span>IN: {message.inputTokens}</span>}
+          {message.outputTokens && <span>OUT: {message.outputTokens}</span>}
+        </div>
+      )}
+    </motion.div>
+  );
 }
 
-interface ModelInfo {
-  id: string;
-  display_name?: string;
-  provider: string;
-  available: boolean;
-  tier?: string;
-  context_window?: number;
-  supports_vision?: boolean;
-  supports_tools?: boolean;
+// Session card component
+function SessionCard({
+  session,
+  isSelected,
+  onClick,
+  onDelete
+}: {
+  session: Session;
+  isSelected: boolean;
+  onClick: () => void;
+  onDelete?: (e: React.MouseEvent) => void;
+}) {
+  const [showActions, setShowActions] = useState(false);
+
+  return (
+    <motion.div
+      onClick={onClick}
+      onMouseEnter={() => setShowActions(true)}
+      onMouseLeave={() => setShowActions(false)}
+      className={cn(
+        'w-full p-3 rounded-lg text-left transition-all duration-200 group relative cursor-pointer',
+        'border border-[var(--border-subtle)] hover:border-[var(--border-default)]',
+        isSelected
+          ? 'bg-[var(--neon-cyan)]/10 border-[var(--neon-cyan)]/30'
+          : 'bg-[var(--text-primary)]/[0.02] hover:bg-[var(--text-primary)]/[0.04]'
+      )}
+      whileHover={{ scale: 1.01 }}
+      whileTap={{ scale: 0.99 }}
+    >
+      <div className="flex items-center gap-2">
+        <MessageSquare
+          className={cn(
+            'w-4 h-4 shrink-0',
+            isSelected ? 'text-[var(--neon-cyan)]' : 'text-[var(--text-muted)]'
+          )}
+        />
+        <div className="flex-1 min-w-0">
+          <div
+            className={cn(
+              'text-sm truncate',
+              isSelected ? 'text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'
+            )}
+          >
+            {session.title || 'Untitled Session'}
+          </div>
+          <div className="text-[10px] text-[var(--text-muted)] font-mono flex items-center gap-1">
+            <Clock className="w-3 h-3" />
+            {session.created_at
+              ? new Date(session.created_at).toLocaleDateString()
+              : 'Unknown'}
+          </div>
+        </div>
+
+        {/* Actions */}
+        <AnimatePresence>
+          {showActions && onDelete && (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.8 }}
+              className="flex items-center gap-1"
+            >
+              <button
+                onClick={onDelete}
+                className="p-1.5 rounded hover:bg-[var(--neon-magenta)]/20 text-[var(--text-muted)] hover:text-[var(--neon-magenta)]"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {isSelected && (
+          <div className="w-1.5 h-1.5 rounded-full bg-[var(--neon-cyan)] shadow-[0_0_6px_var(--neon-cyan)]" />
+        )}
+      </div>
+    </motion.div>
+  );
 }
 
-interface MessageResponse {
-  response: string;
-  input_tokens: number;
-  output_tokens: number;
-  iterations: number;
-  cost_usd?: number;
+// Agent selector card
+function AgentCard({
+  agent,
+  isSelected,
+  onClick
+}: {
+  agent: Agent;
+  isSelected: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <motion.button
+      onClick={onClick}
+      className={cn(
+        'w-full p-3 rounded-lg text-left transition-all duration-200',
+        'border border-[var(--border-subtle)] hover:border-[var(--border-default)]',
+        isSelected
+          ? 'bg-[var(--neon-cyan)]/10 border-[var(--neon-cyan)]/30'
+          : 'bg-[var(--text-primary)]/[0.02] hover:bg-[var(--text-primary)]/[0.04]'
+      )}
+      whileHover={{ scale: 1.01 }}
+      whileTap={{ scale: 0.99 }}
+    >
+      <div className="flex items-center gap-3">
+        <div
+          className={cn(
+            'w-9 h-9 rounded-lg flex items-center justify-center',
+            isSelected ? 'bg-[var(--neon-cyan)]/20' : 'bg-[var(--surface-secondary)]'
+          )}
+        >
+          <Bot
+            className={cn(
+              'w-4 h-4',
+              isSelected ? 'text-[var(--neon-cyan)]' : 'text-[var(--text-muted)]'
+            )}
+          />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div
+            className={cn(
+              'text-sm font-medium truncate',
+              isSelected ? 'text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'
+            )}
+          >
+            {agent.name}
+          </div>
+          <div className="text-[10px] text-[var(--text-muted)] font-mono truncate">
+            {typeof agent.model === 'string' ? agent.model : agent.model?.model || 'No model'}
+          </div>
+        </div>
+      </div>
+    </motion.button>
+  );
 }
 
 export function Chat() {
   const [searchParams, setSearchParams] = useSearchParams();
   const agentIdFromUrl = searchParams.get('agent');
+  const queryClient = useQueryClient();
 
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(agentIdFromUrl);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [inputMessage, setInputMessage] = useState('');
   const [messages, setMessages] = useState<ExtendedMessage[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
-  const [thinkingMode, setThinkingMode] = useState<'off' | 'on' | 'stream'>('off');
-  const [contextPressure, setContextPressure] = useState<'low' | 'medium' | 'high' | 'critical'>('low');
-  const [messageQueue, setMessageQueue] = useState<string[]>([]);
-  const [attachments, setAttachments] = useState<Attachment[]>([]);
-  const [dragOver, setDragOver] = useState(false);
-  const [recording, setRecording] = useState(false);
-  const [recordingTime, setRecordingTime] = useState(0);
+  const [viewMode, setViewMode] = useState<'agents' | 'sessions'>('agents');
+
+  // Slash commands state
   const [showSlashMenu, setShowSlashMenu] = useState(false);
   const [slashFilter, setSlashFilter] = useState('');
   const [slashIdx, setSlashIdx] = useState(0);
-  const [showModelPicker, setShowModelPicker] = useState(false);
-  const [modelPickerList, setModelPickerList] = useState<ModelInfo[]>([]);
-  const [modelPickerFilter, setModelPickerFilter] = useState('');
-  const [modelPickerIdx, setModelPickerIdx] = useState(0);
-  const [showModelSwitcher, setShowModelSwitcher] = useState(false);
-  const [modelSwitcherFilter, setModelSwitcherFilter] = useState('');
-  const [modelSwitcherProviderFilter, setModelSwitcherProviderFilter] = useState('');
-  const [modelSwitching, setModelSwitching] = useState(false);
+
+  // Search state
   const [showSearch, setShowSearch] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [focusMode, setFocusMode] = useState(false);
-  const [tipIndex, setTipIndex] = useState(0);
-  const [dismissedTips, setDismissedTips] = useState(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('of-tips-off') === 'true';
-    }
-    return false;
-  });
-  const [verboseMode, setVerboseMode] = useState<'off' | 'on' | 'full'>('on');
-  // Message editing state
-  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
-  const [editText, setEditText] = useState('');
-  // Token count - calculated from input message length
-  const tokenCount = useMemo(() => Math.round(inputMessage.length / 4), [inputMessage]);
-  // Typing indicator state (used in full Alpine alignment)
-  const [typingState, setTypingState] = useState<'idle' | 'start' | 'tool' | 'stop'>('idle');
-  const [typingTool, setTypingTool] = useState<string>('');
-  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Phase progress state (used in full Alpine alignment)
-  const [phaseInfo, setPhaseInfo] = useState<{ phase?: string; detail?: string } | null>(null);
-  // WebSocket connection state
-  const [wsConnectionState, setWsConnectionState] = useState<'connecting' | 'connected' | 'reconnecting' | 'disconnected'>('disconnected');
+  const [searchResults, setSearchResults] = useState<number[]>([]);
+  const [searchCurrentIdx, setSearchCurrentIdx] = useState(0);
 
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const queryClient = useQueryClient();
+  // Thinking mode & attachments
+  const [thinkingMode, setThinkingMode] = useState<ThinkingMode>('off');
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [dragOver, setDragOver] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingTime, setRecordingTime] = useState(0);
+
+  // Message queue for messages sent while streaming (like Alpine)
+  const messageQueueRef = useRef<Array<{ text: string; attachments?: Attachment[]; thinkingMode?: ThinkingMode }>>([]);
+  const [connectionState, setConnectionState] = useState<'connected' | 'reconnecting' | 'disconnected' | 'connecting'>('disconnected');
+  const wasConnectedRef = useRef(false);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const { toasts, removeToast, success, warn, error } = useToast();
+  const inputRef = useRef<HTMLInputElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Smart scroll state
-  const [isUserScrolling, setIsUserScrolling] = useState(false);
-  const [showNewMessageIndicator, setShowNewMessageIndicator] = useState(false);
-  const [pendingScrollToBottom, setPendingScrollToBottom] = useState(false);
-  const [unreadCount, setUnreadCount] = useState(0);
-  const [showScrollToTop, setShowScrollToTop] = useState(false);
-  const userScrollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastMessageCountRef = useRef(0);
+  // Slash commands definition
+  const slashCommands: SlashCommand[] = [
+    { cmd: '/help', desc: 'Show available commands' },
+    { cmd: '/agents', desc: 'Switch to Agents page' },
+    { cmd: '/new', desc: 'Reset session (clear history)' },
+    { cmd: '/compact', desc: 'Trigger LLM session compaction' },
+    { cmd: '/model', desc: 'Show or switch model (/model [name])' },
+    { cmd: '/stop', desc: 'Cancel current agent run' },
+    { cmd: '/usage', desc: 'Show session token usage & cost' },
+    { cmd: '/thinking', desc: 'Toggle thinking mode (/thinking off|on|stream)' },
+    { cmd: '/search', desc: 'Search message history' },
+  ];
+
+  const filteredSlashCommands = useMemo(() => {
+    if (!slashFilter) return slashCommands;
+    const q = slashFilter.toLowerCase();
+    return slashCommands.filter(c => c.cmd.toLowerCase().includes(q) || c.desc.toLowerCase().includes(q));
+  }, [slashFilter]);
+
+  // Search messages
+  const performSearch = useCallback((query: string) => {
+    if (!query.trim()) {
+      setSearchResults([]);
+      return;
+    }
+    const q = query.toLowerCase();
+    const indices: number[] = [];
+    messages.forEach((m, idx) => {
+      const content = (m.content || m.text || '').toLowerCase();
+      if (content.includes(q)) indices.push(idx);
+    });
+    setSearchResults(indices);
+    setSearchCurrentIdx(indices.length > 0 ? 0 : -1);
+  }, [messages]);
+
+  // Navigate to search result
+  const navigateSearch = useCallback((direction: 'next' | 'prev') => {
+    if (searchResults.length === 0) return;
+    if (direction === 'next') {
+      setSearchCurrentIdx(prev => (prev + 1) % searchResults.length);
+    } else {
+      setSearchCurrentIdx(prev => (prev - 1 + searchResults.length) % searchResults.length);
+    }
+  }, [searchResults.length]);
+
+  // Effect to perform search when query changes
+  useEffect(() => {
+    performSearch(searchQuery);
+  }, [searchQuery, performSearch]);
+
+  // Effect to scroll to current search result
+  useEffect(() => {
+    if (searchCurrentIdx >= 0 && searchResults[searchCurrentIdx] !== undefined) {
+      const msgIdx = searchResults[searchCurrentIdx];
+      const msgElement = document.getElementById(`msg-${msgIdx}`);
+      msgElement?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, [searchCurrentIdx, searchResults]);
+
+  // Handle file drop
+  const handleDrop = useCallback(async (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOver(false);
+    if (!selectedAgentId) return;
+
+    const files = Array.from(e.dataTransfer.files);
+    for (const file of files) {
+      try {
+        const result = await api.upload(selectedAgentId, file);
+        const newAttachment: Attachment = {
+          id: result.file_id,
+          file_id: result.file_id,
+          filename: result.filename,
+          content_type: result.content_type,
+          size: result.size,
+          transcription: result.transcription,
+        };
+        setAttachments(prev => [...prev, newAttachment]);
+        toaster.success(`Uploaded: ${result.filename}`);
+      } catch (err) {
+        toaster.error(`Failed to upload ${file.name}: ${(err as Error).message}`);
+      }
+    }
+  }, [selectedAgentId]);
+
+  // Handle file select
+  const handleFileSelect = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!selectedAgentId || !e.target.files) return;
+
+    const files = Array.from(e.target.files);
+    for (const file of files) {
+      try {
+        const result = await api.upload(selectedAgentId, file);
+        const newAttachment: Attachment = {
+          id: result.file_id,
+          file_id: result.file_id,
+          filename: result.filename,
+          content_type: result.content_type,
+          size: result.size,
+          transcription: result.transcription,
+        };
+        setAttachments(prev => [...prev, newAttachment]);
+        toaster.success(`Uploaded: ${result.filename}`);
+      } catch (err) {
+        toaster.error(`Failed to upload ${file.name}: ${(err as Error).message}`);
+      }
+    }
+    e.target.value = '';
+  }, [selectedAgentId]);
+
+  // Voice recording
+  const startRecording = useCallback(async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream);
+      const chunks: Blob[] = [];
+
+      mediaRecorder.ondataavailable = (e) => chunks.push(e.data);
+      mediaRecorder.onstop = async () => {
+        const blob = new Blob(chunks, { type: 'audio/webm' });
+        if (!selectedAgentId) return;
+
+        const file = new File([blob], `recording-${Date.now()}.webm`, { type: 'audio/webm' });
+        try {
+          const result = await api.upload(selectedAgentId, file);
+          const newAttachment: Attachment = {
+            id: result.file_id,
+            file_id: result.file_id,
+            filename: result.filename,
+            content_type: result.content_type,
+            size: result.size,
+            transcription: result.transcription,
+          };
+          setAttachments(prev => [...prev, newAttachment]);
+          if (result.transcription) {
+            setInputMessage(prev => prev + (prev ? ' ' : '') + result.transcription);
+          }
+          toaster.success('Recording uploaded');
+        } catch (err) {
+          toaster.error(`Failed to upload recording: ${(err as Error).message}`);
+        }
+      };
+
+      mediaRecorder.start();
+      setIsRecording(true);
+      setRecordingTime(0);
+
+      recordingTimerRef.current = setInterval(() => {
+        setRecordingTime(t => t + 1);
+      }, 1000);
+    } catch (err) {
+      toaster.error('Could not start recording: ' + (err as Error).message);
+    }
+  }, [selectedAgentId]);
+
+  const stopRecording = useCallback(() => {
+    setIsRecording(false);
+    if (recordingTimerRef.current) {
+      clearInterval(recordingTimerRef.current);
+      recordingTimerRef.current = null;
+    }
+  }, []);
+
+  // Model type
+  interface ModelInfo {
+    id: string;
+    display_name?: string;
+    provider: string;
+    available: boolean;
+    tier?: string;
+    context_window?: number;
+    supports_vision?: boolean;
+    supports_tools?: boolean;
+  }
+
+  // Fetch available models (cache 5 minutes like Alpine)
+  const { data: rawModels } = useQuery<{ models: ModelInfo[] }>({
+    queryKey: ['models'],
+    queryFn: async () => {
+      const res = await api.listModels();
+      // Handle different response formats
+      if (Array.isArray(res)) {
+        return { models: res.filter((m: ModelInfo) => m.available) };
+      }
+      // Response is { models: [...] }
+      const modelList = res?.models || [];
+      return { models: modelList.filter((m: ModelInfo) => m.available) };
+    },
+    staleTime: 5 * 60 * 1000, // 5 minutes cache
+  });
+
+  // Extract models array safely
+  const models = rawModels?.models || [];
 
   // Fetch agents
-  const { data: agents = [], isLoading: agentsLoading } = useQuery<Agent[]>({
+  const { data: agents = [] } = useQuery<Agent[]>({
     queryKey: ['agents'],
     queryFn: () => api.listAgents(),
-    retry: 1,
-    staleTime: 10000,
-    refetchOnWindowFocus: false,
   });
 
   // Fetch sessions
@@ -207,58 +499,90 @@ export function Chat() {
       return allSessions.filter(s => s.agent_id === selectedAgentId);
     },
     enabled: !!selectedAgentId,
-    retry: 1,
-    staleTime: 10000,
-    refetchOnWindowFocus: false,
   });
 
-  // Fetch models
-  const { data: modelsData } = useQuery<{ models: ModelInfo[] }>({
-    queryKey: ['models'],
-    queryFn: () => api.listModels(),
-    retry: 1,
-    staleTime: 300000,
-    refetchOnWindowFocus: false,
+  const selectedAgent = useMemo(() =>
+    agents.find(a => a.id === selectedAgentId),
+    [agents, selectedAgentId]
+  );
+
+  // Get current model ID (priority: model_name > model.model)
+  const currentModelId = useMemo(() => {
+    return selectedAgent?.model_name ||
+           (typeof selectedAgent?.model === 'string' ? selectedAgent.model : selectedAgent?.model?.model) ||
+           '';
+  }, [selectedAgent]);
+
+  // Get current model display name (align with Alpine: truncate at 24 chars)
+  const currentModelDisplay = useMemo(() => {
+    if (!currentModelId) return '';
+    const model = models.find(m => m.id === currentModelId);
+    const name = model?.display_name || currentModelId;
+    // Truncate like Alpine does
+    const short = name.replace(/-\d{8}$/, '');
+    return short.length > 24 ? short.substring(0, 22) + '…' : short;
+  }, [currentModelId, models]);
+
+  // Change model mutation (align with Alpine)
+  const changeModelMutation = useMutation({
+    mutationFn: async ({ agentId, modelId, provider }: { agentId: string; modelId: string; provider: string }) => {
+      await api.changeAgentModel(agentId, modelId);
+      return { agentId, modelId, provider };
+    },
+    onSuccess: (data) => {
+      // Update local agent cache immediately (like Alpine does)
+      queryClient.setQueryData<Agent[]>(['agents'], (old) => {
+        if (!old) return old;
+        return old.map(a =>
+          a.id === data.agentId
+            ? { ...a, model_name: data.modelId, model_provider: data.provider }
+            : a
+        );
+      });
+      queryClient.invalidateQueries({ queryKey: ['agents'] });
+    },
   });
 
-  const models = modelsData?.models || [];
+  // Handle model change (align with Alpine)
+  const handleModelChange = useCallback((modelId: string) => {
+    if (!selectedAgentId || modelId === currentModelId) return;
+    const model = models.find(m => m.id === modelId);
+    changeModelMutation.mutate({
+      agentId: selectedAgentId,
+      modelId,
+      provider: model?.provider || selectedAgent?.model_provider || ''
+    });
+  }, [selectedAgentId, currentModelId, models, selectedAgent, changeModelMutation]);
 
-  // Get selected agent
-  const selectedAgent = agents.find(a => a.id === selectedAgentId);
+  const selectedSession = useMemo(() =>
+    sessions.find(s => s.session_id === selectedSessionId),
+    [sessions, selectedSessionId]
+  );
 
-  // Load agent sessions when agent changes (like Alpine)
+  // Load session messages when session changes
   useEffect(() => {
-    if (!selectedAgentId) return;
+    if (!selectedAgentId || !selectedSessionId) {
+      setMessages([]);
+      return;
+    }
 
-    // Load session and sessions list
-    api.getAgentSession(selectedAgentId).then(data => {
-      if (data.messages && data.messages.length > 0) {
-        const loadedMessages: ExtendedMessage[] = data.messages.map((m: unknown, idx: number) => {
-          const msg = m as { role?: string; content?: unknown; tools?: unknown[] };
-          const role = msg.role === 'User' ? 'user' : (msg.role === 'System' ? 'system' : 'assistant');
-          const content = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
-          return {
-            id: `hist-${idx}`,
-            role,
-            content,
-            text: content,
-            timestamp: new Date().toISOString(),
-          };
-        });
-        setMessages(loadedMessages);
-      }
-    }).catch(() => {});
+    api.getMessages(selectedAgentId, selectedSessionId).then((data: Message[]) => {
+      setMessages(data.map((m, idx) => ({
+        ...m,
+        id: m.id || `msg-${selectedSessionId}-${idx}-${Date.now()}`,
+        isStreaming: false
+      })));
+    }).catch(() => {
+      setMessages([]);
+    });
+  }, [selectedAgentId, selectedSessionId]);
 
-    // Refresh sessions list
-    queryClient.invalidateQueries({ queryKey: ['sessions', selectedAgentId] });
-  }, [selectedAgentId]);
-
-  // WebSocket connection
+  // WebSocket connection with Toast notifications
   useEffect(() => {
     if (!selectedAgentId) return;
 
     let isActive = true;
-    console.log('[Chat] Connecting WebSocket for agent:', selectedAgentId);
+
     wsManager.connect(
       selectedAgentId,
       (data) => {
@@ -266,2369 +590,1016 @@ export function Chat() {
       },
       {
         onStateChange: (state) => {
-          console.log('[Chat] Connection state changed:', state);
-          if (!isActive) return;
-          setWsConnectionState(state);
+          setConnectionState(state);
+          // Toast notifications aligned with Alpine
           if (state === 'connected') {
-            success('WebSocket connected');
+            if (wasConnectedRef.current) {
+              toaster.success('Reconnected');
+            }
+            wasConnectedRef.current = true;
           } else if (state === 'reconnecting') {
-            warn('Connection lost, reconnecting...');
+            if (!wasConnectedRef.current) {
+              toaster.warn('Connection lost, reconnecting...');
+            }
           } else if (state === 'disconnected') {
-            error('Connection lost — switched to HTTP mode', 0);
+            if (wasConnectedRef.current) {
+              toaster.error('Connection lost — switched to HTTP mode', 0);
+            }
           }
         },
-        onError: (error) => {
-          if (isActive) console.error('WebSocket error:', error);
+        onError: (err) => {
+          console.error('[Chat] WS error:', err);
         }
       }
     );
 
     return () => {
       isActive = false;
+      wasConnectedRef.current = false;
       wsManager.disconnect();
     };
-  }, [selectedAgentId, success, warn, error]);
-
-  // Ref for sendMessageContent to avoid circular dependency
-  const sendMessageContentRef = useRef<((content: string) => Promise<void>) | undefined>(undefined);
+  }, [selectedAgentId, selectedSessionId]);
 
   // Handle WebSocket messages
   const handleWebSocketMessage = useCallback((data: unknown) => {
     const msg = data as {
       type: string;
       chunk?: string;
-      text?: string;
-      message?: string;
       content?: string;
-      tool?: string;
-      tools?: ToolCall[];
-      thinking?: boolean;
       done?: boolean;
       error?: string;
-      context_pressure?: 'low' | 'medium' | 'high' | 'critical';
-      // typing message
-      state?: 'start' | 'tool' | 'stop';
-      // phase message
-      phase?: string;
-      detail?: string;
-      // tool_start/tool_end/tool_result
-      input?: string;
-      result?: string;
-      is_error?: boolean;
-      // response
       input_tokens?: number;
       output_tokens?: number;
       cost_usd?: number;
-      iterations?: number;
-      // agents_updated
-      agents?: Agent[];
-      // canvas
-      title?: string;
-      canvas_id?: string;
-      html?: string;
     };
 
-    // Debug logging for WebSocket messages
-    console.log('[WebSocket] Received:', msg.type, msg);
-
-    // Handle streaming text deltas from backend (text_delta with content field)
     if (msg.type === 'text_delta' && msg.content) {
-      console.log('[WebSocket] text_delta:', msg.content);
-      setMessages(prev => {
-        const lastMsg = prev[prev.length - 1];
-        console.log('[WebSocket] lastMsg:', lastMsg?.role, lastMsg?.isStreaming, lastMsg?.thinking);
-        if (lastMsg && lastMsg.role === 'assistant' && lastMsg.isStreaming) {
-          const updated = [...prev];
-          const newContent = (lastMsg.content || '') + msg.content;
-          const newText = (lastMsg.text || '') + msg.content;
-
-          // Detect function-call patterns streamed as text and convert to tool cards (like Alpine)
-          let tools = lastMsg.tools || [];
-          let content = newContent;
-          let text = newText;
-          const fcIdx = newText.search(/\w+<\/function[=,>]/);
-          const fcIdx2 = newText.search(/<function=\w+>/);
-          const foundIdx = fcIdx !== -1 ? fcIdx : fcIdx2;
-
-          if (foundIdx !== -1 && !(lastMsg as unknown as Record<string, boolean>)._toolTextDetected) {
-            const fcPart = newText.substring(foundIdx);
-            const toolMatch = fcPart.match(/^(\w+)<\/function/) || fcPart.match(/^<function=(\w+)>/);
-            if (toolMatch) {
-              content = newText.substring(0, foundIdx).trim();
-              text = content;
-              const inputMatch = fcPart.match(/[=,>]\s*(\{[\s\S]*)/);
-              const newTool: ToolCall = {
-                id: `${toolMatch[1]}-txt-${Date.now()}`,
-                name: toolMatch[1],
-                running: true,
-                expanded: false,
-                input: inputMatch ? inputMatch[1].replace(/<\/function>?\s*$/, '').trim() : '',
-                result: '',
-                is_error: false,
-              };
-              tools = [...tools, newTool];
-              (updated[updated.length - 1] as unknown as Record<string, boolean>)._toolTextDetected = true;
-            }
-          }
-
-          updated[updated.length - 1] = {
-            ...lastMsg,
-            content,
-            text,
-            tools,
-          };
-          return updated;
-        }
-        return prev;
-      });
-    } else if (msg.type === 'chunk' && msg.chunk) {
-      // Legacy chunk format (for backward compatibility)
       setMessages(prev => {
         const lastMsg = prev[prev.length - 1];
         if (lastMsg && lastMsg.role === 'assistant' && lastMsg.isStreaming) {
           const updated = [...prev];
           updated[updated.length - 1] = {
             ...lastMsg,
-            content: (lastMsg.content || '') + msg.chunk,
-            text: (lastMsg.text || '') + msg.chunk,
+            content: (lastMsg.content || '') + msg.content,
+            text: (lastMsg.text || '') + msg.content,
           };
           return updated;
         }
         return prev;
       });
-    } else if (msg.type === 'thinking' && msg.text) {
-      // Handle thinking mode messages
-      if (thinkingMode !== 'off') {
-        setMessages(prev => [...prev, {
-          id: `thinking-${Date.now()}`,
-          role: 'system',
-          content: msg.text,
-          text: msg.text,
-          thinking: true,
-          timestamp: new Date().toISOString(),
-        }]);
-      }
-    } else if (msg.type === 'tool' && msg.tool) {
-      setMessages(prev => {
-        const lastMsg = prev[prev.length - 1];
-        if (lastMsg && lastMsg.role === 'assistant' && msg.tool) {
-          const updated = [...prev];
-          const tools: ToolCall[] = [...(lastMsg.tools || []), (msg.tool as unknown) as ToolCall];
-          updated[updated.length - 1] = { ...lastMsg, tools };
-          return updated;
-        }
-        return prev;
-      });
-    } else if (msg.type === 'context_pressure') {
-      if (msg.context_pressure) {
-        setContextPressure(msg.context_pressure);
-      }
     } else if (msg.type === 'response') {
-      // Backend sends final response with content and metadata
       setIsStreaming(false);
-      // Update context pressure from response (like Alpine does)
-      if (msg.context_pressure) {
-        setContextPressure(msg.context_pressure);
-      }
       setMessages(prev => {
         const lastMsg = prev[prev.length - 1];
-        const responseContent = msg.content || msg.text || '';
         if (lastMsg && lastMsg.isStreaming) {
           const updated = [...prev];
           updated[updated.length - 1] = {
             ...lastMsg,
-            content: responseContent,
-            text: responseContent,
             isStreaming: false,
-            streaming: false,
+            content: msg.content || lastMsg.content,
+            text: msg.content || lastMsg.text,
             inputTokens: msg.input_tokens,
             outputTokens: msg.output_tokens,
             cost: msg.cost_usd,
-            iterations: msg.iterations,
           };
-          return updated;
-        }
-        // If no streaming message exists, add as new message
-        return [...prev, {
-          id: `response-${Date.now()}`,
-          role: 'assistant',
-          content: responseContent,
-          text: responseContent,
-          timestamp: new Date().toISOString(),
-          inputTokens: msg.input_tokens,
-          outputTokens: msg.output_tokens,
-          cost: msg.cost_usd,
-          iterations: msg.iterations,
-        }];
-      });
-      // Process queued messages
-      if (messageQueue.length > 0) {
-        const nextMessage = messageQueue[0];
-        setMessageQueue(prev => prev.slice(1));
-        sendMessageContentRef.current?.(nextMessage);
-      }
-    } else if (msg.type === 'done') {
-      setIsStreaming(false);
-      setMessages(prev => {
-        const lastMsg = prev[prev.length - 1];
-        if (lastMsg && lastMsg.isStreaming) {
-          const updated = [...prev];
-          updated[updated.length - 1] = { ...lastMsg, isStreaming: false, streaming: false };
           return updated;
         }
         return prev;
       });
-      // Process queued messages
-      if (messageQueue.length > 0) {
-        const nextMessage = messageQueue[0];
-        setMessageQueue(prev => prev.slice(1));
-        sendMessageContentRef.current?.(nextMessage);
-      }
+      // Process queued messages after response (like Alpine)
+      setTimeout(() => processMessageQueue(), 0);
     } else if (msg.type === 'error') {
       setIsStreaming(false);
-      setMessages(prev => {
-        // Remove thinking/streaming messages like Alpine does
-        const filtered = prev.filter(m => !m.thinking && !m.streaming);
-        return [...filtered, {
-          id: `error-${Date.now()}`,
-          role: 'system',
-          content: msg.content || msg.error || 'An error occurred',
-          text: msg.content || msg.error || 'An error occurred',
-          timestamp: new Date().toISOString(),
-        }];
-      });
-    } else if (msg.type === 'typing') {
-      // Handle typing lifecycle: start/tool/stop
-      console.log('[WebSocket] typing:', msg.state);
-      if (msg.state === 'start') {
-        setTypingState('start');
-        setMessages(prev => {
-          const lastMsg = prev[prev.length - 1];
-          if (!lastMsg || !lastMsg.thinking) {
-            return [...prev, {
-              id: `typing-${Date.now()}`,
-              role: 'assistant',
-              content: 'Processing...',
-              text: 'Processing...',
-              thinking: true,
-              streaming: true,
-              isStreaming: true,
-              timestamp: new Date().toISOString(),
-            }];
-          }
-          return prev;
-        });
-        if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-        typingTimeoutRef.current = setTimeout(() => setTypingState('idle'), 30000);
-      } else if (msg.state === 'tool') {
-        setTypingState('tool');
-        setTypingTool(msg.tool || 'tool');
-        setMessages(prev => {
-          const lastMsg = prev[prev.length - 1];
-          if (lastMsg && (lastMsg.thinking || lastMsg.isStreaming)) {
-            const updated = [...prev];
-            updated[updated.length - 1] = {
-              ...lastMsg,
-              content: `Using ${msg.tool || 'tool'}...`,
-              text: `Using ${msg.tool || 'tool'}...`,
-            };
-            return updated;
-          }
-          return prev;
-        });
-        if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-        typingTimeoutRef.current = setTimeout(() => setTypingState('idle'), 30000);
-      } else if (msg.state === 'stop') {
-        setTypingState('stop');
-        // Remove thinking/streaming messages like Alpine does
-        setMessages(prev => prev.filter(m => !m.thinking && !m.streaming));
-        if (typingTimeoutRef.current) {
-          clearTimeout(typingTimeoutRef.current);
-          typingTimeoutRef.current = null;
-        }
-      }
-    } else if (msg.type === 'phase') {
-      setPhaseInfo({ phase: msg.phase, detail: msg.detail });
-      setMessages(prev => {
-        const lastMsg = prev[prev.length - 1];
-        if (lastMsg && (lastMsg.thinking || lastMsg.isStreaming)) {
-          const detail = msg.detail || msg.phase || 'Working...';
-          const updated = [...prev];
-          if (msg.phase === 'context_warning') {
-            return [...prev, {
-              id: `phase-${Date.now()}`,
-              role: 'system',
-              content: detail,
-              text: detail,
-              timestamp: new Date().toISOString(),
-            }];
-          }
-          updated[updated.length - 1] = {
-            ...lastMsg,
-            content: detail,
-            text: detail,
-          };
-          return updated;
-        }
-        return prev;
-      });
-    } else if (msg.type === 'tool_start') {
-      setMessages(prev => {
-        const lastMsg = prev[prev.length - 1];
-        if (lastMsg && lastMsg.isStreaming) {
-          const updated = [...prev];
-          const newTool: ToolCall = {
-            id: `${msg.tool}-${Date.now()}`,
-            name: msg.tool || 'unknown',
-            running: true,
-            expanded: false,
-            input: '',
-            result: '',
-            is_error: false,
-          };
-          updated[updated.length - 1] = {
-            ...lastMsg,
-            tools: [...(lastMsg.tools || []), newTool],
-          };
-          return updated;
-        }
-        return prev;
-      });
-    } else if (msg.type === 'tool_end') {
-      setMessages(prev => {
-        const lastMsg = prev[prev.length - 1];
-        if (lastMsg && lastMsg.tools) {
-          const updated = [...prev];
-          const tools = [...lastMsg.tools];
-          for (let i = tools.length - 1; i >= 0; i--) {
-            if (tools[i].name === msg.tool && tools[i].running) {
-              tools[i] = { ...tools[i], input: msg.input || '' };
-              break;
-            }
-          }
-          updated[updated.length - 1] = { ...lastMsg, tools };
-          return updated;
-        }
-        return prev;
-      });
-    } else if (msg.type === 'tool_result') {
-      setMessages(prev => {
-        const lastMsg = prev[prev.length - 1];
-        if (lastMsg && lastMsg.tools) {
-          const updated = [...prev];
-          const tools = [...lastMsg.tools];
-          for (let i = tools.length - 1; i >= 0; i--) {
-            if (tools[i].name === msg.tool && tools[i].running) {
-              const toolUpdate: ToolCall = {
-                ...tools[i],
-                running: false,
-                result: msg.result || '',
-                is_error: !!msg.is_error,
-              };
-              if ((msg.tool === 'image_generate' || msg.tool === 'browser_screenshot') && !msg.is_error && msg.result) {
-                try {
-                  const parsed = JSON.parse(msg.result);
-                  if (parsed.image_urls && parsed.image_urls.length) {
-                    toolUpdate._imageUrls = parsed.image_urls;
-                  }
-                } catch { }
-              }
-              if (msg.tool === 'text_to_speech' && !msg.is_error && msg.result) {
-                try {
-                  const ttsResult = JSON.parse(msg.result);
-                  if (ttsResult.saved_to) {
-                    toolUpdate._audioFile = ttsResult.saved_to;
-                    toolUpdate._audioDuration = ttsResult.duration_estimate_ms;
-                  }
-                } catch { }
-              }
-              tools[i] = toolUpdate;
-              break;
-            }
-          }
-          updated[updated.length - 1] = { ...lastMsg, tools };
-          return updated;
-        }
-        return prev;
-      });
-    } else if (msg.type === 'silent_complete') {
-      setIsStreaming(false);
-      setTypingState('idle');
-      if (typingTimeoutRef.current) {
-        clearTimeout(typingTimeoutRef.current);
-        typingTimeoutRef.current = null;
-      }
-      setMessages(prev => prev.filter(m => !m.thinking && !m.streaming));
-    } else if (msg.type === 'agents_updated') {
-      if (msg.agents) {
-        queryClient.setQueryData(['agents'], msg.agents);
-      }
-    } else if (msg.type === 'command_result') {
-      if (msg.context_pressure) {
-        setContextPressure(msg.context_pressure);
-      }
-      setMessages(prev => [...prev, {
-        id: `cmd-${Date.now()}`,
-        role: 'system',
-        content: msg.message || 'Command executed.',
-        text: msg.message || 'Command executed.',
-        timestamp: new Date().toISOString(),
-      }]);
-    } else if (msg.type === 'canvas') {
-      const canvasHtml = `<div class="canvas-panel" style="border:1px solid var(--border);border-radius:8px;margin:8px 0;overflow:hidden;"><div style="padding:6px 12px;background:var(--surface);border-bottom:1px solid var(--border);font-size:0.85em;display:flex;justify-content:space-between;align-items:center;"><span>${msg.title || 'Canvas'}</span><span style="opacity:0.5;font-size:0.8em;">${(msg.canvas_id || '').substring(0, 8)}</span></div><iframe sandbox="allow-scripts" srcdoc="${(msg.html || '').replace(/"/g, '&quot;')}" style="width:100%;min-height:300px;border:none;background:#fff;" loading="lazy"></iframe></div>`;
-      setMessages(prev => [...prev, {
-        id: `canvas-${Date.now()}`,
-        role: 'agent',
-        content: canvasHtml,
-        text: canvasHtml,
-        isHtml: true,
-        meta: 'canvas',
-        timestamp: new Date().toISOString(),
-      }]);
-    } else if (msg.type === 'pong') {
-      // Heartbeat response - no action needed
-    }
-  }, [thinkingMode, messageQueue]);
-
-  // Create session mutation
-  const createSessionMutation = useMutation({
-    mutationFn: (agentId: string) => api.createSession(agentId, 'New Chat'),
-    onSuccess: (session) => {
-      queryClient.invalidateQueries({ queryKey: ['sessions', selectedAgentId] });
-      setSelectedSessionId(session.session_id);
-    },
-  });
-
-  // Send message mutation
-  const sendMessageMutation = useMutation({
-    mutationFn: async ({ agentId, message }: { agentId: string; message: string }) => {
-      return api.sendMessage(agentId, message) as Promise<MessageResponse>;
-    },
-    onSuccess: (data) => {
-      refetchSessions();
-      // Handle HTTP response (non-streaming fallback)
-      setIsStreaming(false);
-      setMessages(prev => {
-        // Remove streaming/thinking placeholder messages
-        const filtered = prev.filter(m => !m.isStreaming && !m.thinking);
-        const meta = `${data.input_tokens} in / ${data.output_tokens} out` +
-          (data.cost_usd != null ? ` | $${data.cost_usd.toFixed(4)}` : '') +
-          (data.iterations ? ` | ${data.iterations} iter` : '');
-        return [...filtered, {
-          id: `assistant-${Date.now()}`,
-          role: 'assistant',
-          content: data.response,
-          text: data.response,
-          meta,
-          inputTokens: data.input_tokens,
-          outputTokens: data.output_tokens,
-          cost: data.cost_usd,
-          iterations: data.iterations,
-          timestamp: new Date().toISOString(),
-        }];
-      });
-    },
-    onError: (err) => {
-      setIsStreaming(false);
-      // Remove streaming message and show error
+      // Align with Alpine: use data.content for error message
+      const errorContent = (data as { content?: string }).content || 'Unknown error';
       setMessages(prev => {
         const filtered = prev.filter(m => !m.isStreaming);
         return [...filtered, {
-          id: `error-${Date.now()}`,
+          id: `error-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          role: 'system',
+          content: `Error: ${errorContent}`,
+          text: `Error: ${errorContent}`,
+          timestamp: new Date().toISOString(),
+        }];
+      });
+      // Process queue after error (like Alpine)
+      setTimeout(() => processMessageQueue(), 0);
+    }
+  }, []);
+
+  // Auto-scroll to bottom
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  // Create session mutation
+  const createSessionMutation = useMutation({
+    mutationFn: async (agentId: string) => {
+      const result = await api.createSession(agentId, 'New Chat');
+      return result;
+    },
+    onSuccess: (session) => {
+      queryClient.invalidateQueries({ queryKey: ['sessions', selectedAgentId] });
+      setSelectedSessionId(session.session_id);
+      setMessages([]);
+    },
+  });
+
+  // Delete session mutation
+  const deleteSessionMutation = useMutation({
+    mutationFn: async (sessionId: string) => {
+      await api.deleteSession(sessionId);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['sessions', selectedAgentId] });
+      if (sessions.length > 1) {
+        const remaining = sessions.filter(s => s.session_id !== selectedSessionId);
+        setSelectedSessionId(remaining[0]?.session_id || null);
+      } else {
+        setSelectedSessionId(null);
+      }
+    },
+  });
+
+  // Handle agent selection
+  const handleSelectAgent = useCallback((agentId: string) => {
+    setSelectedAgentId(agentId);
+    setSearchParams({ agent: agentId });
+    setViewMode('sessions');
+
+    // Auto-select first session or create new one
+    const agentSessions = sessions.filter(s => s.agent_id === agentId);
+    if (agentSessions.length > 0) {
+      setSelectedSessionId(agentSessions[0].session_id);
+    } else {
+      createSessionMutation.mutate(agentId);
+    }
+  }, [setSearchParams, sessions, createSessionMutation]);
+
+  // Process queued messages (like Alpine _processQueue)
+  const processMessageQueue = useCallback(() => {
+    if (messageQueueRef.current.length === 0 || isStreaming) return;
+    const next = messageQueueRef.current.shift();
+    if (next) {
+      sendPayload(next.text, next.attachments, next.thinkingMode);
+    }
+  }, [isStreaming]);
+
+  // Send payload via WebSocket or HTTP (aligned with Alpine _sendPayload)
+  const sendPayload = useCallback(async (text: string, msgAttachments?: Attachment[], msgThinkingMode?: ThinkingMode) => {
+    if (!selectedAgentId) return;
+
+    setIsStreaming(true);
+
+    // Try WebSocket first
+    const wsPayload: { type: string; content: string; thinking?: ThinkingMode; attachments?: string[] } = {
+      type: 'message',
+      content: text,
+    };
+    if (msgThinkingMode && msgThinkingMode !== 'off') {
+      wsPayload.thinking = msgThinkingMode;
+    }
+    if (msgAttachments && msgAttachments.length > 0) {
+      wsPayload.attachments = msgAttachments.map(a => a.file_id);
+    }
+    if (wsManager.send(wsPayload)) {
+      // WebSocket success - message will be streamed back
+      setMessages(prev => [...prev, {
+        id: `streaming-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        role: 'assistant',
+        content: '',
+        text: '',
+        isStreaming: true,
+        timestamp: new Date().toISOString(),
+        thinking: msgThinkingMode === 'stream',
+      }]);
+      return;
+    }
+
+    // WebSocket not available - use HTTP fallback
+    if (!wsManager.isConnected()) {
+      toaster.info('Using HTTP mode (no streaming)');
+    }
+
+    setMessages(prev => [...prev, {
+      id: `streaming-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      role: 'assistant',
+      content: '',
+      text: '',
+      isStreaming: true,
+      timestamp: new Date().toISOString(),
+    }]);
+
+    try {
+      const res = await api.sendMessage(selectedAgentId, text, selectedSessionId || undefined);
+      setIsStreaming(false);
+      setMessages(prev => {
+        const filtered = prev.filter(m => !m.isStreaming);
+        // Handle different response formats from HTTP API
+        const responseData = res as unknown as {
+          content?: string;
+          response?: string;
+          text?: string;
+          input_tokens?: number;
+          output_tokens?: number;
+          cost_usd?: number;
+        };
+        return [...filtered, {
+          id: `agent-${Date.now()}`,
+          role: 'assistant',
+          content: responseData.content || responseData.response || responseData.text || '',
+          text: responseData.content || responseData.response || responseData.text || '',
+          inputTokens: responseData.input_tokens,
+          outputTokens: responseData.output_tokens,
+          cost: responseData.cost_usd,
+          timestamp: new Date().toISOString(),
+        }];
+      });
+    } catch (err) {
+      setIsStreaming(false);
+      setMessages(prev => {
+        const filtered = prev.filter(m => !m.isStreaming);
+        return [...filtered, {
+          id: `error-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
           role: 'system',
           content: `Error: ${(err as Error).message}`,
           text: `Error: ${(err as Error).message}`,
           timestamp: new Date().toISOString(),
         }];
       });
-    },
-  });
-
-
-  // Handle scroll events to detect user scrolling
-  const handleScroll = useCallback(() => {
-    if (!scrollRef.current) return;
-
-    const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
-    const isAtBottom = scrollHeight - scrollTop - clientHeight < 100;
-    const isAtTop = scrollTop < 100;
-
-    // Show/hide scroll to top button
-    setShowScrollToTop(!isAtTop && scrollTop > 200);
-
-    if (isAtBottom) {
-      setIsUserScrolling(false);
-      setShowNewMessageIndicator(false);
-      setUnreadCount(0);
-    } else {
-      setIsUserScrolling(true);
-      if (userScrollTimeoutRef.current) {
-        clearTimeout(userScrollTimeoutRef.current);
-      }
-      userScrollTimeoutRef.current = setTimeout(() => {
-        setIsUserScrolling(false);
-      }, 2000);
     }
-  }, []);
+  }, [selectedAgentId, selectedSessionId]);
 
-  // Scroll to bottom function
-  const scrollToBottom = useCallback(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    setIsUserScrolling(false);
-    setShowNewMessageIndicator(false);
-    setUnreadCount(0);
-  }, []);
-
-  // Scroll to top function
-  const scrollToTop = useCallback(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTo({ top: 0, behavior: 'smooth' });
-    }
-  }, []);
-
-  // Check if scroll is near bottom
-  const isNearBottom = useCallback(() => {
-    if (!scrollRef.current) return true;
-    const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
-    return scrollHeight - scrollTop - clientHeight < 100;
-  }, []);
-
-  // Handle agent selection from URL
-  useEffect(() => {
-    if (agentIdFromUrl && agents.length > 0) {
-      const agent = agents.find(a => a.id === agentIdFromUrl);
-      if (agent) {
-        setSelectedAgentId(agent.id);
-      }
-    }
-  }, [agentIdFromUrl, agents]);
-
-  // Keyboard shortcuts
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Ctrl+/ for command palette
-      if ((e.ctrlKey || e.metaKey) && e.key === '/') {
-        e.preventDefault();
-        inputRef.current?.focus();
-        setInputMessage('/');
-        setShowSlashMenu(true);
-      }
-      // Ctrl+M for model switcher
-      if ((e.ctrlKey || e.metaKey) && e.key === 'm' && selectedAgent) {
-        e.preventDefault();
-        toggleModelSwitcher();
-      }
-      // Ctrl+F for search
-      if ((e.ctrlKey || e.metaKey) && e.key === 'f' && selectedAgent) {
-        e.preventDefault();
-        setShowSearch(prev => !prev);
-      }
-      // Ctrl+Shift+F for focus mode
-      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'F') {
-        e.preventDefault();
-        setFocusMode(prev => !prev);
-      }
-      // Escape to close menus
-      if (e.key === 'Escape') {
-        setShowSlashMenu(false);
-        setShowModelPicker(false);
-        setShowModelSwitcher(false);
-        setShowSearch(false);
-      }
-    };
-
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [selectedAgent]);
-
-  // Tip rotation
-  useEffect(() => {
-    if (dismissedTips) return;
-    const interval = setInterval(() => {
-      setTipIndex(prev => (prev + 1) % TIPS.length);
-    }, 30000);
-    return () => clearInterval(interval);
-  }, [dismissedTips]);
-
-  // Watch input for slash commands and model picker
-  useEffect(() => {
-    const modelMatch = inputMessage.match(/^\/model\s+(.*)$/i);
-    if (modelMatch) {
-      setShowSlashMenu(false);
-      setModelPickerFilter(modelMatch[1].toLowerCase());
-      if (models.length > 0) {
-        setModelPickerList(models.filter(m => m.available));
-        setShowModelPicker(true);
-        setModelPickerIdx(0);
-      }
-    } else if (inputMessage.startsWith('/')) {
-      setShowModelPicker(false);
-      setSlashFilter(inputMessage.slice(1).toLowerCase());
-      setShowSlashMenu(true);
-      setSlashIdx(0);
-    } else {
-      setShowSlashMenu(false);
-      setShowModelPicker(false);
-    }
-  }, [inputMessage, models]);
-
-  const filteredSlashCommands = useMemo(() => {
-    if (!slashFilter) return SLASH_COMMANDS;
-    return SLASH_COMMANDS.filter(c =>
-      c.cmd.toLowerCase().includes(slashFilter) ||
-      c.desc.toLowerCase().includes(slashFilter)
-    );
-  }, [slashFilter]);
-
-  const filteredModelPicker = useMemo(() => {
-    if (!modelPickerFilter) return modelPickerList.slice(0, 15);
-    return modelPickerList.filter(m =>
-      m.id.toLowerCase().includes(modelPickerFilter) ||
-      (m.display_name || '').toLowerCase().includes(modelPickerFilter) ||
-      m.provider.toLowerCase().includes(modelPickerFilter)
-    ).slice(0, 15);
-  }, [modelPickerList, modelPickerFilter]);
-
-  // Filter messages based on search query (search content and tool names)
-  const filteredMessages = useMemo(() => {
-    if (!searchQuery.trim()) return messages;
-    const query = searchQuery.toLowerCase();
-    return messages.filter(m => {
-      // Search message content
-      const contentMatch = (m.content || m.text || '').toLowerCase().includes(query);
-      // Search tool names
-      const toolMatch = m.tools?.some(t => t.name.toLowerCase().includes(query));
-      return contentMatch || toolMatch;
-    });
-  }, [messages, searchQuery]);
-
-  // 判断消息是否应该分组显示（同一角色且时间间隔小于5分钟）
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const isGrouped = useCallback((idx: number): boolean => {
-    if (idx === 0) return false;
-    const curr = filteredMessages[idx];
-    const prev = filteredMessages[idx - 1];
-    if (!curr || !prev) return false;
-    // 系统消息不分组
-    if (curr.role === 'system' || prev.role === 'system') return false;
-    // 思考中的消息不分组
-    if (curr.thinking || prev.thinking) return false;
-    // 同一角色且时间间隔小于5分钟（300000毫秒）
-    const timeDiff = (curr.ts || 0) - (prev.ts || 0);
-    return curr.role === prev.role && timeDiff < 300000;
-  }, [filteredMessages]);
-
-  const switcherProviders = useMemo(() => {
-    const seen = new Set<string>();
-    models.forEach(m => seen.add(m.provider));
-    return Array.from(seen).sort();
-  }, [models]);
-
-  const filteredSwitcherModels = useMemo(() => {
-    return models.filter(m => {
-      if (modelSwitcherProviderFilter && m.provider !== modelSwitcherProviderFilter) return false;
-      if (modelSwitcherFilter) {
-        const filter = modelSwitcherFilter.toLowerCase();
-        return m.id.toLowerCase().includes(filter) ||
-               (m.display_name || '').toLowerCase().includes(filter) ||
-               m.provider.toLowerCase().includes(filter);
-      }
-      return true;
-    });
-  }, [models, modelSwitcherProviderFilter, modelSwitcherFilter]);
-
-  const groupedSwitcherModels = useMemo(() => {
-    const groups: Record<string, ModelInfo[]> = {};
-    filteredSwitcherModels.forEach(m => {
-      if (!groups[m.provider]) groups[m.provider] = [];
-      groups[m.provider].push(m);
-    });
-    return Object.entries(groups).map(([provider, models]) => ({
-      provider: provider.charAt(0).toUpperCase() + provider.slice(1),
-      models,
-    }));
-  }, [filteredSwitcherModels]);
-
-  const executeSlashCommand = useCallback(async (cmd: string, args?: string) => {
-    setShowSlashMenu(false);
-    setInputMessage('');
-
+  // Execute slash command
+  const executeSlashCommand = useCallback((cmd: string, args?: string) => {
     switch (cmd) {
-      case '/help':
-        setMessages(prev => [...prev, {
-          id: `system-${Date.now()}`,
-          role: 'system',
-          content: SLASH_COMMANDS.map(c => `\`${c.cmd}\` — ${c.desc}`).join('\n'),
-          text: SLASH_COMMANDS.map(c => `${c.cmd} — ${c.desc}`).join('\n'),
-          timestamp: new Date().toISOString(),
-        }]);
-        break;
-      case '/agents':
-        window.location.href = '/agents';
-        break;
-      case '/new':
-        if (selectedAgentId) {
-          try {
-            await api.resetSession(selectedAgentId);
-            setMessages([]);
-          } catch (e) {
-            console.error('Failed to reset session:', e);
-          }
-        }
-        break;
-      case '/compact':
-        if (selectedAgentId) {
-          try {
-            const result = await api.compactSession(selectedAgentId);
-            setMessages(prev => [...prev, {
-              id: `system-${Date.now()}`,
-              role: 'system',
-              content: result.message || 'Compaction complete',
-              text: result.message || 'Compaction complete',
-              timestamp: new Date().toISOString(),
-            }]);
-          } catch (e) {
-            console.error('Failed to compact:', e);
-          }
-        }
-        break;
-      case '/stop':
-        if (selectedAgentId) {
-          try {
-            await api.stopAgentRun(selectedAgentId);
-            setIsStreaming(false);
-          } catch (e) {
-            console.error('Failed to stop:', e);
-          }
-        }
-        break;
-      case '/usage':
-        const approxTokens = messages.reduce((sum, m) => sum + Math.round((m.content || m.text || '').length / 4), 0);
-        setMessages(prev => [...prev, {
-          id: `system-${Date.now()}`,
-          role: 'system',
-          content: `**Session Usage**\n- Messages: ${messages.length}\n- Approx tokens: ~${approxTokens}`,
-          text: `Session Usage\n- Messages: ${messages.length}\n- Approx tokens: ~${approxTokens}`,
-          timestamp: new Date().toISOString(),
-        }]);
-        break;
-      case '/think': {
-        let newMode: 'off' | 'on' | 'stream';
-        if (args === 'on') newMode = 'on';
-        else if (args === 'off') newMode = 'off';
-        else if (args === 'stream') newMode = 'stream';
-        else {
-          // Cycle through modes: off -> on -> stream -> off
-          newMode = thinkingMode === 'off' ? 'on' : thinkingMode === 'on' ? 'stream' : 'off';
-        }
-        setThinkingMode(newMode);
-        const modeLabel = newMode === 'stream' ? 'enabled (streaming reasoning)' : newMode === 'on' ? 'enabled' : 'disabled';
-        setMessages(prev => [...prev, {
-          id: `system-${Date.now()}`,
-          role: 'system',
-          content: `Extended thinking **${modeLabel}**. ` +
-            (newMode === 'stream' ? 'Reasoning tokens will appear in a collapsible panel.' :
-             newMode === 'on' ? 'The agent will show its reasoning when supported by the model.' :
-             'Normal response mode.'),
-          text: `Extended thinking ${modeLabel}. ` +
-            (newMode === 'stream' ? 'Reasoning tokens will appear in a collapsible panel.' :
-             newMode === 'on' ? 'The agent will show its reasoning when supported by the model.' :
-             'Normal response mode.'),
-          timestamp: new Date().toISOString(),
-        }]);
-        break;
-      }
-      case '/context':
-        if (selectedAgentId && wsManager.isConnected()) {
-          wsManager.send({ type: 'command', command: 'context', args: '' });
-        }
-        break;
-      case '/verbose': {
-        let newVerbose: 'off' | 'on' | 'full';
-        if (args === 'off') newVerbose = 'off';
-        else if (args === 'on') newVerbose = 'on';
-        else if (args === 'full') newVerbose = 'full';
-        else {
-          newVerbose = verboseMode === 'off' ? 'on' : verboseMode === 'on' ? 'full' : 'off';
-        }
-        setVerboseMode(newVerbose);
-        const verboseLabel = newVerbose === 'full' ? 'full (all tool details)' : newVerbose === 'on' ? 'on (compact tools)' : 'off (hidden)';
-        setMessages(prev => [...prev, {
-          id: `system-${Date.now()}`,
-          role: 'system',
-          content: `Tool detail level: **${verboseLabel}**`,
-          text: `Tool detail level: ${verboseLabel}`,
-          timestamp: new Date().toISOString(),
-        }]);
-        break;
-      }
-      case '/queue':
-        if (selectedAgentId && wsManager.isConnected()) {
-          wsManager.send({ type: 'command', command: 'queue', args: '' });
-        } else {
-          setMessages(prev => [...prev, {
-            id: `system-${Date.now()}`,
-            role: 'system',
-            content: 'Not connected.',
-            text: 'Not connected.',
-            timestamp: new Date().toISOString(),
-          }]);
-        }
-        break;
-      case '/clear':
+    case '/help':
+      setShowSlashMenu(true);
+      break;
+    case '/agents':
+      window.location.href = '/agents';
+      break;
+    case '/new':
+      if (selectedAgentId) {
+        api.resetSession(selectedAgentId);
         setMessages([]);
-        break;
-      case '/exit':
-        wsManager.disconnect();
-        setSelectedAgentId(null);
-        setMessages([]);
-        setSearchParams({});
-        break;
-      case '/budget':
-        try {
-          const budget = await api.getBudget();
-          const fmt = (v: number) => v > 0 ? `$${v.toFixed(2)}` : 'unlimited';
-          setMessages(prev => [...prev, {
-            id: `system-${Date.now()}`,
-            role: 'system',
-            content: `**Budget Status**\n- Hourly: $${budget.hourly_spend.toFixed(4)} / ${fmt(budget.hourly_limit)}\n- Daily: $${budget.daily_spend.toFixed(4)} / ${fmt(budget.daily_limit)}\n- Monthly: $${budget.monthly_spend.toFixed(4)} / ${fmt(budget.monthly_limit)}`,
-            text: `Budget Status\n- Hourly: $${budget.hourly_spend.toFixed(4)} / ${fmt(budget.hourly_limit)}\n- Daily: $${budget.daily_spend.toFixed(4)} / ${fmt(budget.daily_limit)}\n- Monthly: $${budget.monthly_spend.toFixed(4)} / ${fmt(budget.monthly_limit)}`,
-            timestamp: new Date().toISOString(),
-          }]);
-        } catch (e) {
-          console.error('Failed to get budget:', e);
+        toaster.success('Session reset');
+      }
+      break;
+    case '/compact':
+      if (selectedAgentId) {
+        api.compactSession(selectedAgentId).then(() => {
+          toaster.success('Session compacted');
+        }).catch((e) => {
+          toaster.error('Failed to compact: ' + e.message);
+        });
+      }
+      break;
+    case '/model':
+      if (args) {
+        // Extract model ID from args
+        const modelId = args.trim().split(' ')[0];
+        if (selectedAgentId && modelId) {
+          api.changeAgentModel(selectedAgentId, modelId).then(() => {
+            queryClient.invalidateQueries({ queryKey: ['agents'] });
+            toaster.success('Model changed to ' + modelId);
+          }).catch((e) => {
+            toaster.error('Failed to change model: ' + e.message);
+          });
         }
-        break;
-      case '/peers':
-        try {
-          const status = await api.getNetworkStatus();
-          setMessages(prev => [...prev, {
-            id: `system-${Date.now()}`,
-            role: 'system',
-            content: `**OFP Network**\n- Status: ${status.enabled ? 'Enabled' : 'Disabled'}\n- Connected peers: ${status.connected_peers} / ${status.total_peers}`,
-            text: `OFP Network\n- Status: ${status.enabled ? 'Enabled' : 'Disabled'}\n- Connected peers: ${status.connected_peers} / ${status.total_peers}`,
-            timestamp: new Date().toISOString(),
-          }]);
-        } catch (e) {
-          console.error('Failed to get network status:', e);
-        }
-        break;
-      case '/a2a':
-        try {
-          const result = await api.listA2AAgents();
-          const agents = result.agents || [];
-          if (!agents.length) {
-            setMessages(prev => [...prev, {
-              id: `system-${Date.now()}`,
-              role: 'system',
-              content: 'No external A2A agents discovered.',
-              text: 'No external A2A agents discovered.',
-              timestamp: new Date().toISOString(),
-            }]);
-          } else {
-            const lines = agents.map(a => `- **${a.name}** — ${a.url}`);
-            setMessages(prev => [...prev, {
-              id: `system-${Date.now()}`,
-              role: 'system',
-              content: `**A2A Agents (${agents.length})**\n${lines.join('\n')}`,
-              text: `A2A Agents (${agents.length})\n${lines.join('\n')}`,
-              timestamp: new Date().toISOString(),
-            }]);
-          }
-        } catch (e) {
-          console.error('Failed to get A2A agents:', e);
-        }
-        break;
-      case '/status':
-        try {
-          const status = await api.status();
-          setMessages(prev => [...prev, {
-            id: `system-${Date.now()}`,
-            role: 'system',
-            content: `**System Status**\n- Agents: ${(status as { agent_count?: number }).agent_count || 0}\n- Uptime: ${(status as { uptime_seconds?: number }).uptime_seconds || 0}s\n- Version: ${(status as { version?: string }).version || '?'}`,
-            text: `System Status\n- Agents: ${(status as { agent_count?: number }).agent_count || 0}\n- Uptime: ${(status as { uptime_seconds?: number }).uptime_seconds || 0}s\n- Version: ${(status as { version?: string }).version || '?'}`,
-            timestamp: new Date().toISOString(),
-          }]);
-        } catch (e) {
-          console.error('Failed to get status:', e);
-        }
-        break;
-      case '/model':
-        if (selectedAgent) {
-          if (args) {
-            try {
-              await api.changeAgentModel(selectedAgent.id, args);
-              setMessages(prev => [...prev, {
-                id: `system-${Date.now()}`,
-                role: 'system',
-                content: `Model switched to: \`${args}\``,
-                text: `Model switched to: ${args}`,
-                timestamp: new Date().toISOString(),
-              }]);
-            } catch (e) {
-              console.error('Failed to switch model:', e);
-            }
-          } else {
-            setMessages(prev => [...prev, {
-              id: `system-${Date.now()}`,
-              role: 'system',
-              content: `**Current Model**\n- Provider: \`${selectedAgent.model_provider || '?'}\`\n- Model: \`${selectedAgent.model_name || '?'}\``,
-              text: `Current Model\n- Provider: ${selectedAgent.model_provider || '?'}\n- Model: ${selectedAgent.model_name || '?'}`,
-              timestamp: new Date().toISOString(),
-            }]);
-          }
-        }
-        break;
-    }
-  }, [selectedAgentId, selectedAgent, messages, messageQueue]);
-
-  const sendMessageContent = async (content: string) => {
-    if (!selectedAgentId) return;
-    console.log('[Chat] sendMessageContent called');
-
-    // Add user message
-    const userMessage: ExtendedMessage = {
-      id: `user-${Date.now()}`,
-      role: 'user',
-      content,
-      text: content,
-      timestamp: new Date().toISOString(),
-    };
-    setMessages(prev => [...prev, userMessage]);
-
-    // Add placeholder for assistant response
-    const assistantMessage: ExtendedMessage = {
-      id: `assistant-${Date.now()}`,
-      role: 'assistant',
-      content: '',
-      text: '',
-      isStreaming: true,
-      streaming: true,
-      timestamp: new Date().toISOString(),
-    };
-    setMessages(prev => [...prev, assistantMessage]);
-    setIsStreaming(true);
-
-    try {
-      // Try WebSocket first for streaming
-      // Wait for connection to be ready (up to 5 seconds)
-      console.log('[Chat] Waiting for WebSocket connection...');
-      const connected = await wsManager.waitForConnection(5000);
-      console.log('[Chat] WebSocket connection state:', connected);
-      if (connected) {
-        console.log('[Chat] Sending message via WebSocket');
-        const sent = wsManager.send({ type: 'message', content });
-        console.log('[Chat] WebSocket send result:', sent);
       } else {
-        // Fallback to HTTP if WebSocket not connected
-        console.log('[Chat] WebSocket not connected, using HTTP fallback');
-        warn('Using HTTP mode (no streaming)');
-        await sendMessageMutation.mutateAsync({ agentId: selectedAgentId, message: content });
+        toaster.info('Current model: ' + currentModelDisplay);
       }
-    } catch (err) {
-      // Error already handled by mutation's onError, just log here
-      console.error('[Chat] Failed to send message:', err);
+      break;
+    case '/stop':
+      if (selectedAgentId) {
+        api.stopAgentRun(selectedAgentId).then(() => {
+          toaster.success('Agent run stopped');
+        }).catch((e) => {
+          toaster.error('Failed to stop: ' + e.message);
+        });
+      }
+      break;
+    case '/thinking':
+      if (args) {
+        const mode = args.trim().toLowerCase() as ThinkingMode;
+        if (['off', 'on', 'stream'].includes(mode)) {
+          setThinkingMode(mode);
+          toaster.success('Thinking mode set to: ' + mode);
+        } else {
+          toaster.error('Invalid mode. Use: off, on, stream');
+        }
+      } else {
+        toaster.info('Current thinking mode: ' + thinkingMode);
+      }
+      break;
+    case '/search':
+      setShowSearch(true);
+      setTimeout(() => searchInputRef.current?.focus(), 100);
+      break;
+    case '/usage':
+      // Show usage info from last message
+      const lastMsg = messages[messages.length - 1];
+      if (lastMsg?.inputTokens || lastMsg?.outputTokens) {
+        toaster.info(`Tokens: ${lastMsg.inputTokens || 0} in / ${lastMsg.outputTokens || 0} out${lastMsg.cost ? ` | Cost: $${lastMsg.cost.toFixed(4)}` : ''}`);
+      } else {
+        toaster.info('No usage data available yet');
+      }
+      break;
+    default:
+      toaster.warn('Unknown command: ' + cmd);
     }
-  };
+  }, [selectedAgentId, currentModelDisplay, messages, thinkingMode, queryClient]);
 
-  // Store sendMessageContent in ref for WebSocket callback
-  sendMessageContentRef.current = sendMessageContent;
-
+  // Send message (aligned with Alpine sendMessage)
   const handleSend = useCallback(async () => {
-    if (!inputMessage.trim() || !selectedAgentId || isStreaming) return;
+    if (!inputMessage.trim() || !selectedAgentId || !selectedSessionId) return;
 
-    const content = inputMessage.trim();
-    setInputMessage('');
+    const text = inputMessage.trim();
 
-    // Handle slash commands
-    if (content.startsWith('/')) {
-      const parts = content.slice(1).split(' ');
+    // Check for slash command
+    if (text.startsWith('/')) {
+      const parts = text.slice(1).split(' ');
       const cmd = '/' + parts[0];
       const args = parts.slice(1).join(' ');
-      const command = SLASH_COMMANDS.find(c => c.cmd === cmd);
-      if (command) {
-        await executeSlashCommand(command.cmd, args);
+      if (slashCommands.some(c => c.cmd === cmd)) {
+        setInputMessage('');
+        executeSlashCommand(cmd, args);
         return;
       }
     }
 
-    // If already streaming, queue the message
+    // If streaming, queue the message (like Alpine)
     if (isStreaming) {
-      setMessageQueue(prev => [...prev, content]);
+      messageQueueRef.current.push({ text, attachments: [...attachments], thinkingMode });
+      toaster.info('Message queued');
+      setInputMessage('');
       return;
     }
 
-    await sendMessageContent(content);
-  }, [inputMessage, selectedAgentId, isStreaming, executeSlashCommand, sendMessageContent]);
+    // Clear input and attachments immediately (like Alpine)
+    setInputMessage('');
+    const currentAttachments = [...attachments];
+    setAttachments([]);
 
-  const handleAgentSelect = (agentId: string) => {
-    setSelectedAgentId(agentId);
-    setSearchParams({ agent: agentId });
-    setMessages([]);
-  };
-
-  const handleBackToAgents = () => {
-    setSelectedAgentId(null);
-    setSearchParams({});
-    setMessages([]);
-    wsManager.disconnect();
-  };
-
-  // Kill agent (stop agent run completely)
-  const killAgent = useCallback(async () => {
-    if (!selectedAgent) return;
-
-    const confirmed = window.confirm(`Stop agent "${selectedAgent.name}"? The agent will be shut down.`);
-    if (!confirmed) return;
-
-    try {
-      await api.deleteAgent(selectedAgent.id);
-      wsManager.disconnect();
-      setMessages([]);
-      setSelectedAgentId(null);
-      setSearchParams({});
-      success(`Agent "${selectedAgent.name}" stopped`);
-      // Refresh agents list
-      queryClient.invalidateQueries({ queryKey: ['agents'] });
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Unknown error';
-      error('Failed to stop agent: ' + message);
-    }
-  }, [selectedAgent, setSearchParams, success, error, queryClient]);
-
-  const copyMessage = async (msg: ExtendedMessage) => {
-    const text = msg.content || msg.text || '';
-    await navigator.clipboard.writeText(text);
-    setMessages(prev => prev.map(m => m.id === msg.id ? { ...m, _copied: true } : m));
-    setTimeout(() => {
-      setMessages(prev => prev.map(m => m.id === msg.id ? { ...m, _copied: false } : m));
-    }, 2000);
-  };
-
-  const deleteMessage = (msg: ExtendedMessage) => {
-    if (window.confirm('确定要删除这条消息吗？')) {
-      setMessages(prev => prev.filter(m => m.id !== msg.id));
-      success('消息已删除');
-    }
-  };
-
-  // Start editing a message
-  const startEditMessage = (msg: ExtendedMessage) => {
-    if (msg.role !== 'user') return;
-    setEditingMessageId(msg.id);
-    setEditText(msg.content || msg.text || '');
-  };
-
-  // Cancel editing
-  const cancelEditMessage = () => {
-    setEditingMessageId(null);
-    setEditText('');
-  };
-
-  // Save edited message
-  const saveEditMessage = async () => {
-    if (!editingMessageId || !selectedAgentId || !editText.trim()) return;
-
-    const trimmedText = editText.trim();
-    const messageIndex = messages.findIndex(m => m.id === editingMessageId);
-    if (messageIndex === -1) return;
-
-    // Update the message with edited content and mark as edited
-    setMessages(prev => prev.map((m, idx) =>
-      idx === messageIndex
-        ? { ...m, content: trimmedText, text: trimmedText, edited: true }
-        : m
-    ));
-
-    // Remove all messages after the edited message (AI responses to re-trigger)
-    setMessages(prev => prev.slice(0, messageIndex + 1));
-
-    // Reset editing state
-    setEditingMessageId(null);
-    setEditText('');
-
-    // Show success toast
-    success('消息已编辑');
-
-    // Re-send the edited message to trigger new AI response
-    setIsStreaming(true);
-
-    // Add placeholder for assistant response
-    const assistantMessage: ExtendedMessage = {
-      id: `assistant-${Date.now()}`,
-      role: 'assistant',
-      content: '',
-      text: '',
-      isStreaming: true,
-      streaming: true,
+    // Show user message immediately with attachments
+    setMessages(prev => [...prev, {
+      id: `user-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      role: 'user',
+      content: text,
+      text: text,
       timestamp: new Date().toISOString(),
-    };
-    setMessages(prev => [...prev, assistantMessage]);
+      images: currentAttachments.map(a => ({ file_id: a.file_id, filename: a.filename })),
+    }]);
 
-    try {
-      // Try WebSocket first for streaming
-      const connected = await wsManager.waitForConnection(5000);
-      if (connected) {
-        wsManager.send({ type: 'message', content: trimmedText });
-      } else {
-        // Fallback to HTTP if WebSocket not connected
-        await sendMessageMutation.mutateAsync({ agentId: selectedAgentId, message: trimmedText });
-      }
-    } catch (err) {
-      console.error('[Chat] Failed to send edited message:', err);
-      error('发送编辑后的消息失败');
-    }
-  };
+    // Send the payload with thinking mode and attachments
+    await sendPayload(text, currentAttachments, thinkingMode);
+  }, [inputMessage, selectedAgentId, selectedSessionId, isStreaming, attachments, thinkingMode, sendPayload, executeSlashCommand]);
 
-  // Handle edit textarea keydown
-  const handleEditKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      saveEditMessage();
-    } else if (e.key === 'Escape') {
-      e.preventDefault();
-      cancelEditMessage();
-    }
-  };
+  // Handle input change for slash commands
+  const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setInputMessage(value);
 
-  const toggleModelSwitcher = () => {
-    if (showModelSwitcher) {
-      setShowModelSwitcher(false);
+    // Check for slash command trigger
+    if (value.startsWith('/')) {
+      const query = value.slice(1);
+      setSlashFilter(query);
+      setShowSlashMenu(true);
+      setSlashIdx(0);
     } else {
-      setModelSwitcherFilter('');
-      setModelSwitcherProviderFilter('');
-      setShowModelSwitcher(true);
+      setShowSlashMenu(false);
     }
-  };
-
-  const switchModel = async (model: ModelInfo) => {
-    if (!selectedAgent) return;
-    if (model.id === selectedAgent.model_name) {
-      setShowModelSwitcher(false);
-      return;
-    }
-    setModelSwitching(true);
-    try {
-      await api.changeAgentModel(selectedAgent.id, model.id);
-      setShowModelSwitcher(false);
-    } catch (e) {
-      console.error('Failed to switch model:', e);
-    } finally {
-      setModelSwitching(false);
-    }
-  };
-
-  const pickModel = (modelId: string) => {
-    setShowModelPicker(false);
-    setInputMessage(`/model ${modelId}`);
-    executeSlashCommand('/model', modelId);
-  };
-
-  const toggleSearch = () => {
-    setShowSearch(prev => !prev);
-    if (!showSearch) {
-      setTimeout(() => {
-        document.getElementById('chat-search-input')?.focus();
-      }, 100);
-    }
-  };
-
-  // File attachment handling
-  const handleFileSelect = async (files: FileList | null) => {
-    if (!files || !selectedAgentId) return;
-
-    const newAttachments: Attachment[] = Array.from(files).map(file => ({
-      file,
-      preview: file.type.startsWith('image/') ? URL.createObjectURL(file) : undefined,
-    }));
-
-    setAttachments(prev => [...prev, ...newAttachments]);
-
-    // Upload files
-    for (const att of newAttachments) {
-      try {
-        setAttachments(prev => prev.map(a =>
-          a.file === att.file ? { ...a, uploading: true } : a
-        ));
-        await api.upload(selectedAgentId, att.file);
-        setAttachments(prev => prev.map(a =>
-          a.file === att.file ? { ...a, uploading: false } : a
-        ));
-      } catch (e) {
-        console.error('Failed to upload file:', e);
-        setAttachments(prev => prev.filter(a => a.file !== att.file));
-      }
-    }
-  };
-
-  const removeAttachment = (index: number) => {
-    setAttachments(prev => prev.filter((_, i) => i !== index));
-  };
-
-  // Drag and drop handlers (inline functions used in JSX)
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragOver(true);
   }, []);
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const handleDragLeave = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragOver(false);
-  }, []);
-
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragOver(false);
-
-    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      handleFileSelect(e.dataTransfer.files);
+  // Handle key press
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    // Slash menu navigation
+    if (showSlashMenu) {
+      switch (e.key) {
+      case 'ArrowDown':
+        e.preventDefault();
+        setSlashIdx(prev => (prev + 1) % filteredSlashCommands.length);
+        return;
+      case 'ArrowUp':
+        e.preventDefault();
+        setSlashIdx(prev => (prev - 1 + filteredSlashCommands.length) % filteredSlashCommands.length);
+        return;
+      case 'Enter':
+        e.preventDefault();
+        if (filteredSlashCommands[slashIdx]) {
+          const cmd = filteredSlashCommands[slashIdx];
+          setInputMessage(cmd.cmd + ' ');
+          setShowSlashMenu(false);
+          inputRef.current?.focus();
+        }
+        return;
+      case 'Escape':
+        setShowSlashMenu(false);
+        return;
+      }
     }
-  }, [handleFileSelect]);
 
-  // Voice recording
-  const startRecording = async () => {
+    // Search navigation
+    if (showSearch) {
+      switch (e.key) {
+      case 'Enter':
+        e.preventDefault();
+        navigateSearch(e.shiftKey ? 'prev' : 'next');
+        return;
+      case 'Escape':
+        setShowSearch(false);
+        setSearchQuery('');
+        setSearchResults([]);
+        return;
+      }
+    }
+
+    // Global shortcuts
+    if (e.ctrlKey || e.metaKey) {
+      switch (e.key.toLowerCase()) {
+      case 'f':
+        if (e.shiftKey) {
+          e.preventDefault();
+          setShowSearch(true);
+          setTimeout(() => searchInputRef.current?.focus(), 100);
+        }
+        return;
+      case 'k':
+        e.preventDefault();
+        setShowSlashMenu(true);
+        setInputMessage('/');
+        setSlashFilter('');
+        setSlashIdx(0);
+        return;
+      }
+    }
+
+    // Send message
+    if (e.key === 'Enter' && !e.shiftKey && !showSlashMenu) {
+      e.preventDefault();
+      handleSend();
+    }
+  }, [showSlashMenu, showSearch, filteredSlashCommands, slashIdx, handleSend, navigateSearch]);
+
+  // Reset session
+  const handleResetSession = useCallback(async () => {
+    if (!selectedAgentId || !selectedSessionId) return;
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mediaRecorder = new MediaRecorder(stream);
-      const chunks: BlobPart[] = [];
-
-      mediaRecorder.ondataavailable = (e) => {
-        if (e.data.size > 0) chunks.push(e.data);
-      };
-
-      mediaRecorder.onstop = async () => {
-        const blob = new Blob(chunks, { type: 'audio/webm' });
-        const file = new File([blob], 'recording-`${Date.now()}`.webm', { type: 'audio/webm' });
-        // Create a FileList-like object for handleFileSelect
-        const dt = new DataTransfer();
-        dt.items.add(file);
-        await handleFileSelect(dt.files);
-      };
-
-      mediaRecorderRef.current = mediaRecorder;
-      mediaRecorder.start();
-      setRecording(true);
-      setRecordingTime(0);
-
-      recordingTimerRef.current = setInterval(() => {
-        setRecordingTime(prev => prev + 1);
-      }, 1000);
+      await api.resetSession(selectedAgentId);
+      setMessages([]);
     } catch (e) {
-      console.error("Failed to start recording:", e);
-      error("无法访问麦克风，请检查权限设置");
+      console.error('Failed to reset session:', e);
     }
-  };
-
-  const stopRecording = () => {
-    if (mediaRecorderRef.current && recording) {
-      mediaRecorderRef.current.stop();
-      mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
-      setRecording(false);
-      if (recordingTimerRef.current) {
-        clearInterval(recordingTimerRef.current);
-        recordingTimerRef.current = null;
-      }
-    }
-  };
-
-  // Toggle recording (click to start/stop)
-  const toggleRecording = () => {
-    if (recording) {
-      stopRecording();
-    } else {
-      startRecording();
-    }
-  };
-  const formatTime = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
-
-  // Get context pressure color
-  const getContextPressureColor = () => {
-    switch (contextPressure) {
-      case 'critical': return 'bg-red-500';
-      case 'high': return 'bg-orange-500';
-      case 'medium': return 'bg-yellow-500';
-      default: return 'bg-green-500';
-    }
-  };
-
-    // Render markdown (simple version)
-  const renderMarkdown = (text: string) => {
-    // Simple markdown rendering - convert **bold**, *italic*, `code`, and code blocks
-    let html = text
-      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-      .replace(/\*(.*?)\*/g, '<em>$1</em>')
-      .replace(/`(.*?)`/g, '<code class="bg-muted px-1 py-0.5 rounded text-sm">$1</code>')
-      .replace(/```([\s\S]*?)```/g, '<pre class="bg-muted p-3 rounded-lg overflow-x-auto my-2"><code>$1</code></pre>')
-      .replace(/\n/g, '<br>');
-
-    return html;
-  };
-
-  // Code block component with copy button
-  const CodeBlockWithCopy = ({ code }: { code: string }) => {
-    const [copied, setCopied] = useState(false);
-
-    const handleCopy = async () => {
-      try {
-        await navigator.clipboard.writeText(code);
-        setCopied(true);
-        success('代码已复制');
-        setTimeout(() => setCopied(false), 2000);
-      } catch {
-        error('复制失败');
-      }
-    };
-
-    return (
-      <div className="relative group my-2">
-        <pre className="bg-muted p-3 pt-10 rounded-lg overflow-x-auto">
-          <code>{code}</code>
-        </pre>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="absolute top-2 right-2 h-7 w-7 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
-          onClick={handleCopy}
-        >
-          {copied ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
-        </Button>
-      </div>
-    );
-  };
-
-  // Image component with preview dialog
-  const MessageImage = ({ src }: { src: string }) => {
-    const [error, setError] = useState(false);
-    const [expanded, setExpanded] = useState(false);
-
-    if (error) {
-      return (
-        <div className="flex items-center gap-2 text-muted-foreground text-sm p-2 bg-muted rounded-lg">
-          <ImageIcon className="h-4 w-4" />
-          <span>[图片加载失败]</span>
-        </div>
-      );
-    }
-
-    return (
-      <>
-        <img
-          src={src}
-          alt="图片预览"
-          className="max-w-full max-h-[200px] rounded-lg cursor-pointer hover:opacity-90 transition-opacity border"
-          onClick={() => setExpanded(true)}
-          onError={() => setError(true)}
-          loading="lazy"
-        />
-        <Dialog open={expanded} onOpenChange={setExpanded}>
-          <DialogContent className="max-w-4xl p-0 overflow-hidden bg-black/90 border-none">
-            <div className="relative flex items-center justify-center min-h-[200px]">
-              <img
-                src={src}
-                alt="大图预览"
-                className="max-w-full max-h-[80vh] object-contain"
-                onError={() => setError(true)}
-              />
-            </div>
-          </DialogContent>
-        </Dialog>
-      </>
-    );
-  };
-
-  // Helper function to render text with images
-  const renderTextWithImages = (text: string): React.ReactNode[] => {
-    const elements: React.ReactNode[] = [];
-    const parts = text.split(imageUrlRegex);
-    const matches = text.match(imageUrlRegex) || [];
-
-    let key = 0;
-    for (let i = 0; i < parts.length; i++) {
-      // Add text part
-      if (parts[i]) {
-        elements.push(<span key={key++}>{parts[i]}</span>);
-      }
-      // Add image if there's a match at this position
-      if (matches[i]) {
-        elements.push(<MessageImage key={key++} src={matches[i]} />);
-      }
-    }
-
-    return elements;
-  };
-
-  // Render markdown with code block copy buttons and images
-  const renderMarkdownElements = (text: string): React.ReactNode[] => {
-    const elements: React.ReactNode[] = [];
-    const codeBlockRegex = /```([\s\S]*?)```/g;
-    let lastIndex = 0;
-    let match;
-    let key = 0;
-
-    while ((match = codeBlockRegex.exec(text)) !== null) {
-      // Add text before code block (with image support)
-      if (match.index > lastIndex) {
-        const beforeText = text.slice(lastIndex, match.index);
-        // Split by newlines and process each line/paragraph
-        const lines = beforeText.split('\n');
-        lines.forEach((line, idx) => {
-          if (line.trim()) {
-            // Check if line contains image URLs
-            if (imageUrlRegex.test(line)) {
-              imageUrlRegex.lastIndex = 0; // Reset regex
-              const lineElements = renderTextWithImages(line);
-              elements.push(<p key={key++} className="my-2">{lineElements}</p>);
-            } else {
-              // Regular markdown processing
-              const processedHtml = line
-                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-                .replace(/\*(.*?)\*/g, '<em>$1</em>')
-                .replace(/`(.*?)`/g, '<code class="bg-muted px-1 py-0.5 rounded text-sm">$1</code>');
-              elements.push(<span key={key++} dangerouslySetInnerHTML={{ __html: processedHtml }} />);
-            }
-          }
-          if (idx < lines.length - 1) {
-            elements.push(<br key={key++} />);
-          }
-        });
-      }
-
-      // Add code block with copy button
-      const code = match[1].trim();
-      elements.push(<CodeBlockWithCopy key={key++} code={code} />);
-
-      lastIndex = match.index + match[0].length;
-    }
-
-    // Add remaining text (with image support)
-    if (lastIndex < text.length) {
-      const remainingText = text.slice(lastIndex);
-      const lines = remainingText.split('\n');
-      lines.forEach((line, idx) => {
-        if (line.trim()) {
-          // Check if line contains image URLs
-          if (imageUrlRegex.test(line)) {
-            imageUrlRegex.lastIndex = 0; // Reset regex
-            const lineElements = renderTextWithImages(line);
-            elements.push(<p key={key++} className="my-2">{lineElements}</p>);
-          } else {
-            // Regular markdown processing
-            const processedHtml = line
-              .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-              .replace(/\*(.*?)\*/g, '<em>$1</em>')
-              .replace(/`(.*?)`/g, '<code class="bg-muted px-1 py-0.5 rounded text-sm">$1</code>');
-            elements.push(<span key={key++} dangerouslySetInnerHTML={{ __html: processedHtml }} />);
-          }
-        }
-        if (idx < lines.length - 1) {
-          elements.push(<br key={key++} />);
-        }
-      });
-    }
-
-    return elements.length > 0 ? elements : [<span key={0}>{text}</span>];
-  };
-
-  // Highlight search matches in text
-  const highlightSearch = (text: string): string => {
-    if (!searchQuery.trim() || !text) return text;
-    const escapedQuery = searchQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const regex = new RegExp(`(${escapedQuery})`, 'gi');
-    return text.replace(regex, '<mark style="background:var(--warning);color:var(--bg);border-radius:2px;padding:0 2px">$1</mark>');
-  };
-
-  // Show agent selection if no agent selected
-  if (!selectedAgentId || !selectedAgent) {
-    return (
-      <div className="flex flex-col h-full p-6">
-        <h2 className="text-2xl font-bold mb-6">Chat</h2>
-
-        {agentsLoading ? (
-          <div className="flex items-center justify-center flex-1">
-            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-          </div>
-        ) : agents.length === 0 ? (
-          <div className="flex flex-col items-center justify-center flex-1 text-center">
-            <MessageSquare className="h-12 w-12 text-muted-foreground mb-4" />
-            <h3 className="text-lg font-medium mb-2">No agents available</h3>
-            <p className="text-muted-foreground">Create an agent first to start chatting</p>
-            <Button className="mt-4" onClick={() => window.location.href = '/agents'}>
-              Go to Agents
-            </Button>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {agents.map((agent) => (
-              <Card
-                key={agent.id}
-                className="cursor-pointer hover:border-primary transition-colors"
-                onClick={() => handleAgentSelect(agent.id)}
-              >
-                <CardContent className="p-4">
-                  <div className="flex items-center gap-3">
-                    <Avatar className="h-10 w-10">
-                      <AvatarFallback style={{ backgroundColor: agent.identity?.color || undefined }}>
-                        {agent.identity?.emoji || <Bot className="h-5 w-5" />}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-medium truncate">{agent.name}</h3>
-                      <p className="text-xs text-muted-foreground truncate">
-                        {agent.model_provider || agent.model?.provider || 'unknown'}:{agent.model_name || agent.model?.model || 'unknown'}
-                      </p>
-                    </div>
-                    <Badge variant={agent.status === 'running' ? 'default' : 'secondary'}>
-                      {agent.status}
-                    </Badge>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        )}
-      </div>
-    );
-  }
+  }, [selectedAgentId, selectedSessionId]);
 
   return (
-    <div className={`flex h-full ${focusMode ? 'fixed inset-0 z-50 bg-background' : ''}`}>
-      {/* Sidebar with sessions */}
-      <div className={`${focusMode ? 'hidden' : 'w-64'} border-r bg-muted/30 flex flex-col`}>
-        <div className="p-3 border-b">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="w-full justify-start gap-2"
-            onClick={handleBackToAgents}
-          >
-            <ChevronLeft className="h-4 w-4" />
-            Back to Agents
-          </Button>
-        </div>
-
-        <div className="p-3 border-b">
-          <h2 className="font-semibold text-sm mb-2">Sessions</h2>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="w-full justify-start gap-2 text-muted-foreground"
-            onClick={() => selectedAgentId && createSessionMutation.mutate(selectedAgentId)}
-          >
-            <Plus className="h-4 w-4" />
-            New Session
-          </Button>
-        </div>
-
-        <ScrollArea className="flex-1">
-          <div className="p-2 space-y-1">
-            {sessions.filter((s): s is Session => !!s && !!s.session_id).map((session) => (
-              <Button
-                key={session.session_id}
-                variant={selectedSessionId === session.session_id ? 'secondary' : 'ghost'}
-                size="sm"
-                className="w-full justify-start text-left"
-                onClick={() => setSelectedSessionId(session.session_id)}
-              >
-                <MessageSquare className="h-4 w-4 mr-2" />
-                <span className="truncate">{session.title || 'Untitled'}</span>
-              </Button>
-            ))}
-          </div>
-        </ScrollArea>
-      </div>
-
-      {/* Chat area */}
-      <div
-        className={`flex-1 flex flex-col relative ${dragOver ? 'bg-primary/5' : ''}`}
-        onDragOver={(e) => {
-          e.preventDefault();
-          setDragOver(true);
-        }}
-        onDragLeave={(e) => {
-          e.preventDefault();
-          setDragOver(false);
-        }}
-        onDrop={(e) => {
-          e.preventDefault();
-          setDragOver(false);
-          if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-            handleFileSelect(e.dataTransfer.files);
-          }
-        }}
-      >
-        {/* Drag overlay */}
-        {dragOver && (
-          <div className="absolute inset-0 bg-primary/10 border-2 border-primary border-dashed rounded-lg z-50 flex items-center justify-center pointer-events-none m-2">
-            <div className="text-center">
-              <div className="text-primary font-semibold text-lg">释放以上传文件</div>
-            </div>
-          </div>
-        )}
-
+    <div className="flex h-full">
+      {/* Sidebar */}
+      <div className="w-72 border-r border-[var(--border-subtle)] bg-[var(--void)]/20 flex flex-col">
         {/* Header */}
-        <div className="border-b p-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Avatar className="h-8 w-8">
-              <AvatarFallback style={{ backgroundColor: selectedAgent.identity?.color || undefined }}>
-                {selectedAgent.identity?.emoji || <Bot className="h-4 w-4" />}
-              </AvatarFallback>
-            </Avatar>
-            <div>
-              <h2 className="font-semibold">{selectedAgent.name}</h2>
-              <p className="text-xs text-muted-foreground">
-                {selectedAgent.model_provider || selectedAgent.model?.provider || 'unknown'}:{selectedAgent.model_name || selectedAgent.model?.model || 'unknown'}
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            {/* WebSocket Connection Status */}
-            <div
-              className="flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium"
-              title={`WebSocket: ${wsConnectionState}`}
-            >
-              <span className={`w-2 h-2 rounded-full ${
-                wsConnectionState === 'connected'
-                  ? 'bg-green-500'
-                  : wsConnectionState === 'connecting' || wsConnectionState === 'reconnecting'
-                    ? 'bg-yellow-500 animate-pulse'
-                    : 'bg-red-500'
-              }`} />
-              <span className="text-muted-foreground hidden sm:inline">
-                {wsConnectionState === 'connected'
-                  ? 'Live'
-                  : wsConnectionState === 'connecting'
-                    ? 'Connecting...'
-                    : wsConnectionState === 'reconnecting'
-                      ? 'Reconnecting...'
-                      : 'HTTP'}
-              </span>
-            </div>
-            {!isStreaming ? (
-              <Badge variant="default" className="gap-1">
-                <span className={`w-1.5 h-1.5 rounded-full ${getContextPressureColor()}`} />
-                Ready
-              </Badge>
-            ) : (
-              <Badge variant="secondary" className="gap-1">
-                <Loader2 className="h-3 w-3 animate-spin" />
-                Generating...
-              </Badge>
-            )}
-            {messageQueue.length > 0 && (
-              <Badge variant="outline">+{messageQueue.length} queued</Badge>
-            )}
-            <Button variant="ghost" size="sm" onClick={toggleSearch} title="Search messages (Ctrl+F)">
-              <Search className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setFocusMode(!focusMode)}
-              title="Toggle focus mode (Ctrl+Shift+F)"
-            >
-              {focusMode ? <Minimize className="h-4 w-4" /> : <Maximize className="h-4 w-4" />}
-            </Button>
-            <Button variant="destructive" size="sm" onClick={killAgent}>
-              Stop
-            </Button>
-          </div>
-        </div>
-
-        {/* Search bar */}
-        {showSearch && (
-          <div className="border-b p-2 flex items-center gap-2 bg-muted/50">
-            <Search className="h-4 w-4 text-muted-foreground" />
-            <Input
-              id="chat-search-input"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search messages..."
-              className="flex-1 h-8"
-              onKeyDown={(e) => e.key === 'Escape' && setShowSearch(false)}
-            />
-            <span className="text-xs text-muted-foreground">
-              {filteredMessages.length} of {messages.length}
+        <div className="p-4 border-b border-[var(--border-subtle)]">
+          <div className="flex items-center gap-2 text-[var(--text-secondary)] mb-3">
+            <Terminal className="w-4 h-4" />
+            <span className="text-sm font-mono">
+              {viewMode === 'agents' ? 'AGENTS' : 'SESSIONS'}
             </span>
-            <Button variant="ghost" size="sm" onClick={() => setShowSearch(false)}>
-              <X className="h-4 w-4" />
-            </Button>
           </div>
-        )}
 
-        {/* Messages */}
-        <ScrollArea className="flex-1 relative" ref={scrollRef}>
-          <div className="h-full overflow-y-auto p-4" onScroll={handleScroll}>
-            {/* New message indicator */}
-            {showNewMessageIndicator && (
+          {/* View Toggle */}
+          {selectedAgentId && (
+            <div className="flex gap-1 bg-[var(--surface-secondary)] rounded-lg p-1">
               <button
-                onClick={scrollToBottom}
-                className="sticky top-4 left-1/2 -translate-x-1/2 z-10 px-4 py-2 bg-primary text-primary-foreground rounded-full shadow-lg flex items-center gap-2 text-sm mx-auto mb-4 hover:bg-primary/90 transition-colors"
+                onClick={() => setViewMode('agents')}
+                className={cn(
+                  'flex-1 px-2 py-1.5 rounded text-xs font-medium transition-colors',
+                  viewMode === 'agents'
+                    ? 'bg-[var(--neon-cyan)]/20 text-[var(--neon-cyan)]'
+                    : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
+                )}
               >
-                <span>{unreadCount > 0 ? `${unreadCount} 条新消息` : '新消息'}</span>
-                <ArrowDown className="h-4 w-4" />
+                Agents
               </button>
-            )}
-            <div className="space-y-4 max-w-3xl mx-auto">
-            {filteredMessages.length === 0 ? (
-              <div className="text-center py-12 text-muted-foreground">
-                <MessageSquare className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                <p>Start a conversation with {selectedAgent.name}</p>
-                <div className="mt-4 text-sm">
-                  <p className="text-xs text-muted-foreground mb-2">Available commands:</p>
-                  <div className="flex flex-wrap gap-2 justify-center">
-                    {SLASH_COMMANDS.slice(0, 5).map(cmd => (
-                      <code key={cmd.cmd} className="px-2 py-1 bg-muted rounded text-xs">{cmd.cmd}</code>
-                    ))}
-                    <span className="text-xs text-muted-foreground">...and more</span>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <>
-              {filteredMessages.map((msg, idx) => {
-                // Check if message should be grouped with previous
-                const isGrouped = idx > 0 &&
-                  filteredMessages[idx - 1].role === msg.role &&
-                  msg.role !== 'system' &&
-                  !msg.thinking &&
-                  !filteredMessages[idx - 1].thinking;
-
-                return (
-                <div
-                  key={msg.id}
-                  className={`flex gap-3 group ${msg.role === 'user' ? 'flex-row-reverse' : ''} ${isGrouped ? 'mt-[-14px]' : ''}`}
-                >
-                  <Avatar className={`h-8 w-8 mt-1 shrink-0 ${isGrouped ? 'invisible' : ''}`}>
-                    <AvatarFallback
-                      style={{
-                        backgroundColor: msg.role === 'user' ? undefined : (selectedAgent.identity?.color || undefined)
-                      }}
-                    >
-                      {msg.role === 'user' ? <User className="h-4 w-4" /> :
-                       (selectedAgent.identity?.emoji || <Bot className="h-4 w-4" />)}
-                    </AvatarFallback>
-                  </Avatar>
-                  <div className={`flex-1 max-w-[80%] ${msg.role === 'user' ? 'text-right' : ''}`}>
-                    {msg.thinking && !msg.content ? (
-                      <div className="inline-flex items-center gap-2 px-4 py-2 bg-muted/50 rounded-lg">
-                        <div className="flex gap-1">
-                          <span className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                          <span className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                          <span className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-                        </div>
-                        <span className="text-sm text-muted-foreground">Thinking...</span>
-                      </div>
-                    ) : editingMessageId === msg.id ? (
-                      <>
-                        <div className="inline-block rounded-lg px-4 py-2 text-left max-w-full bg-primary text-primary-foreground">
-                          <textarea
-                            value={editText}
-                            onChange={(e) => setEditText(e.target.value)}
-                            onKeyDown={handleEditKeyDown}
-                            className="w-full min-w-[200px] bg-transparent border-none outline-none resize-none whitespace-pre-wrap text-left"
-                            rows={Math.max(1, editText.split('\n').length)}
-                            autoFocus
-                          />
-                        </div>
-                        <div className="flex items-center justify-end gap-2 mt-1">
-                          <button
-                            className="px-2 py-1 text-xs bg-primary-foreground text-primary rounded hover:bg-primary-foreground/90 transition-colors flex items-center gap-1"
-                            onClick={saveEditMessage}
-                          >
-                            <Save className="h-3 w-3" />
-                            保存
-                          </button>
-                          <button
-                            className="px-2 py-1 text-xs bg-muted text-muted-foreground rounded hover:bg-muted/80 transition-colors"
-                            onClick={cancelEditMessage}
-                          >
-                            取消
-                          </button>
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        <div
-                          className={`inline-block px-4 py-2 text-left max-w-full ${
-                            msg.role === 'user'
-                              ? 'bg-primary text-primary-foreground rounded-lg rounded-br-sm border border-[rgba(255,92,0,0.12)]'
-                              : msg.role === 'system'
-                              ? 'bg-red-500/10 border border-red-500/20 text-red-700 dark:text-red-400 rounded-md'
-                              : `bg-muted rounded-lg rounded-bl-sm border border-border/50 ${msg.isStreaming ? 'streaming-bubble' : ''}`
-                          }`}
-                          style={msg.isStreaming ? {
-                            borderLeft: '3px solid hsl(var(--primary))',
-                            animation: 'stream-pulse 2s ease-in-out infinite'
-                          } : {}}
-                        >
-                          {msg.role === 'agent' || msg.role === 'assistant' ? (
-                            <div className="whitespace-pre-wrap prose prose-sm max-w-none dark:prose-invert">
-                              {renderMarkdownElements(msg.content || msg.text || '')}
-                            </div>
-                          ) : (
-                            <p
-                              className="whitespace-pre-wrap"
-                              dangerouslySetInnerHTML={{ __html: highlightSearch(msg.content || msg.text || '') }}
-                            />
-                          )}
-
-                          {/* Images */}
-                          {msg.images && msg.images.length > 0 && (
-                            <div className="flex flex-wrap gap-2 mt-2">
-                              {msg.images.map(img => (
-                                <a key={img.file_id} href={`/api/uploads/${img.file_id}`} target="_blank" rel="noopener noreferrer">
-                                  <img
-                                    src={`/api/uploads/${img.file_id}`}
-                                    alt={img.filename || 'Uploaded image'}
-                                    className="max-w-[200px] max-h-[200px] rounded-lg border"
-                                  />
-                                </a>
-                              ))}
-                            </div>
-                          )}
-
-                          {/* Tool calls */}
-                          {msg.tools && msg.tools.length > 0 && verboseMode !== 'off' && (
-                            <div className="mt-3 space-y-2">
-                              {msg.tools.map(tool => (
-                                <div
-                                  key={tool.id}
-                                  className={`border rounded-lg overflow-hidden ${tool.is_error ? 'border-red-500/50 bg-red-500/10' : 'border-border'}`}
-                                  style={{ borderLeftWidth: '3px', borderLeftColor: tool.is_error ? 'var(--red-500)' : getToolBorderColor(tool.name) }}
-                                >
-                                  <button
-                                    className="w-full px-3 py-2 flex items-center gap-2 text-sm bg-muted/50 hover:bg-muted transition-colors"
-                                    onClick={() => {
-                                      setMessages(prev => prev.map(m => {
-                                        if (m.id !== msg.id) return m;
-                                        const tools = m.tools?.map(t =>
-                                          t.id === tool.id ? { ...t, expanded: !t.expanded } : t
-                                        );
-                                        return { ...m, tools };
-                                      }));
-                                    }}
-                                  >
-                                    {tool.running ? (
-                                      <Loader2 className="h-3 w-3 animate-spin" />
-                                    ) : tool.is_error ? (
-                                      <X className="h-3 w-3 text-red-500" />
-                                    ) : (
-                                      <>
-                                        {getToolIcon(tool.name)}
-                                      </>
-                                    )}
-                                    <span className="font-mono">{tool.name}</span>
-                                    <span className="text-xs text-muted-foreground ml-auto">
-                                      {tool.running ? 'running...' : tool.is_error ? 'error' : 'done'}
-                                    </span>
-                                    {tool.expanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-                                  </button>
-                                  {tool.expanded && verboseMode === 'full' && (
-                                    <div className="p-3 text-sm">
-                                      {/* Generated images */}
-                                      {tool._imageUrls && tool._imageUrls.length > 0 && (
-                                        <div className="mb-3 flex flex-wrap gap-2">
-                                          {tool._imageUrls.map((url, idx) => (
-                                            <a key={idx} href={url} target="_blank" rel="noopener noreferrer">
-                                              <img
-                                                src={url}
-                                                alt={`Generated ${idx + 1}`}
-                                                className="max-w-[200px] max-h-[200px] rounded-lg border border-border hover:border-primary transition-colors"
-                                                loading="lazy"
-                                              />
-                                            </a>
-                                          ))}
-                                        </div>
-                                      )}
-                                      {/* Audio player */}
-                                      {tool._audioFile && (
-                                        <div className="mb-3 p-2 bg-muted rounded-lg flex items-center gap-3">
-                                          <audio controls className="flex-1 h-8">
-                                            <source src={tool._audioFile} />
-                                          </audio>
-                                          {tool._audioDuration && (
-                                            <span className="text-xs text-muted-foreground">
-                                              ~{Math.round(tool._audioDuration / 1000)}s
-                                            </span>
-                                          )}
-                                        </div>
-                                      )}
-                                      {!!tool.input && (
-                                        <div className="mb-2">
-                                          <div className="text-xs text-muted-foreground mb-1">Input</div>
-                                          <pre className="bg-muted p-2 rounded text-xs overflow-x-auto">
-                                            {JSON.stringify(tool.input, null, 2)}
-                                          </pre>
-                                        </div>
-                                      )}
-                                      {tool.result && (
-                                        <div>
-                                          <div className="text-xs text-muted-foreground mb-1">Result</div>
-                                          <pre className={`p-2 rounded text-xs overflow-x-auto ${tool.is_error ? 'bg-red-500/10' : 'bg-muted'}`}>
-                                            {tool.result}
-                                          </pre>
-                                        </div>
-                                      )}
-                                    </div>
-                                  )}
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-2 mt-1">
-                          <span className="text-xs text-muted-foreground">
-                            {msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString() : ''}
-                          </span>
-                          {msg.meta && (
-                            <span className="text-xs text-muted-foreground">{msg.meta}</span>
-                          )}
-                          {msg.edited && (
-                            <span className="text-xs text-muted-foreground italic">已编辑</span>
-                          )}
-                          {(msg.content || msg.text) && (
-                            <button
-                              className="opacity-0 group-hover:opacity-100 transition-opacity"
-                              onClick={() => copyMessage(msg)}
-                              title={msg._copied ? 'Copied!' : 'Copy message'}
-                            >
-                              {msg._copied ? (
-                                <Check className="h-3 w-3 text-green-500" />
-                              ) : (
-                                <Copy className="h-3 w-3 text-muted-foreground" />
-                              )}
-                            </button>
-                          )}
-                          {msg.role === 'user' && (
-                            <button
-                              className="opacity-0 group-hover:opacity-100 transition-opacity"
-                              onClick={() => startEditMessage(msg)}
-                              title="编辑消息"
-                            >
-                              <Pencil className="h-3 w-3 text-muted-foreground hover:text-primary" />
-                            </button>
-                          )}
-                          <button
-                            className="opacity-0 group-hover:opacity-100 transition-opacity"
-                            onClick={() => deleteMessage(msg)}
-                            title="Delete message"
-                          >
-                            <Trash2 className="h-3 w-3 text-muted-foreground hover:text-red-500" />
-                          </button>
-                        </div>
-                      </>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-            </>
-            )}
-            <div ref={messagesEndRef} />
-          </div>
-
-          {/* Floating scroll buttons - fixed at bottom right */}
-          {messages.length > 0 && (
-            <div className="absolute bottom-4 right-4 flex flex-col gap-2 z-20">
-              {/* Scroll to top button */}
-              {showScrollToTop && (
-                <button
-                  onClick={scrollToTop}
-                  className="p-2 bg-background/90 backdrop-blur-sm border rounded-full shadow-lg hover:bg-muted transition-all duration-200"
-                  title="滚动到顶部"
-                >
-                  <ArrowDown className="h-4 w-4 rotate-180" />
-                </button>
-              )}
-              {/* Scroll to bottom button with unread count */}
-              {(showNewMessageIndicator || !isNearBottom()) && (
-                <button
-                  onClick={scrollToBottom}
-                  className="p-2 bg-primary text-primary-foreground rounded-full shadow-lg hover:bg-primary/90 transition-all duration-200 flex items-center gap-1"
-                  title="滚动到底部"
-                >
-                  {unreadCount > 0 && (
-                    <span className="text-xs font-medium px-1">{unreadCount}</span>
-                  )}
-                  <ArrowDown className="h-4 w-4" />
-                </button>
-              )}
+              <button
+                onClick={() => setViewMode('sessions')}
+                className={cn(
+                  'flex-1 px-2 py-1.5 rounded text-xs font-medium transition-colors',
+                  viewMode === 'sessions'
+                    ? 'bg-[var(--neon-cyan)]/20 text-[var(--neon-cyan)]'
+                    : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
+                )}
+              >
+                Sessions
+              </button>
             </div>
           )}
-          </div>
-        </ScrollArea>
+        </div>
 
-        {/* Tip bar */}
-        {!dismissedTips && !isStreaming && (
-          <div className="px-4 py-2 bg-muted/30 border-t flex items-center justify-between text-xs text-muted-foreground">
-            <span>{TIPS[tipIndex]}</span>
-            <button
-              className="hover:text-foreground transition-colors"
-              onClick={() => {
-                setDismissedTips(true);
-                localStorage.setItem('of-tips-off', 'true');
-              }}
-              title="Dismiss tips"
-            >
-              <X className="h-3 w-3" />
-            </button>
+        {/* List */}
+        <div className="flex-1 overflow-y-auto p-3 space-y-2">
+          <AnimatePresence mode="wait">
+            {viewMode === 'agents' ? (
+              <motion.div
+                key="agents"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="space-y-2"
+              >
+                {agents.map((agent) => (
+                  <AgentCard
+                    key={agent.id}
+                    agent={agent}
+                    isSelected={agent.id === selectedAgentId}
+                    onClick={() => handleSelectAgent(agent.id)}
+                  />
+                ))}
+              </motion.div>
+            ) : (
+              <motion.div
+                key="sessions"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="space-y-2"
+              >
+                {/* New Session Button */}
+                <motion.button
+                  onClick={() => selectedAgentId && createSessionMutation.mutate(selectedAgentId)}
+                  disabled={createSessionMutation.isPending}
+                  className="w-full p-3 rounded-lg border border-dashed border-[var(--border-default)] hover:border-[var(--neon-cyan)]/30 hover:bg-[var(--neon-cyan)]/5 text-[var(--text-muted)] hover:text-[var(--neon-cyan)] transition-all flex items-center gap-2"
+                  whileHover={{ scale: 1.01 }}
+                  whileTap={{ scale: 0.99 }}
+                >
+                  {createSessionMutation.isPending ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Plus className="w-4 h-4" />
+                  )}
+                  <span className="text-sm">New Session</span>
+                </motion.button>
+
+                {/* Session List */}
+                {sessions
+                  .filter((s): s is Session => !!s && !!s.session_id)
+                  .map((session) => (
+                    <SessionCard
+                      key={session.session_id}
+                      session={session}
+                      isSelected={session.session_id === selectedSessionId}
+                      onClick={async () => {
+                        if (!selectedAgentId || session.session_id === selectedSessionId) return;
+                        // Switch session on backend first
+                        await api.switchSession(selectedAgentId, session.session_id);
+                        setSelectedSessionId(session.session_id);
+                        // Clear messages (will reload via useEffect)
+                        setMessages([]);
+                      }}
+                      onDelete={(e) => {
+                        e.stopPropagation();
+                        deleteSessionMutation.mutate(session.session_id);
+                      }}
+                    />
+                  ))}
+
+                {sessions.length === 0 && (
+                  <div className="text-center py-8 text-[var(--text-muted)]">
+                    <MessageSquare className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                    <p className="text-xs">No sessions yet</p>
+                  </div>
+                )}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+
+        {/* Footer */}
+        <div className="p-4 border-t border-[var(--border-subtle)]">
+          {viewMode === 'sessions' && selectedAgent ? (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setViewMode('agents')}
+                className="flex items-center gap-1 text-xs text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+              >
+                <ChevronLeft className="w-3 h-3" />
+                Back to Agents
+              </button>
+              <span className="text-[var(--text-muted)]">|</span>
+              <span className="text-xs text-[var(--text-muted)] font-mono">
+                {sessions.length} session{sessions.length !== 1 ? 's' : ''}
+              </span>
+            </div>
+          ) : (
+            <div className="text-xs font-mono text-[var(--text-muted)]">
+              {agents.length} AGENT{agents.length !== 1 ? 'S' : ''} ONLINE
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Main Chat Area */}
+      <div
+        className="flex-1 flex flex-col bg-[var(--void)]/10 relative"
+        onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={handleDrop}
+      >
+        {/* Drag Overlay */}
+        {dragOver && (
+          <div className="absolute inset-0 bg-[var(--neon-cyan)]/10 border-2 border-dashed border-[var(--neon-cyan)] z-50 flex items-center justify-center">
+            <div className="text-center">
+              <Paperclip className="w-12 h-12 text-[var(--neon-cyan)] mx-auto mb-2" />
+              <p className="text-[var(--neon-cyan)] font-medium">Drop files to attach</p>
+            </div>
           </div>
         )}
 
-        {/* Input area */}
-        <div
-          className="border-t px-6 pt-3 pb-4"
-          style={{
-            background: 'linear-gradient(to top, hsl(var(--background)) 0%, hsl(var(--background)) 60%, transparent 100%)'
-          }}
-        >
-          <div className="max-w-3xl mx-auto space-y-2">
-            {/* Attachments */}
-            {attachments.length > 0 && (
-              <div className="flex flex-wrap gap-2">
-                {attachments.map((att, idx) => (
-                  <div
-                    key={idx}
-                    className="flex items-center gap-2 px-2 py-1 bg-muted rounded-lg text-sm"
-                  >
-                    {att.preview ? (
-                      <img src={att.preview} alt="" className="w-6 h-6 rounded object-cover" />
-                    ) : (
-                      <Paperclip className="h-4 w-4" />
-                    )}
-                    <span className="truncate max-w-[120px]">{att.file.name}</span>
-                    {att.uploading && <Loader2 className="h-3 w-3 animate-spin" />}
-                    <button
-                      className="text-muted-foreground hover:text-foreground"
-                      onClick={() => removeAttachment(idx)}
-                    >
-                      <X className="h-3 w-3" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Slash command menu */}
-            {showSlashMenu && filteredSlashCommands.length > 0 && (
-              <div className="absolute bottom-20 left-1/2 -translate-x-1/2 w-80 bg-popover border rounded-lg shadow-lg z-50 max-h-64 overflow-y-auto">
-                {filteredSlashCommands.map((cmd, idx) => (
-                  <div
-                    key={cmd.cmd}
-                    className={`px-4 py-2 cursor-pointer flex flex-col ${
-                      idx === slashIdx ? 'bg-accent' : 'hover:bg-accent/50'
-                    }`}
-                    onClick={() => {
-                      setInputMessage(cmd.cmd + ' ');
-                      setShowSlashMenu(false);
-                      inputRef.current?.focus();
-                    }}
-                    onMouseEnter={() => setSlashIdx(idx)}
-                  >
-                    <span className="font-medium">{cmd.cmd}</span>
-                    <span className="text-xs text-muted-foreground">{cmd.desc}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Model picker */}
-            {showModelPicker && filteredModelPicker.length > 0 && (
-              <div className="absolute bottom-20 left-1/2 -translate-x-1/2 w-80 bg-popover border rounded-lg shadow-lg z-50 max-h-64 overflow-y-auto">
-                <div className="px-3 py-2 text-xs text-muted-foreground border-b">
-                  Available models — pick one or keep typing
-                </div>
-                {filteredModelPicker.map((m, idx) => (
-                  <div
-                    key={m.id}
-                    className={`px-4 py-2 cursor-pointer ${
-                      idx === modelPickerIdx ? 'bg-accent' : 'hover:bg-accent/50'
-                    }`}
-                    onClick={() => pickModel(m.id)}
-                    onMouseEnter={() => setModelPickerIdx(idx)}
-                  >
-                    <div className="font-mono text-sm">{m.id}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {m.provider}{m.display_name && m.display_name !== m.id ? ` · ${m.display_name}` : ''}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Input row */}
-            <div className="flex gap-2 relative">
-              <input
-                type="file"
-                ref={fileInputRef}
-                multiple
-                accept="image/*,.txt,.pdf,.md,.json,.csv,.mp3,.wav,.ogg,.webm,.m4a,.flac"
-                className="hidden"
-                onChange={(e) => handleFileSelect(e.target.files)}
-              />
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => fileInputRef.current?.click()}
-                title="Attach file"
-              >
-                <Paperclip className="h-4 w-4" />
-              </Button>
-              <Button
-                variant={recording ? "destructive" : "ghost"}
-                size="icon"
-                onClick={toggleRecording}
-                title={recording ? "点击停止录音" : "点击开始录音"}
-              >
-                {recording ? (
-                  <span className="relative flex h-3 w-3">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
-                  </span>
-                ) : (
-                  <Mic className="h-4 w-4" />
-                )}
-              </Button>
-              {recording && (
-                <div className="absolute -top-8 left-20 flex items-center gap-2 px-3 py-1 bg-red-500 text-white text-xs rounded-full">
-                  <span className="w-2 h-2 bg-white rounded-full animate-pulse" />
-                  {formatTime(recordingTime)}
-                </div>
-              )}
-
-              <div className="flex-1 relative">
-                <textarea
-                  ref={inputRef}
-                  value={inputMessage}
-                  onChange={(e) => setInputMessage(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey && !(e.nativeEvent as KeyboardEvent).isComposing) {
-                      e.preventDefault();
-                      if (showModelPicker && filteredModelPicker.length > 0) {
-                        pickModel(filteredModelPicker[modelPickerIdx].id);
-                      } else if (showSlashMenu && filteredSlashCommands.length > 0) {
-                        const cmd = filteredSlashCommands[slashIdx];
-                        setInputMessage(cmd.cmd + ' ');
-                        setShowSlashMenu(false);
-                      } else {
-                        handleSend();
-                      }
-                    } else if (e.key === 'Escape') {
-                      setShowSlashMenu(false);
-                      setShowModelPicker(false);
-                    } else if (e.key === 'ArrowUp') {
-                      e.preventDefault();
-                      if (showModelPicker) {
-                        setModelPickerIdx(prev => Math.max(0, prev - 1));
-                      } else if (showSlashMenu) {
-                        setSlashIdx(prev => Math.max(0, prev - 1));
-                      }
-                    } else if (e.key === 'ArrowDown') {
-                      e.preventDefault();
-                      if (showModelPicker) {
-                        setModelPickerIdx(prev => Math.min(filteredModelPicker.length - 1, prev + 1));
-                      } else if (showSlashMenu) {
-                        setSlashIdx(prev => Math.min(filteredSlashCommands.length - 1, prev + 1));
-                      }
-                    }
-                  }}
-                  onInput={(e) => {
-                    const target = e.target as HTMLTextAreaElement;
-                    target.style.height = 'auto';
-                    target.style.height = Math.min(target.scrollHeight, 150) + 'px';
-                  }}
-                  placeholder={recording ? 'Recording... release to send' : "Message OpenFang... (/ for commands)"}
-                  disabled={isStreaming || recording}
-                  className="w-full min-h-[44px] max-h-[150px] px-4 py-3 rounded-2xl border border-input bg-muted text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:border-primary disabled:cursor-not-allowed disabled:opacity-50 resize-none transition-all duration-200"
-                  style={{ lineHeight: '1.5' }}
-                  rows={1}
-                />
-              </div>
-
-              {isStreaming ? (
-                <Button
-                  variant="destructive"
-                  onClick={async () => {
-                    if (!selectedAgentId) return;
-                    try {
-                      await api.stopAgentRun(selectedAgentId);
-                      // 清空当前 streaming 消息
-                      setMessages(prev => prev.filter(m => !m.isStreaming));
-                      // 设置 isStreaming 为 false
-                      setIsStreaming(false);
-                      // 显示 toast 提示
-                      success('生成已停止');
-                    } catch (e) {
-                      console.error('Failed to stop:', e);
-                      error('停止生成失败');
-                    }
-                  }}
-                  title="Stop generating"
-                >
-                  <StopCircle className="h-4 w-4" />
-                </Button>
-              ) : (
-                <Button
-                  onClick={handleSend}
-                  disabled={(!inputMessage.trim() && attachments.length === 0) || isStreaming}
-                >
-                  <Send className="h-4 w-4" />
-                </Button>
-              )}
-            </div>
-
-            {/* Input footer */}
-            <div className="flex items-center justify-between text-xs text-muted-foreground">
-              <div className="flex items-center gap-3">
-                {/* Model switcher */}
-                <div className="relative">
-                  <button
-                    className="flex items-center gap-1 hover:text-foreground transition-colors disabled:opacity-50"
-                    onClick={toggleModelSwitcher}
-                    disabled={isStreaming}
-                  >
-                    <Settings className="h-3 w-3" />
-                    <span className="font-mono">
-                      {selectedAgent.model_name ?
-                        (selectedAgent.model_name.length > 24 ?
-                          selectedAgent.model_name.substring(0, 22) + '...' :
-                          selectedAgent.model_name
-                        ) : 'Model'}
-                    </span>
-                    <ChevronDown className={`h-3 w-3 transition-transform ${showModelSwitcher ? 'rotate-180' : ''}`} />
-                  </button>
-
-                  {showModelSwitcher && (
-                    <div className="absolute bottom-full left-0 mb-2 w-80 bg-popover border rounded-lg shadow-lg z-50 max-h-96 overflow-y-auto">
-                      <div className="p-2 border-b flex items-center gap-2">
-                        <Search className="h-3 w-3 text-muted-foreground" />
-                        <Input
-                          value={modelSwitcherFilter}
-                          onChange={(e) => setModelSwitcherFilter(e.target.value)}
-                          placeholder="Search models..."
-                          className="h-7 text-xs flex-1"
-                          autoFocus
-                        />
-                        <select
-                          value={modelSwitcherProviderFilter}
-                          onChange={(e) => setModelSwitcherProviderFilter(e.target.value)}
-                          className="h-7 text-xs bg-muted border rounded px-2"
-                        >
-                          <option value="">All</option>
-                          {switcherProviders.map(p => (
-                            <option key={p} value={p}>{p}</option>
-                          ))}
-                        </select>
-                      </div>
-                      {modelSwitching ? (
-                        <div className="p-4 flex items-center justify-center gap-2">
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                          <span className="text-xs">Switching...</span>
-                        </div>
-                      ) : (
-                        <div className="p-1">
-                          {groupedSwitcherModels.length === 0 && (
-                            <div className="p-4 text-center text-xs text-muted-foreground">No models found</div>
-                          )}
-                          {groupedSwitcherModels.map(group => (
-                            <div key={group.provider}>
-                              <div className="px-3 py-1 text-xs font-semibold text-muted-foreground uppercase">
-                                {group.provider}
-                              </div>
-                              {group.models.map((m) => (
-                                <div
-                                  key={m.id}
-                                  className={`px-3 py-2 cursor-pointer rounded flex items-center justify-between ${
-                                    m.id === selectedAgent.model_name ? 'bg-accent' : 'hover:bg-accent/50'
-                                  }`}
-                                  onClick={() => switchModel(m)}
-                                >
-                                  <div>
-                                    <div className="flex items-center gap-2">
-                                      <span className="text-sm">{m.display_name || m.id}</span>
-                                      {m.tier && (
-                                        <Badge variant="outline" className="text-[10px] h-4">
-                                          {m.tier}
-                                        </Badge>
-                                      )}
-                                    </div>
-                                    <div className="text-xs text-muted-foreground font-mono">
-                                      {m.id}
-                                      {m.context_window && (
-                                        <span className="ml-2">
-                                          {m.context_window >= 1000000 ?
-                                            (m.context_window/1000000).toFixed(1) + 'M' :
-                                            Math.round(m.context_window/1000) + 'K'}
-                                        </span>
-                                      )}
-                                    </div>
-                                  </div>
-                                  {m.id === selectedAgent.model_name && (
-                                    <Check className="h-4 w-4 text-primary" />
-                                  )}
-                                </div>
-                              ))}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                <span>{tokenCount > 0 ? `~${tokenCount} tokens` : attachments.length ? `${attachments.length} file(s)` : ''}</span>
-                {messageQueue.length > 0 && (
-                  <Badge variant="outline" className="text-[10px]">{messageQueue.length} queued</Badge>
-                )}
-              </div>
-
+        {/* Search Modal */}
+        {showSearch && (
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-40 w-full max-w-md">
+            <div className="bg-[var(--surface-primary)] border border-[var(--border-default)] rounded-xl shadow-lg p-3">
               <div className="flex items-center gap-2">
-                {thinkingMode !== 'off' && (
-                  <Badge variant="secondary" className="text-[10px]">
-                    Think: {thinkingMode}
-                  </Badge>
-                )}
-                {verboseMode !== 'on' && (
-                  <Badge variant="outline" className="text-[10px]">
-                    Verbose: {verboseMode}
-                  </Badge>
+                <Search className="w-4 h-4 text-[var(--text-muted)]" />
+                <input
+                  ref={searchInputRef}
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search messages..."
+                  className="flex-1 bg-transparent border-none outline-none text-[var(--text-primary)] text-sm"
+                />
+                {searchResults.length > 0 && (
+                  <span className="text-xs text-[var(--text-muted)]">
+                    {searchCurrentIdx + 1} / {searchResults.length}
+                  </span>
                 )}
                 <button
-                  onClick={scrollToTop}
-                  className="p-1 hover:text-foreground transition-colors"
-                  title="滚动到顶部"
-                  disabled={!messages.length}
+                  onClick={() => navigateSearch('prev')}
+                  disabled={searchResults.length === 0}
+                  className="p-1 rounded hover:bg-[var(--surface-secondary)] text-[var(--text-muted)]"
                 >
-                  <ArrowDown className="h-3 w-3 rotate-180" />
+                  <ChevronDown className="w-4 h-4 rotate-180" />
                 </button>
                 <button
-                  onClick={scrollToBottom}
-                  className="p-1 hover:text-foreground transition-colors"
-                  title="滚动到底部"
-                  disabled={!messages.length}
+                  onClick={() => navigateSearch('next')}
+                  disabled={searchResults.length === 0}
+                  className="p-1 rounded hover:bg-[var(--surface-secondary)] text-[var(--text-muted)]"
                 >
-                  <ArrowDown className="h-3 w-3" />
+                  <ChevronDown className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => { setShowSearch(false); setSearchQuery(''); setSearchResults([]); }}
+                  className="p-1 rounded hover:bg-[var(--surface-secondary)] text-[var(--text-muted)]"
+                >
+                  <X className="w-4 h-4" />
                 </button>
               </div>
             </div>
           </div>
-        </div>
+        )}
+
+        {selectedAgent && selectedSession ? (
+          <>
+            {/* Chat Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--border-subtle)]">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-[var(--neon-cyan)]/10 flex items-center justify-center">
+                  <Bot className="w-5 h-5 text-[var(--neon-cyan)]" />
+                </div>
+                <div>
+                  <h2 className="font-semibold text-[var(--text-primary)]">{selectedAgent.name}</h2>
+                  <p className="text-xs text-[var(--text-muted)] font-mono">
+                    {selectedSession.title || 'Untitled'} • {currentModelDisplay}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {/* Model Selector */}
+                <Select
+                  value={currentModelId}
+                  onValueChange={handleModelChange}
+                  disabled={changeModelMutation.isPending}
+                >
+                  <SelectTrigger className="w-[200px] h-9 bg-[var(--surface-secondary)] border-[var(--border-subtle)] text-[var(--text-secondary)] text-xs font-mono">
+                    <SelectValue>
+                      {currentModelDisplay || 'Select model'}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent className="bg-[var(--surface-primary)] border-[var(--border-default)] max-h-[280px]">
+                    <ScrollArea className="h-full max-h-[260px]">
+                      {models.map((model) => (
+                        <SelectItem
+                          key={model.id}
+                          value={model.id}
+                          className="text-xs font-mono text-[var(--text-secondary)] focus:bg-[var(--neon-cyan)]/10 focus:text-[var(--neon-cyan)]"
+                          disabled={!model.available}
+                        >
+                          <div className="flex items-center gap-2">
+                            <span>{model.display_name || model.id}</span>
+                            {!model.available && (
+                              <span className="text-[10px] text-[var(--text-muted)]">(unavailable)</span>
+                            )}
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </ScrollArea>
+                  </SelectContent>
+                </Select>
+
+                <motion.button
+                  onClick={handleResetSession}
+                  className="p-2 rounded-lg bg-[var(--surface-secondary)] text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-tertiary)]"
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  title="Reset Session"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                </motion.button>
+                <motion.button
+                  className="p-2 rounded-lg bg-[var(--surface-secondary)] text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-tertiary)]"
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                >
+                  <Settings className="w-4 h-4" />
+                </motion.button>
+              </div>
+            </div>
+
+            {/* Messages */}
+            <div className="flex-1 overflow-y-auto p-6">
+              {/* Slash Command Menu */}
+              {showSlashMenu && (
+                <div className="absolute bottom-24 left-1/2 -translate-x-1/2 z-30 w-full max-w-sm">
+                  <div className="bg-[var(--surface-primary)] border border-[var(--border-default)] rounded-xl shadow-lg overflow-hidden">
+                    <div className="px-3 py-2 border-b border-[var(--border-subtle)] bg-[var(--surface-secondary)]">
+                      <span className="text-xs text-[var(--text-muted)]">Commands</span>
+                    </div>
+                    <div className="max-h-60 overflow-y-auto">
+                      {filteredSlashCommands.length === 0 ? (
+                        <div className="px-3 py-4 text-sm text-[var(--text-muted)] text-center">
+                          No commands found
+                        </div>
+                      ) : (
+                        filteredSlashCommands.map((cmd, idx) => (
+                          <button
+                            key={cmd.cmd}
+                            onClick={() => {
+                              setInputMessage(cmd.cmd + ' ');
+                              setShowSlashMenu(false);
+                              inputRef.current?.focus();
+                            }}
+                            className={cn(
+                              'w-full px-3 py-2 flex items-center gap-3 text-left hover:bg-[var(--surface-secondary)] transition-colors',
+                              idx === slashIdx && 'bg-[var(--neon-cyan)]/10'
+                            )}
+                          >
+                            <Command className="w-4 h-4 text-[var(--neon-cyan)]" />
+                            <div className="flex-1">
+                              <div className="text-sm font-medium text-[var(--text-primary)]">{cmd.cmd}</div>
+                              <div className="text-xs text-[var(--text-muted)]">{cmd.desc}</div>
+                            </div>
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {messages.length === 0 ? (
+                <div className="h-full flex flex-col items-center justify-center text-center">
+                  <div className="w-16 h-16 rounded-2xl bg-[var(--neon-cyan)]/10 flex items-center justify-center mb-4">
+                    <Sparkles className="w-8 h-8 text-[var(--neon-cyan)]" />
+                  </div>
+                  <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-2">
+                    Start a conversation
+                  </h3>
+                  <p className="text-sm text-[var(--text-muted)] max-w-sm">
+                    Send a message to begin chatting with {selectedAgent.name}
+                  </p>
+                </div>
+              ) : (
+                <>
+                  {messages.map((msg, idx) => {
+                    const searchResultIdx = searchResults.indexOf(idx);
+                    return (
+                      <TerminalMessage
+                        key={msg.id}
+                        id={`msg-${idx}`}
+                        message={msg}
+                        index={idx}
+                        isSearchResult={searchResultIdx !== -1}
+                        isCurrentSearch={searchResultIdx === searchCurrentIdx}
+                        searchQuery={searchQuery}
+                      />
+                    );
+                  })}
+                  <div ref={messagesEndRef} />
+                </>
+              )}
+            </div>
+
+            {/* Input Area */}
+            <div className="p-4 border-t border-[var(--border-subtle)]">
+              {/* Attachments */}
+              {attachments.length > 0 && (
+                <div className="flex flex-wrap gap-2 mb-3">
+                  {attachments.map((att) => (
+                    <div
+                      key={att.id}
+                      className="flex items-center gap-2 px-2 py-1 rounded-lg bg-[var(--surface-secondary)] border border-[var(--border-subtle)] text-xs"
+                    >
+                      <Paperclip className="w-3 h-3 text-[var(--neon-cyan)]" />
+                      <span className="text-[var(--text-secondary)] truncate max-w-[120px]">
+                        {att.filename}
+                      </span>
+                      <button
+                        onClick={() => setAttachments(prev => prev.filter(a => a.id !== att.id))}
+                        className="p-0.5 rounded hover:bg-[var(--neon-magenta)]/20 text-[var(--text-muted)] hover:text-[var(--neon-magenta)]"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <SpotlightCard glowColor="rgba(0, 240, 255, 0.1)">
+                <div className="flex items-center gap-3 p-3">
+                  {/* File Upload */}
+                  <input
+                    type="file"
+                    id="file-upload"
+                    className="hidden"
+                    onChange={handleFileSelect}
+                    multiple
+                  />
+                  <label
+                    htmlFor="file-upload"
+                    className="p-2 rounded-lg cursor-pointer text-[var(--text-muted)] hover:text-[var(--neon-cyan)] hover:bg-[var(--neon-cyan)]/10 transition-colors"
+                    title="Attach files"
+                  >
+                    <Paperclip className="w-4 h-4" />
+                  </label>
+
+                  {/* Voice Recording */}
+                  <button
+                    onClick={isRecording ? stopRecording : startRecording}
+                    className={cn(
+                      'p-2 rounded-lg transition-colors',
+                      isRecording
+                        ? 'bg-[var(--neon-magenta)]/20 text-[var(--neon-magenta)] animate-pulse'
+                        : 'text-[var(--text-muted)] hover:text-[var(--neon-cyan)] hover:bg-[var(--neon-cyan)]/10'
+                    )}
+                    title={isRecording ? 'Stop recording' : 'Record voice'}
+                  >
+                    {isRecording ? (
+                      <span className="flex items-center gap-1">
+                        <Mic className="w-4 h-4" />
+                        <span className="text-xs font-mono">{recordingTime}s</span>
+                      </span>
+                    ) : (
+                      <Mic className="w-4 h-4" />
+                    )}
+                  </button>
+
+                  <input
+                    ref={inputRef}
+                    type="text"
+                    value={inputMessage}
+                    onChange={handleInputChange}
+                    onKeyDown={handleKeyDown}
+                    placeholder="Type a message... (Enter to send, / for commands)"
+                    className="flex-1 bg-transparent border-none outline-none text-[var(--text-primary)] placeholder-[var(--text-primary)]/30 font-mono text-sm"
+                    disabled={isStreaming || isRecording}
+                  />
+
+                  {/* Thinking Mode Toggle */}
+                  <button
+                    onClick={() => {
+                      const modes: ThinkingMode[] = ['off', 'on', 'stream'];
+                      const nextIdx = (modes.indexOf(thinkingMode) + 1) % modes.length;
+                      setThinkingMode(modes[nextIdx]);
+                    }}
+                    className={cn(
+                      'p-2 rounded-lg transition-colors',
+                      thinkingMode !== 'off'
+                        ? 'bg-[var(--neon-magenta)]/20 text-[var(--neon-magenta)]'
+                        : 'text-[var(--text-muted)] hover:text-[var(--neon-magenta)] hover:bg-[var(--neon-magenta)]/10'
+                    )}
+                    title={`Thinking mode: ${thinkingMode}`}
+                  >
+                    <Brain className="w-4 h-4" />
+                  </button>
+
+                  <motion.button
+                    onClick={handleSend}
+                    disabled={!inputMessage.trim() || isStreaming || isRecording}
+                    className={cn(
+                      'p-2 rounded-lg transition-colors',
+                      inputMessage.trim() && !isStreaming && !isRecording
+                        ? 'bg-[var(--neon-cyan)] text-[var(--void)]'
+                        : 'bg-[var(--surface-secondary)] text-[var(--text-muted)]'
+                    )}
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                  >
+                    {isStreaming ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Send className="w-4 h-4" />
+                    )}
+                  </motion.button>
+                </div>
+              </SpotlightCard>
+              <div className="flex justify-between mt-2 text-[10px] font-mono text-[var(--text-muted)] px-2">
+                <span className="flex items-center gap-2">
+                  <span>Press Enter to send</span>
+                  {thinkingMode !== 'off' && (
+                    <span className="text-[var(--neon-magenta)]">
+                      Thinking: {thinkingMode}
+                    </span>
+                  )}
+                  {attachments.length > 0 && (
+                    <span className="text-[var(--neon-cyan)]">
+                      {attachments.length} attachment{attachments.length !== 1 ? 's' : ''}
+                    </span>
+                  )}
+                </span>
+                <span className="flex items-center gap-2">
+                  <span>Session: {(selectedSessionId || 'none').slice(0, 8)}...</span>
+                  <span className="text-[var(--text-muted)]/50">|</span>
+                  <button
+                    onClick={() => { setShowSearch(true); setTimeout(() => searchInputRef.current?.focus(), 100); }}
+                    className="hover:text-[var(--neon-cyan)] flex items-center gap-1"
+                  >
+                    <Search className="w-3 h-3" />
+                    Ctrl+Shift+F
+                  </button>
+                </span>
+              </div>
+            </div>
+          </>
+        ) : selectedAgent ? (
+          /* No Session Selected */
+          <div className="h-full flex flex-col items-center justify-center text-center p-8">
+            <motion.div
+              className="w-24 h-24 rounded-3xl bg-gradient-to-br from-[var(--neon-cyan)]/20 to-[var(--neon-cyan)]/5 flex items-center justify-center mb-6 border border-[var(--neon-cyan)]/20"
+              animate={{ scale: [1, 1.05, 1] }}
+              transition={{ duration: 4, repeat: Infinity }}
+            >
+              <MessageSquare className="w-12 h-12 text-[var(--neon-cyan)]" />
+            </motion.div>
+            <h2 className="text-2xl font-bold text-[var(--text-primary)] mb-2">
+              Select or Create a Session
+            </h2>
+            <p className="text-[var(--text-muted)] max-w-sm mb-6">
+              Choose an existing session or create a new one to start chatting
+            </p>
+            <motion.button
+              onClick={() => selectedAgentId && createSessionMutation.mutate(selectedAgentId)}
+              className="px-6 py-3 rounded-xl bg-[var(--neon-cyan)] text-[var(--void)] font-medium flex items-center gap-2"
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+            >
+              <Plus className="w-5 h-5" />
+              New Session
+            </motion.button>
+          </div>
+        ) : (
+          /* No Agent Selected */
+          <div className="h-full flex flex-col items-center justify-center text-center p-8">
+            <motion.div
+              className="w-24 h-24 rounded-3xl bg-gradient-to-br from-[var(--neon-cyan)]/20 to-[var(--neon-cyan)]/5 flex items-center justify-center mb-6 border border-[var(--neon-cyan)]/20"
+              animate={{ scale: [1, 1.05, 1] }}
+              transition={{ duration: 4, repeat: Infinity }}
+            >
+              <Bot className="w-12 h-12 text-[var(--neon-cyan)]" />
+            </motion.div>
+            <h2 className="text-2xl font-bold text-[var(--text-primary)] mb-2">
+              Select an Agent
+            </h2>
+            <p className="text-[var(--text-muted)] max-w-sm mb-6">
+              Choose an agent from the sidebar to start a conversation
+            </p>
+            <div className="flex gap-3">
+              {agents.slice(0, 3).map((agent) => (
+                <motion.button
+                  key={agent.id}
+                  onClick={() => handleSelectAgent(agent.id)}
+                  className="px-4 py-2 rounded-lg bg-[var(--surface-secondary)] border border-[var(--border-default)] text-sm text-[var(--text-secondary)] hover:bg-[var(--surface-tertiary)] hover:text-[var(--text-primary)]"
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                >
+                  {agent.name}
+                </motion.button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
-      <ToastContainer toasts={toasts} onClose={removeToast} />
     </div>
   );
 }
 
-
 export default Chat;
-

@@ -1,15 +1,18 @@
+// Wizard - Onboarding Flow Style
 import { useState, useEffect, useMemo } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
+import { motion, AnimatePresence } from 'framer-motion';
 import { api } from '@/api/client';
+import { NeonText } from '@/components/motion/NeonText';
+import { SpotlightCard } from '@/components/motion/SpotlightCard';
+import { cyberColors } from '@/lib/animations';
 import { useToast } from '@/hooks/useToast';
 import {
-  Loader2, Check, ChevronLeft, AlertCircle,
-  Send
+  ChevronLeft, ChevronRight, Check, Loader2, AlertCircle,
+  Sparkles, Bot, Key, MessageSquare, Zap, Target, Crown,
+  Wand2, Cpu, Brain, Code, Palette, Shield, Rocket,
+  Radio, Send, Plus
 } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 // Types
 interface Provider {
@@ -30,33 +33,13 @@ interface AgentTemplate {
   id: string;
   name: string;
   description: string;
-  icon: string;
+  icon: typeof Bot;
+  color: string;
   category: string;
   provider: string;
   model: string;
   profile: string;
   system_prompt: string;
-}
-
-interface ChannelOption {
-  name: string;
-  display_name: string;
-  icon: string;
-  description: string;
-  token_label: string;
-  token_placeholder: string;
-  token_env: string;
-  help: string;
-}
-
-interface CreatedAgent {
-  id: string;
-  name: string;
-}
-
-interface TryItMessage {
-  role: 'user' | 'agent';
-  text: string;
 }
 
 const TOTAL_STEPS = 6;
@@ -65,994 +48,680 @@ const TEMPLATES: AgentTemplate[] = [
   {
     id: 'assistant',
     name: 'General Assistant',
-    description: 'A versatile helper for everyday tasks, answering questions, and providing recommendations.',
-    icon: 'GA',
+    description: 'A versatile helper for everyday tasks and questions.',
+    icon: Bot,
+    color: 'var(--neon-cyan)',
     category: 'General',
-    provider: 'deepseek',
-    model: 'deepseek-chat',
-    profile: 'balanced',
-    system_prompt: 'You are a helpful, friendly assistant. Provide clear, accurate, and concise responses. Ask clarifying questions when needed.'
+    provider: 'groq',
+    model: 'llama-3.1-70b-versatile',
+    profile: 'Helpful Assistant',
+    system_prompt: 'You are a helpful, friendly assistant. Answer questions clearly and concisely.'
   },
   {
     id: 'coder',
-    name: 'Code Helper',
-    description: 'A programming-focused agent that writes, reviews, and debugs code across multiple languages.',
-    icon: 'CH',
+    name: 'Code Expert',
+    description: 'Specialized in programming and technical tasks.',
+    icon: Code,
+    color: 'var(--neon-green)',
     category: 'Development',
-    provider: 'deepseek',
-    model: 'deepseek-chat',
-    profile: 'precise',
-    system_prompt: 'You are an expert programmer. Help users write clean, efficient code. Explain your reasoning. Follow best practices and conventions for the language being used.'
+    provider: 'groq',
+    model: 'deepseek-r1-distill-llama-70b',
+    profile: 'Senior Developer',
+    system_prompt: 'You are an expert programmer. Write clean, well-documented code and explain your solutions.'
+  },
+  {
+    id: 'creative',
+    name: 'Creative Writer',
+    description: 'Expert in creative writing and storytelling.',
+    icon: Palette,
+    color: 'var(--neon-amber)',
+    category: 'Writing',
+    provider: 'groq',
+    model: 'llama-3.1-70b-versatile',
+    profile: 'Creative Writer',
+    system_prompt: 'You are a creative writing assistant. Help with stories, poems, and creative content.'
+  },
+  {
+    id: 'analyst',
+    name: 'Data Analyst',
+    description: 'Analyzes data and provides insights.',
+    icon: Brain,
+    color: 'var(--neon-magenta)',
+    category: 'Business',
+    provider: 'groq',
+    model: 'deepseek-r1-distill-llama-70b',
+    profile: 'Data Analyst',
+    system_prompt: 'You are a data analysis expert. Help interpret data and provide actionable insights.'
+  },
+  {
+    id: 'security',
+    name: 'Security Expert',
+    description: 'Focuses on cybersecurity and best practices.',
+    icon: Shield,
+    color: 'var(--chart-purple)',
+    category: 'Technical',
+    provider: 'groq',
+    model: 'llama-3.1-70b-versatile',
+    profile: 'Security Consultant',
+    system_prompt: 'You are a cybersecurity expert. Provide security advice and best practices.'
   },
   {
     id: 'researcher',
     name: 'Researcher',
-    description: 'An analytical agent that breaks down complex topics, synthesizes information, and provides cited summaries.',
-    icon: 'RS',
+    description: 'Deep research and information synthesis expert.',
+    icon: Target,
+    color: 'var(--neon-cyan)',
     category: 'Research',
-    provider: 'gemini',
-    model: 'gemini-2.5-flash',
-    profile: 'balanced',
-    system_prompt: 'You are a research analyst. Break down complex topics into clear explanations. Provide structured analysis with key findings. Cite sources when available.'
+    provider: 'groq',
+    model: 'llama-3.1-70b-versatile',
+    profile: 'Researcher',
+    system_prompt: 'You are a research expert. Help gather, analyze, and synthesize information from various sources. Provide well-cited, thorough responses.'
   },
   {
     id: 'writer',
     name: 'Writer',
-    description: 'A creative writing agent that helps with drafting, editing, and improving written content of all kinds.',
-    icon: 'WR',
+    description: 'Professional writing and editing assistant.',
+    icon: Sparkles,
+    color: 'var(--neon-amber)',
     category: 'Writing',
-    provider: 'deepseek',
-    model: 'deepseek-chat',
-    profile: 'creative',
-    system_prompt: 'You are a skilled writer and editor. Help users create polished content. Adapt your tone and style to match the intended audience. Offer constructive suggestions for improvement.'
-  },
-  {
-    id: 'data-analyst',
-    name: 'Data Analyst',
-    description: 'A data-focused agent that helps analyze datasets, create queries, and interpret statistical results.',
-    icon: 'DA',
-    category: 'Development',
-    provider: 'gemini',
-    model: 'gemini-2.5-flash',
-    profile: 'precise',
-    system_prompt: 'You are a data analysis expert. Help users understand their data, write SQL/Python queries, and interpret results. Present findings clearly with actionable insights.'
+    provider: 'groq',
+    model: 'llama-3.1-70b-versatile',
+    profile: 'Professional Writer',
+    system_prompt: 'You are a professional writer. Help with articles, blog posts, marketing copy, and any writing needs. Focus on clarity and engagement.'
   },
   {
     id: 'devops',
     name: 'DevOps Engineer',
-    description: 'A systems-focused agent for CI/CD, infrastructure, Docker, and deployment troubleshooting.',
-    icon: 'DO',
+    description: 'Infrastructure and deployment automation expert.',
+    icon: Cpu,
+    color: 'var(--neon-green)',
     category: 'Development',
-    provider: 'deepseek',
-    model: 'deepseek-chat',
-    profile: 'precise',
-    system_prompt: 'You are a DevOps engineer. Help with CI/CD pipelines, Docker, Kubernetes, infrastructure as code, and deployment. Prioritize reliability and security.'
+    provider: 'groq',
+    model: 'deepseek-r1-distill-llama-70b',
+    profile: 'DevOps Engineer',
+    system_prompt: 'You are a DevOps expert. Help with CI/CD, Docker, Kubernetes, cloud infrastructure, and automation. Provide practical, production-ready solutions.'
   },
   {
     id: 'support',
     name: 'Customer Support',
-    description: 'A professional, empathetic agent for handling customer inquiries and resolving issues.',
-    icon: 'CS',
+    description: 'Friendly and patient customer service agent.',
+    icon: MessageSquare,
+    color: 'var(--chart-teal)',
     category: 'Business',
     provider: 'groq',
-    model: 'llama-3.3-70b-versatile',
-    profile: 'balanced',
-    system_prompt: 'You are a professional customer support representative. Be empathetic, patient, and solution-oriented. Acknowledge concerns before offering solutions. Escalate complex issues appropriately.'
+    model: 'llama-3.1-70b-versatile',
+    profile: 'Customer Support',
+    system_prompt: 'You are a customer support specialist. Be empathetic, patient, and solution-oriented. Always strive to understand and resolve customer issues.'
   },
   {
     id: 'tutor',
     name: 'Tutor',
-    description: "A patient educational agent that explains concepts step-by-step and adapts to the learner's level.",
-    icon: 'TU',
-    category: 'General',
+    description: 'Patient educational assistant for learning any topic.',
+    icon: Crown,
+    color: 'var(--chart-orange)',
+    category: 'Education',
     provider: 'groq',
-    model: 'llama-3.3-70b-versatile',
-    profile: 'balanced',
-    system_prompt: "You are a patient and encouraging tutor. Explain concepts step by step, starting from fundamentals. Use analogies and examples. Check understanding before moving on. Adapt to the learner's pace."
-  },
-  {
-    id: 'api-designer',
-    name: 'API Designer',
-    description: 'An agent specialized in RESTful API design, OpenAPI specs, and integration architecture.',
-    icon: 'AD',
-    category: 'Development',
-    provider: 'deepseek',
-    model: 'deepseek-chat',
-    profile: 'precise',
-    system_prompt: 'You are an API design expert. Help users design clean, consistent RESTful APIs following best practices. Cover endpoint naming, request/response schemas, error handling, and versioning.'
-  },
-  {
-    id: 'meeting-notes',
-    name: 'Meeting Notes',
-    description: 'Summarizes meeting transcripts into structured notes with action items and key decisions.',
-    icon: 'MN',
-    category: 'Business',
-    provider: 'groq',
-    model: 'llama-3.3-70b-versatile',
-    profile: 'precise',
-    system_prompt: 'You are a meeting summarizer. When given a meeting transcript or notes, produce a structured summary with: key decisions, action items (with owners), discussion highlights, and follow-up questions.'
+    model: 'llama-3.1-70b-versatile',
+    profile: 'Educational Tutor',
+    system_prompt: 'You are a patient tutor. Explain concepts clearly, encourage questions, and adapt to the student\'s level. Make learning engaging and effective.'
   }
 ];
 
-const CHANNEL_OPTIONS: ChannelOption[] = [
-  {
-    name: 'telegram',
-    display_name: 'Telegram',
-    icon: 'TG',
-    description: 'Connect your agent to a Telegram bot for messaging.',
-    token_label: 'Bot Token',
-    token_placeholder: '123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11',
-    token_env: 'TELEGRAM_BOT_TOKEN',
-    help: 'Create a bot via @BotFather on Telegram to get your token.'
-  },
-  {
-    name: 'discord',
-    display_name: 'Discord',
-    icon: 'DC',
-    description: 'Connect your agent to a Discord server via bot token.',
-    token_label: 'Bot Token',
-    token_placeholder: 'MTIz...abc',
-    token_env: 'DISCORD_BOT_TOKEN',
-    help: 'Create a Discord application at discord.com/developers and add a bot.'
-  },
-  {
-    name: 'slack',
-    display_name: 'Slack',
-    icon: 'SL',
-    description: 'Connect your agent to a Slack workspace.',
-    token_label: 'Bot Token',
-    token_placeholder: 'xoxb-...',
-    token_env: 'SLACK_BOT_TOKEN',
-    help: 'Create a Slack app at api.slack.com/apps and install it to your workspace.'
-  }
-];
-
-const PROFILE_DESCRIPTIONS: Record<string, { label: string; desc: string }> = {
-  minimal: { label: 'Minimal', desc: 'Read-only file access' },
-  coding: { label: 'Coding', desc: 'Files + shell + web fetch' },
-  research: { label: 'Research', desc: 'Web search + file read/write' },
-  balanced: { label: 'Balanced', desc: 'General-purpose tool set' },
-  precise: { label: 'Precise', desc: 'Focused tool set for accuracy' },
-  creative: { label: 'Creative', desc: 'Full tools with creative emphasis' },
-  full: { label: 'Full', desc: 'All 35+ tools' }
-};
-
-const SUGGESTED_MESSAGES: Record<string, string[]> = {
-  'General': ['What can you help me with?', 'Tell me a fun fact', 'Summarize the latest AI news'],
-  'Development': ['Write a Python hello world', 'Explain async/await', 'Review this code snippet'],
-  'Research': ['Explain quantum computing simply', 'Compare React vs Vue', 'What are the latest trends in AI?'],
-  'Writing': ['Help me write a professional email', 'Improve this paragraph', 'Write a blog intro about AI'],
-  'Business': ['Draft a meeting agenda', 'How do I handle a complaint?', 'Create a project status update']
-};
-
-const PROVIDER_HELP: Record<string, { url: string; text: string }> = {
-  anthropic: { url: 'https://console.anthropic.com/settings/keys', text: 'Get your key from the Anthropic Console' },
-  openai: { url: 'https://platform.openai.com/api-keys', text: 'Get your key from the OpenAI Platform' },
-  gemini: { url: 'https://aistudio.google.com/apikey', text: 'Get your key from Google AI Studio' },
-  groq: { url: 'https://console.groq.com/keys', text: 'Get your key from the Groq Console (free tier available)' },
-  deepseek: { url: 'https://platform.deepseek.com/api_keys', text: 'Get your key from the DeepSeek Platform (very affordable)' },
-  openrouter: { url: 'https://openrouter.ai/keys', text: 'Get your key from OpenRouter (access 100+ models with one key)' },
-  mistral: { url: 'https://console.mistral.ai/api-keys', text: 'Get your key from the Mistral Console' },
-  together: { url: 'https://api.together.xyz/settings/api-keys', text: 'Get your key from Together AI' },
-  fireworks: { url: 'https://fireworks.ai/account/api-keys', text: 'Get your key from Fireworks AI' },
-  perplexity: { url: 'https://www.perplexity.ai/settings/api', text: 'Get your key from Perplexity Settings' },
-  cohere: { url: 'https://dashboard.cohere.com/api-keys', text: 'Get your key from the Cohere Dashboard' },
-  xai: { url: 'https://console.x.ai/', text: 'Get your key from the xAI Console' },
-  'claude-code': { url: 'https://docs.anthropic.com/en/docs/claude-code', text: 'Install: npm install -g @anthropic-ai/claude-code && claude auth (no API key needed)' }
-};
-
-const POPULAR_PROVIDERS = ['anthropic', 'openai', 'gemini', 'groq', 'deepseek', 'openrouter', 'claude-code'];
-
-const DEFAULT_MODELS: Record<string, string> = {
-  anthropic: 'claude-sonnet-4-20250514',
-  openai: 'gpt-4o',
-  gemini: 'gemini-2.5-flash',
-  groq: 'llama-3.3-70b-versatile',
-  deepseek: 'deepseek-chat',
-  openrouter: 'openrouter/auto',
-  mistral: 'mistral-large-latest',
-  together: 'meta-llama/Llama-3-70b-chat-hf',
-  fireworks: 'accounts/fireworks/models/llama-v3p1-70b-instruct',
-  perplexity: 'llama-3.1-sonar-large-128k-online',
-  cohere: 'command-r-plus',
-  xai: 'grok-2',
-  'claude-code': 'claude-code/sonnet'
-};
+const STEP_ICONS = [Key, Bot, Target, MessageSquare, Radio, Rocket];
+const STEP_TITLES = ['API Key', 'Template', 'Configure', 'Try It', 'Channel', 'Launch'];
 
 export function Wizard() {
-  const { success: toastSuccess, error: toastError } = useToast();
+  const { success, error: showError } = useToast();
   const [step, setStep] = useState(1);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-
-  // Step 2: Provider setup
+  const [isLoading, setIsLoading] = useState(false);
   const [providers, setProviders] = useState<Provider[]>([]);
-  const [selectedProvider, setSelectedProvider] = useState('');
-  const [apiKeyInput, setApiKeyInput] = useState('');
-  const [testingProvider, setTestingProvider] = useState(false);
   const [testResult, setTestResult] = useState<TestResult | null>(null);
-  const [savingKey, setSavingKey] = useState(false);
-  const [keySaved, setKeySaved] = useState(false);
 
-  // Step 3: Agent creation
-  const [selectedTemplate, setSelectedTemplate] = useState(0);
-  const [agentName, setAgentName] = useState('my-assistant');
-  const [creatingAgent, setCreatingAgent] = useState(false);
-  const [createdAgent, setCreatedAgent] = useState<CreatedAgent | null>(null);
-  const [templateCategory, setTemplateCategory] = useState('All');
+  // Form state
+  const [apiKey, setApiKey] = useState('');
+  const [selectedTemplate, setSelectedTemplate] = useState<typeof TEMPLATES[0] | null>(null);
+  const [agentName, setAgentName] = useState('');
+  const [agentProfile, setAgentProfile] = useState('');
+  const [systemPrompt, setSystemPrompt] = useState('');
+  const [selectedProvider, setSelectedProvider] = useState('groq');
+  const [selectedModel, setSelectedModel] = useState('');
+  const [enableMemory, setEnableMemory] = useState(true);
+  const [enablePlanning, setEnablePlanning] = useState(false);
+  const [enableTools, setEnableTools] = useState(true);
 
-  // Step 4: Try It chat
-  const [tryItMessages, setTryItMessages] = useState<TryItMessage[]>([]);
+  // Try It step state
+  const [tryItMessages, setTryItMessages] = useState<Array<{role: 'user' | 'assistant'; content: string}>>([]);
   const [tryItInput, setTryItInput] = useState('');
   const [tryItSending, setTryItSending] = useState(false);
+  const [tryItSessionId, setTryItSessionId] = useState('');
 
-  // Step 5: Channel setup
-  const [channelType, setChannelType] = useState('');
-  const [channelToken, setChannelToken] = useState('');
-  const [configuringChannel, setConfiguringChannel] = useState(false);
-  const [channelConfigured, setChannelConfigured] = useState(false);
+  // Channel step state
+  const [channels, setChannels] = useState<Array<{name: string; display_name: string; icon: string; configured: boolean}>>([]);
+  const [selectedChannel, setSelectedChannel] = useState('');
+  const [channelConfig, setChannelConfig] = useState<Record<string, string>>({});
+  const [channelFields, setChannelFields] = useState<Array<{key: string; label: string; type: string; required: boolean; value?: string}>>([]);
+  const [channelLoading, setChannelLoading] = useState(false);
+  const [channelTestResult, setChannelTestResult] = useState<{success: boolean; message?: string} | null>(null);
+  const [skipChannel, setSkipChannel] = useState(false);
 
-  // Step 6: Summary
-  const [setupSummary, setSetupSummary] = useState({
-    provider: '',
-    agent: '',
-    channel: ''
-  });
-
-  // Load providers on mount
+  // Load providers
   useEffect(() => {
-    loadData();
+    api.get<{ providers: Provider[] }>('/api/providers').then((res) => {
+      setProviders(res.providers || []);
+    }).catch(() => {});
   }, []);
 
-  const loadData = async () => {
-    setLoading(true);
-    setError('');
+  // Load channels for step 5
+  useEffect(() => {
+    if (step === 5) {
+      api.get<{ channels: typeof channels }>('/api/channels').then((res) => {
+        const availableChannels = (res.channels || []).filter((c: typeof channels[0]) => !c.configured);
+        setChannels(availableChannels);
+      }).catch(() => {});
+    }
+  }, [step]);
+
+  // Load channel fields when channel selected
+  useEffect(() => {
+    if (selectedChannel && step === 5) {
+      api.get<{ channel: { fields?: typeof channelFields } }>(`/api/channels/${selectedChannel}`).then((res) => {
+        setChannelFields(res.channel?.fields || []);
+        // Initialize config with empty values
+        const initialConfig: Record<string, string> = {};
+        res.channel?.fields?.forEach((f: typeof channelFields[0]) => {
+          if (f.value) initialConfig[f.key] = f.value;
+        });
+        setChannelConfig(initialConfig);
+      }).catch(() => {});
+    }
+  }, [selectedChannel, step]);
+
+  // Template selection
+  const handleSelectTemplate = (template: typeof TEMPLATES[0]) => {
+    setSelectedTemplate(template);
+    setAgentName(template.name);
+    setAgentProfile(template.profile);
+    setSystemPrompt(template.system_prompt);
+    setSelectedProvider(template.provider);
+    setSelectedModel(template.model);
+  };
+
+  // API Key test
+  const handleTestKey = async () => {
+    if (!apiKey.trim()) return;
+    setIsLoading(true);
     try {
-      await loadProviders();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not load setup data.');
-    }
-    setLoading(false);
-  };
-
-  const loadProviders = async () => {
-    try {
-      const data = await api.listProviders();
-      const providerList = data.providers || [];
-      setProviders(providerList);
-
-      // Pre-select first unconfigured provider, or first one
-      const unconfigured = providerList.filter((p: Provider) =>
-        p.auth_status !== 'configured' && p.api_key_env
-      );
-      if (unconfigured.length > 0) {
-        setSelectedProvider(unconfigured[0].id);
-      } else if (providerList.length > 0) {
-        setSelectedProvider(providerList[0].id);
-      }
-    } catch (e) {
-      setProviders([]);
-    }
-  };
-
-  const hasConfiguredProvider = useMemo(() => {
-    return providers.some(p => p.auth_status === 'configured');
-  }, [providers]);
-
-  const selectedProviderObj = useMemo(() => {
-    return providers.find(p => p.id === selectedProvider) || null;
-  }, [providers, selectedProvider]);
-
-  const popularProviders = useMemo(() => {
-    return providers
-      .filter(p => POPULAR_PROVIDERS.includes(p.id))
-      .sort((a, b) => POPULAR_PROVIDERS.indexOf(a.id) - POPULAR_PROVIDERS.indexOf(b.id));
-  }, [providers]);
-
-  const otherProviders = useMemo(() => {
-    return providers.filter(p => !POPULAR_PROVIDERS.includes(p.id));
-  }, [providers]);
-
-  const templateCategories = useMemo(() => {
-    const cats = new Set(['All']);
-    TEMPLATES.forEach(t => cats.add(t.category));
-    return Array.from(cats);
-  }, []);
-
-  const filteredTemplates = useMemo(() => {
-    if (templateCategory === 'All') return TEMPLATES;
-    return TEMPLATES.filter(t => t.category === templateCategory);
-  }, [templateCategory]);
-
-  const currentSuggestions = useMemo(() => {
-    const tpl = TEMPLATES[selectedTemplate];
-    const cat = tpl ? tpl.category : 'General';
-    return SUGGESTED_MESSAGES[cat] || SUGGESTED_MESSAGES['General'];
-  }, [selectedTemplate]);
-
-  const selectedChannelObj = useMemo(() => {
-    return CHANNEL_OPTIONS.find(ch => ch.name === channelType) || null;
-  }, [channelType]);
-
-  const canGoNext = useMemo(() => {
-    if (step === 2) return keySaved || hasConfiguredProvider;
-    if (step === 3) return agentName.trim().length > 0;
-    return true;
-  }, [step, keySaved, hasConfiguredProvider, agentName]);
-
-  const stepLabel = (n: number) => {
-    const labels = ['Welcome', 'Provider', 'Agent', 'Try It', 'Channel', 'Done'];
-    return labels[n - 1] || '';
-  };
-
-  const nextStep = () => {
-    if (step === 3 && !createdAgent) {
-      // Skip "Try It" if no agent was created
-      setStep(5);
-    } else if (step < TOTAL_STEPS) {
-      setStep(step + 1);
-    }
-  };
-
-  const prevStep = () => {
-    if (step === 5 && !createdAgent) {
-      // Skip back past "Try It" if no agent was created
-      setStep(3);
-    } else if (step > 1) {
-      setStep(step - 1);
-    }
-  };
-
-  const goToStep = (n: number) => {
-    if (n >= 1 && n <= TOTAL_STEPS) {
-      if (n === 4 && !createdAgent) return; // Can't go to Try It without agent
-      setStep(n);
-    }
-  };
-
-  const selectProvider = (id: string) => {
-    setSelectedProvider(id);
-    setApiKeyInput('');
-    setTestResult(null);
-    setKeySaved(false);
-  };
-
-  const providerIsConfigured = (p: Provider | null) => {
-    return p && p.auth_status === 'configured';
-  };
-
-  const saveKey = async () => {
-    const provider = selectedProviderObj;
-    if (!provider) return;
-    const key = apiKeyInput.trim();
-    if (!key) {
-      toastError('Please enter an API key');
-      return;
-    }
-    setSavingKey(true);
-    try {
-      await api.post(`/api/providers/${encodeURIComponent(provider.id)}/key`, { key });
-      setApiKeyInput('');
-      setKeySaved(true);
-      setSetupSummary(prev => ({ ...prev, provider: provider.display_name }));
-      toastSuccess(`API key saved for ${provider.display_name}`);
-      await loadProviders();
-      // Auto-test after saving
-      await testKey();
-    } catch (e) {
-      toastError(`Failed to save key: ${e instanceof Error ? e.message : 'Unknown error'}`);
-    }
-    setSavingKey(false);
-  };
-
-  const testKey = async () => {
-    const provider = selectedProviderObj;
-    if (!provider) return;
-    setTestingProvider(true);
-    setTestResult(null);
-    try {
-      const result = await api.post<TestResult>(`/api/providers/${encodeURIComponent(provider.id)}/test`, {});
+      const result = await api.post<TestResult>('/api/wizard/test-key', {
+        provider: selectedProvider,
+        api_key: apiKey
+      });
       setTestResult(result);
       if (result.status === 'ok') {
-        toastSuccess(`${provider.display_name} connected (${result.latency_ms || '?'}ms)`);
+        success('API key is valid!');
       } else {
-        toastError(`${provider.display_name}: ${result.error || 'Connection failed'}`);
+        showError(result.error || 'Invalid API key');
       }
     } catch (e) {
-      const errorResult = { status: 'error' as const, error: e instanceof Error ? e.message : 'Test failed' };
-      setTestResult(errorResult);
-      toastError(`Test failed: ${e instanceof Error ? e.message : 'Unknown error'}`);
-    }
-    setTestingProvider(false);
-  };
-
-  const selectTemplate = (index: number) => {
-    setSelectedTemplate(index);
-    const tpl = TEMPLATES[index];
-    if (tpl) {
-      setAgentName(tpl.name.toLowerCase().replace(/\s+/g, '-'));
+      showError('Failed to test API key');
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  const createAgent = async () => {
-    const tpl = TEMPLATES[selectedTemplate];
-    if (!tpl) return;
-    const name = agentName.trim();
-    if (!name) {
-      toastError('Please enter a name for your agent');
-      return;
-    }
-
-    // Use the provider the user just configured, or the template default
-    let provider = tpl.provider;
-    let model = tpl.model;
-    if (selectedProviderObj && providerIsConfigured(selectedProviderObj)) {
-      provider = selectedProviderObj.id;
-      model = DEFAULT_MODELS[provider] || tpl.model;
-    }
-
-    const toml = `[agent]
-name = "${name.replace(/"/g, '\\"')}"
-description = "${tpl.description.replace(/"/g, '\\"')}"
-profile = "${tpl.profile}"
-
-[model]
-provider = "${provider}"
-model = "${model}"
-system_prompt = """
-${tpl.system_prompt}
-"""
-`;
-
-    setCreatingAgent(true);
+  // Create agent and configure channel
+  const handleCreate = async () => {
+    setIsLoading(true);
     try {
-      const res = await api.createAgentFromTOML(toml);
-      if (res.agent_id) {
-        const newAgent = { id: res.agent_id, name: res.name || name };
-        setCreatedAgent(newAgent);
-        setSetupSummary(prev => ({ ...prev, agent: res.name || name }));
-        toastSuccess(`Agent "${res.name || name}" created`);
-      } else {
-        toastError('Failed to create agent');
+      // Create agent
+      const agentRes = await api.post<{ id: string }>('/api/agents', {
+        name: agentName,
+        profile: agentProfile,
+        system_prompt: systemPrompt,
+        provider: selectedProvider,
+        model: selectedModel,
+        memory_enabled: enableMemory,
+        planning_enabled: enablePlanning,
+        tools_enabled: enableTools
+      });
+
+      // Configure channel if selected and not skipped
+      if (!skipChannel && selectedChannel && Object.keys(channelConfig).length > 0) {
+        try {
+          await api.post(`/api/channels/${selectedChannel}/configure`, {
+            fields: channelConfig
+          });
+        } catch (e) {
+          console.error('Failed to configure channel:', e);
+        }
       }
+
+      success('Agent created successfully!');
+      // Reset and go to step 1
+      setStep(1);
+      setApiKey('');
+      setSelectedTemplate(null);
+      setAgentName('');
+      setAgentProfile('');
+      setSystemPrompt('');
+      setTryItMessages([]);
+      setTryItInput('');
+      setTryItSessionId('');
+      setSelectedChannel('');
+      setChannelConfig({});
+      setSkipChannel(false);
     } catch (e) {
-      toastError(`Failed to create agent: ${e instanceof Error ? e.message : 'Unknown error'}`);
+      showError('Failed to create agent');
+    } finally {
+      setIsLoading(false);
     }
-    setCreatingAgent(false);
   };
 
-  const sendTryItMessage = async (text: string) => {
-    if (!text || !text.trim() || !createdAgent || tryItSending) return;
-    const trimmedText = text.trim();
+  // Try It - send message
+  const handleTryItSend = async () => {
+    if (!tryItInput.trim()) return;
+
+    const userMessage = tryItInput.trim();
+    setTryItMessages(prev => [...prev, { role: 'user', content: userMessage }]);
     setTryItInput('');
-    setTryItMessages(prev => [...prev, { role: 'user', text: trimmedText }]);
     setTryItSending(true);
+
     try {
-      const res = await api.sendMessage(createdAgent.id, trimmedText);
-      setTryItMessages(prev => [...prev, { role: 'agent', text: res.text || res.content || '(no response)' }]);
-      localStorage.setItem('of-first-msg', 'true');
+      // Use a temporary session for try it
+      const res = await api.post<{ response?: string; session_id?: string }>('/api/chat/try-it', {
+        message: userMessage,
+        agent_config: {
+          name: agentName,
+          profile: agentProfile,
+          system_prompt: systemPrompt,
+          provider: selectedProvider,
+          model: selectedModel
+        },
+        session_id: tryItSessionId || undefined
+      });
+
+      if (res.session_id) {
+        setTryItSessionId(res.session_id);
+      }
+
+      setTryItMessages(prev => [...prev, { role: 'assistant', content: res.response || 'No response' }]);
     } catch (e) {
-      setTryItMessages(prev => [...prev, { role: 'agent', text: `Error: ${e instanceof Error ? e.message : 'Could not reach agent'}` }]);
-    }
-    setTryItSending(false);
-  };
-
-  const selectChannel = (name: string) => {
-    if (channelType === name) {
-      setChannelType('');
-      setChannelToken('');
-    } else {
-      setChannelType(name);
-      setChannelToken('');
+      setTryItMessages(prev => [...prev, { role: 'assistant', content: 'Error: Failed to get response' }]);
+    } finally {
+      setTryItSending(false);
     }
   };
 
-  const configureChannel = async () => {
-    const ch = selectedChannelObj;
-    if (!ch) return;
-    const token = channelToken.trim();
-    if (!token) {
-      toastError(`Please enter the ${ch.token_label}`);
-      return;
-    }
-    setConfiguringChannel(true);
+  // Test channel connection
+  const handleTestChannel = async () => {
+    if (!selectedChannel) return;
+    setChannelLoading(true);
+    setChannelTestResult(null);
     try {
-      const fields: Record<string, string> = {};
-      fields[ch.token_env.toLowerCase()] = token;
-      fields.token = token;
-      await api.post(`/api/channels/${ch.name}/configure`, { fields });
-      setChannelConfigured(true);
-      setSetupSummary(prev => ({ ...prev, channel: ch.display_name }));
-      toastSuccess(`${ch.display_name} configured and activated.`);
+      const res = await api.post<{ success: boolean; message?: string }>(`/api/channels/${selectedChannel}/test`, {
+        fields: channelConfig
+      });
+      setChannelTestResult(res);
     } catch (e) {
-      toastError(`Failed: ${e instanceof Error ? e.message : 'Unknown error'}`);
-    }
-    setConfiguringChannel(false);
-  };
-
-  const finish = () => {
-    localStorage.setItem('openfang-onboarded', 'true');
-    // Navigate to agents with chat if an agent was created, otherwise overview
-    if (createdAgent) {
-      window.location.hash = 'agents';
-    } else {
-      window.location.hash = 'overview';
+      setChannelTestResult({ success: false, message: 'Connection test failed' });
+    } finally {
+      setChannelLoading(false);
     }
   };
 
-  const finishAndDismiss = () => {
-    localStorage.setItem('openfang-onboarded', 'true');
-    window.location.hash = 'overview';
+  const canProceed = () => {
+    switch (step) {
+      case 1: return testResult?.status === 'ok';
+      case 2: return selectedTemplate !== null;
+      case 3: return agentName.trim() && agentProfile.trim() && systemPrompt.trim();
+      case 4: return true; // Try It is optional
+      case 5: return skipChannel || selectedChannel; // Channel is optional if skipped
+      default: return true;
+    }
   };
 
-  const profileInfo = (name: string) => {
-    return PROFILE_DESCRIPTIONS[name] || { label: name, desc: '' };
-  };
-
-  const getProviderHelp = (id: string) => {
-    return PROVIDER_HELP[id] || null;
-  };
-
-  // Progress bar fill width
-  const progressWidth = `${((step - 1) / (TOTAL_STEPS - 1)) * 100}%`;
+  const StepIcon = STEP_ICONS[step - 1];
 
   return (
-    <div className="flex-1 overflow-auto p-6">
-      <div className="max-w-6xl mx-auto">
+    <div className="h-full overflow-auto p-6">
+      <div className="max-w-4xl mx-auto">
         {/* Header */}
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-2xl font-bold">Setup Wizard</h2>
-          <Button variant="ghost" size="sm" onClick={finishAndDismiss}>
-            Skip Setup
-          </Button>
-        </div>
+        <motion.div
+          className="text-center mb-8"
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+        >
+          <h1 className="text-3xl font-bold mb-2">
+            <NeonText color="cyan">Create Agent</NeonText>
+          </h1>
+          <p className="text-[var(--text-muted)]">Set up your AI agent in {TOTAL_STEPS} simple steps</p>
+        </motion.div>
 
-        {/* Loading state */}
-        {loading && (
-          <div className="flex items-center justify-center gap-3 py-12">
-            <Loader2 className="h-5 w-5 animate-spin" />
-            <span className="text-muted-foreground">Loading...</span>
-          </div>
-        )}
-
-        {/* Error state */}
-        {!loading && error && (
-          <div className="flex flex-col items-center justify-center gap-3 py-12">
-            <AlertCircle className="h-8 w-8 text-destructive" />
-            <p className="text-muted-foreground">{error}</p>
-            <Button variant="ghost" size="sm" onClick={loadData}>Retry</Button>
-          </div>
-        )}
-
-        {/* Main content */}
-        {!loading && !error && (
-          <>
-            {/* Progress bar */}
-            <div className="relative mb-8">
-              <div className="flex justify-between relative z-10">
-                {Array.from({ length: TOTAL_STEPS }, (_, i) => i + 1).map((n) => (
-                  <button
-                    key={n}
-                    className="flex flex-col items-center gap-2 cursor-pointer group"
-                    onClick={() => goToStep(n)}
+        {/* Progress */}
+        <motion.div
+          className="mb-10"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+        >
+          <div className="flex items-center justify-between">
+            {Array.from({ length: TOTAL_STEPS }).map((_, i) => {
+              const StepIcon = STEP_ICONS[i];
+              const isActive = i + 1 === step;
+              const isCompleted = i + 1 < step;
+              return (
+                <div key={i} className="flex items-center">
+                  <motion.div
+                    className={cn(
+                      'w-12 h-12 rounded-xl flex items-center justify-center transition-colors',
+                      isActive && 'bg-[var(--neon-cyan)]/20 text-[var(--neon-cyan)]',
+                      isCompleted && 'bg-[var(--neon-green)]/20 text-[var(--neon-green)]',
+                      !isActive && !isCompleted && 'bg-[var(--surface-secondary)] text-[var(--text-muted)]'
+                    )}
+                    animate={isActive ? { scale: [1, 1.1, 1] } : {}}
+                    transition={{ duration: 0.5 }}
                   >
-                    <div
-                      className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-medium transition-colors ${
-                        step === n
-                          ? 'bg-primary text-primary-foreground'
-                          : step > n
-                          ? 'bg-green-500 text-white'
-                          : 'bg-muted text-muted-foreground'
-                      }`}
-                    >
-                      {step > n ? <Check className="h-5 w-5" /> : n}
+                    {isCompleted ? (
+                      <Check className="w-5 h-5" />
+                    ) : (
+                      <StepIcon className="w-5 h-5" />
+                    )}
+                  </motion.div>
+                  <span className={cn(
+                    'ml-2 text-sm hidden sm:block',
+                    isActive ? 'text-[var(--neon-cyan)]' : isCompleted ? 'text-[var(--neon-green)]' : 'text-[var(--text-muted)]'
+                  )}>
+                    {STEP_TITLES[i]}
+                  </span>
+                  {i < TOTAL_STEPS - 1 && (
+                    <div className={cn(
+                      'w-12 sm:w-20 h-0.5 mx-2 sm:mx-4',
+                      isCompleted ? 'bg-[var(--neon-green)]' : 'bg-[var(--surface-tertiary)]'
+                    )} />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </motion.div>
+
+        {/* Content */}
+        <AnimatePresence mode="wait">
+          {/* Step 1: API Key */}
+          {step === 1 && (
+            <motion.div
+              key="step1"
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
+            >
+              <SpotlightCard glowColor="rgba(0, 240, 255, 0.1)">
+                <div className="p-6">
+                  <div className="flex items-center gap-3 mb-6">
+                    <div className="w-12 h-12 rounded-xl bg-[var(--neon-cyan)]/10 flex items-center justify-center">
+                      <Key className="w-6 h-6 text-[var(--neon-cyan)]" />
                     </div>
-                    <span className={`text-xs ${step === n ? 'text-primary font-medium' : 'text-muted-foreground'}`}>
-                      {stepLabel(n)}
-                    </span>
-                  </button>
+                    <div>
+                      <h2 className="text-xl font-bold text-[var(--text-primary)]">Enter API Key</h2>
+                      <p className="text-sm text-[var(--text-muted)]">Your key is stored locally and securely</p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
+                    <div>
+                      <label className="text-sm text-[var(--text-muted)] block mb-2">Provider</label>
+                      <select
+                        value={selectedProvider}
+                        onChange={(e) => setSelectedProvider(e.target.value)}
+                        className="w-full bg-[var(--surface-secondary)] border border-[var(--border-default)] rounded-lg px-4 py-3 text-[var(--text-primary)]"
+                      >
+                        {providers.map((p) => (
+                          <option key={p.id} value={p.id} className="bg-[var(--surface-primary)]">
+                            {p.display_name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="text-sm text-[var(--text-muted)] block mb-2">API Key</label>
+                      <div className="flex gap-2">
+                        <input
+                          type="password"
+                          value={apiKey}
+                          onChange={(e) => {
+                            setApiKey(e.target.value);
+                            setTestResult(null);
+                          }}
+                          placeholder="sk-..."
+                          className="flex-1 bg-[var(--surface-secondary)] border border-[var(--border-default)] rounded-lg px-4 py-3 text-[var(--text-primary)] placeholder-[var(--text-primary)]/20"
+                        />
+                        <motion.button
+                          onClick={handleTestKey}
+                          disabled={!apiKey.trim() || isLoading}
+                          className="px-4 py-2 rounded-lg bg-[var(--neon-cyan)]/10 text-[var(--neon-cyan)] border border-[var(--neon-cyan)]/30 hover:bg-[var(--neon-cyan)]/20 disabled:opacity-50"
+                          whileHover={{ scale: 1.02 }}
+                          whileTap={{ scale: 0.98 }}
+                        >
+                          {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Test'}
+                        </motion.button>
+                      </div>
+                    </div>
+
+                    {testResult && (
+                      <motion.div
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className={cn(
+                          'p-4 rounded-lg border',
+                          testResult.status === 'ok'
+                            ? 'bg-[var(--neon-green)]/10 border-[var(--neon-green)]/30 text-[var(--neon-green)]'
+                            : 'bg-[var(--neon-magenta)]/10 border-[var(--neon-magenta)]/30 text-[var(--neon-magenta)]'
+                        )}
+                      >
+                        <div className="flex items-center gap-2">
+                          {testResult.status === 'ok' ? <Check className="w-5 h-5" /> : <AlertCircle className="w-5 h-5" />}
+                          <span>
+                            {testResult.status === 'ok'
+                              ? `Connection successful (${testResult.latency_ms}ms)`
+                              : testResult.error}
+                          </span>
+                        </div>
+                      </motion.div>
+                    )}
+                  </div>
+                </div>
+              </SpotlightCard>
+            </motion.div>
+          )}
+
+          {/* Step 2: Template */}
+          {step === 2 && (
+            <motion.div
+              key="step2"
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
+              className="grid grid-cols-1 sm:grid-cols-2 gap-4"
+            >
+              {TEMPLATES.map((template) => {
+                const Icon = template.icon;
+                const isSelected = selectedTemplate?.id === template.id;
+                return (
+                  <motion.div
+                    key={template.id}
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={() => handleSelectTemplate(template)}
+                  >
+                    <SpotlightCard
+                      glowColor={isSelected ? `${template.color}40` : `${template.color}10`}
+                      className={cn('cursor-pointer h-full', isSelected && 'ring-2')}
+                    >
+                      <div className="p-5">
+                        <div className="flex items-start gap-4">
+                          <div
+                            className="w-12 h-12 rounded-xl flex items-center justify-center"
+                            style={{ backgroundColor: `${template.color}15` }}
+                          >
+                            <Icon className="w-6 h-6" style={{ color: template.color }} />
+                          </div>
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2">
+                              <h3 className="font-semibold text-[var(--text-primary)]">{template.name}</h3>
+                              {isSelected && <Check className="w-4 h-4 text-[var(--neon-green)]" />}
+                            </div>
+                            <p className="text-sm text-[var(--text-muted)] mt-1">{template.description}</p>
+                            <div className="flex gap-2 mt-3">
+                              <span
+                                className="text-[10px] px-2 py-0.5 rounded-full"
+                                style={{ backgroundColor: `${template.color}15`, color: template.color }}
+                              >
+                                {template.category}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </SpotlightCard>
+                  </motion.div>
+                );
+              })}
+            </motion.div>
+          )}
+
+          {/* Step 3: Configure */}
+          {step === 3 && (
+            <motion.div
+              key="step3"
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
+              className="space-y-4"
+            >
+              <SpotlightCard glowColor="rgba(255, 184, 0, 0.1)">
+                <div className="p-6 space-y-4">
+                  <div>
+                    <label className="text-sm text-[var(--text-muted)] block mb-2">Agent Name</label>
+                    <input
+                      type="text"
+                      value={agentName}
+                      onChange={(e) => setAgentName(e.target.value)}
+                      className="w-full bg-[var(--surface-secondary)] border border-[var(--border-default)] rounded-lg px-4 py-3 text-[var(--text-primary)]"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-sm text-[var(--text-muted)] block mb-2">Profile</label>
+                    <input
+                      type="text"
+                      value={agentProfile}
+                      onChange={(e) => setAgentProfile(e.target.value)}
+                      className="w-full bg-[var(--surface-secondary)] border border-[var(--border-default)] rounded-lg px-4 py-3 text-[var(--text-primary)]"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-sm text-[var(--text-muted)] block mb-2">Model</label>
+                    <select
+                      value={selectedModel}
+                      onChange={(e) => setSelectedModel(e.target.value)}
+                      className="w-full bg-[var(--surface-secondary)] border border-[var(--border-default)] rounded-lg px-4 py-3 text-[var(--text-primary)]"
+                    >
+                      <option value="llama-3.1-70b-versatile" className="bg-[var(--surface-primary)]">Llama 3.1 70B</option>
+                      <option value="deepseek-r1-distill-llama-70b" className="bg-[var(--surface-primary)]">DeepSeek R1</option>
+                      <option value="mixtral-8x7b-32768" className="bg-[var(--surface-primary)]">Mixtral 8x7B</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="text-sm text-[var(--text-muted)] block mb-2">System Prompt</label>
+                    <textarea
+                      value={systemPrompt}
+                      onChange={(e) => setSystemPrompt(e.target.value)}
+                      rows={4}
+                      className="w-full bg-[var(--surface-secondary)] border border-[var(--border-default)] rounded-lg px-4 py-3 text-[var(--text-primary)] resize-none"
+                    />
+                  </div>
+                </div>
+              </SpotlightCard>
+
+              {/* Toggles */}
+              <div className="grid grid-cols-3 gap-4">
+                {[
+                  { key: 'memory', label: 'Memory', icon: Brain, value: enableMemory, setValue: setEnableMemory },
+                  { key: 'planning', label: 'Planning', icon: Target, value: enablePlanning, setValue: setEnablePlanning },
+                  { key: 'tools', label: 'Tools', icon: Wand2, value: enableTools, setValue: setEnableTools }
+                ].map(({ key, label, icon: Icon, value, setValue }) => (
+                  <SpotlightCard key={key} glowColor={value ? 'rgba(0, 255, 136, 0.1)' : 'rgba(255,255,255,0.05)'}>
+                    <div
+                      className="p-4 text-center cursor-pointer"
+                      onClick={() => setValue(!value)}
+                    >
+                      <Icon className={cn('w-6 h-6 mx-auto mb-2', value ? 'text-[var(--neon-green)]' : 'text-[var(--text-muted)]')} />
+                      <div className="text-sm text-[var(--text-secondary)]">{label}</div>
+                      <div className={cn('text-xs mt-1', value ? 'text-[var(--neon-green)]' : 'text-[var(--text-muted)]')}>
+                        {value ? 'Enabled' : 'Disabled'}
+                      </div>
+                    </div>
+                  </SpotlightCard>
                 ))}
               </div>
-              <div className="absolute top-5 left-0 right-0 h-0.5 bg-muted -z-0">
-                <div
-                  className="h-full bg-primary transition-all duration-300"
-                  style={{ width: progressWidth }}
-                />
-              </div>
-            </div>
+            </motion.div>
+          )}
 
-            {/* Step 1: Welcome */}
-            {step === 1 && (
-              <Card className="max-w-2xl mx-auto">
-                <CardContent className="pt-6 text-center">
-                  <div className="flex justify-center mb-6">
-                    <img src="/logo.png" alt="OpenFang" className="w-20 h-20 opacity-85" />
-                  </div>
-                  <h3 className="text-xl font-bold mb-3 text-primary">Welcome to OpenFang</h3>
-                  <p className="text-sm text-muted-foreground leading-relaxed max-w-lg mx-auto mb-6">
-                    OpenFang is an open-source Agent Operating System. It lets you run AI agents that can chat, use tools, access memory, and connect to messaging channels — all from a single dashboard.
-                  </p>
-                  <Card className="text-left mb-5">
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-sm">This wizard will help you:</CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-2">
-                      <div className="flex items-center gap-3 py-2 border-b">
-                        <Badge variant="secondary" className="min-w-[24px] justify-center">1</Badge>
-                        <span className="text-sm">Connect an LLM provider (Anthropic, OpenAI, Gemini, etc.)</span>
-                      </div>
-                      <div className="flex items-center gap-3 py-2 border-b">
-                        <Badge variant="secondary" className="min-w-[24px] justify-center">2</Badge>
-                        <span className="text-sm">Create your first AI agent from 10 templates</span>
-                      </div>
-                      <div className="flex items-center gap-3 py-2 border-b">
-                        <Badge variant="secondary" className="min-w-[24px] justify-center">3</Badge>
-                        <span className="text-sm">Try it out with a quick test message</span>
-                      </div>
-                      <div className="flex items-center gap-3 py-2">
-                        <Badge variant="secondary" className="min-w-[24px] justify-center">4</Badge>
-                        <span className="text-sm">Optionally connect a messaging channel (Telegram, Discord, Slack)</span>
-                      </div>
-                    </CardContent>
-                  </Card>
-                  <p className="text-xs text-muted-foreground">Takes about 2 minutes. You can skip any step and configure later.</p>
-                </CardContent>
-                <div className="flex justify-end p-6 pt-0">
-                  <Button onClick={nextStep}>Get Started</Button>
-                </div>
-              </Card>
-            )}
-
-            {/* Step 2: Provider Setup */}
-            {step === 2 && (
-              <Card className="max-w-4xl mx-auto">
-                <CardContent className="pt-6">
-                  <h3 className="text-base font-bold mb-1">Connect an LLM Provider</h3>
-                  <p className="text-xs text-muted-foreground mb-4 leading-relaxed">
-                    OpenFang needs at least one LLM provider to power your agents. Select a provider and enter your API key.
-                  </p>
-
-                  {hasConfiguredProvider && (
-                    <div className="bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 rounded-lg p-4 mb-4">
-                      <h4 className="text-green-600 font-medium text-sm">Provider Already Configured</h4>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        You already have at least one provider set up. You can continue to the next step or configure additional providers.
-                      </p>
+          {/* Step 4: Try It */}
+          {step === 4 && (
+            <motion.div
+              key="step4"
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
+            >
+              <SpotlightCard glowColor="rgba(139, 92, 246, 0.1)">
+                <div className="p-6">
+                  <div className="flex items-center gap-3 mb-6">
+                    <div className="w-10 h-10 rounded-xl bg-[var(--neon-cyan)]/10 flex items-center justify-center">
+                      <MessageSquare className="w-5 h-5 text-[var(--neon-cyan)]" />
                     </div>
-                  )}
+                    <div>
+                      <h2 className="text-xl font-bold text-[var(--text-primary)]">Try It Out</h2>
+                      <p className="text-sm text-[var(--text-muted)]">Test your agent before launching</p>
+                    </div>
+                  </div>
 
-                  {/* Popular Providers */}
-                  <div className="mb-4">
-                    <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2">Popular Providers</div>
-                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-                      {popularProviders.map((p) => (
+                  {/* Chat Messages */}
+                  <div className="bg-[var(--surface-secondary)] rounded-xl border border-[var(--border-default)] h-80 overflow-y-auto mb-4 p-4 space-y-3">
+                    {tryItMessages.length === 0 ? (
+                      <div className="text-center text-[var(--text-muted)] py-12">
+                        <Bot className="w-12 h-12 mx-auto mb-3 opacity-30" />
+                        <p>Your agent is ready to chat!</p>
+                        <p className="text-sm mt-1">Send a message to test the configuration</p>
+                      </div>
+                    ) : (
+                      tryItMessages.map((msg, idx) => (
                         <div
-                          key={p.id}
-                          className={`border rounded-lg p-3 cursor-pointer transition-colors ${
-                            selectedProvider === p.id
-                              ? 'border-primary bg-primary/5'
-                              : p.auth_status === 'configured'
-                              ? 'border-green-500 bg-green-50/50 dark:bg-green-950/20'
-                              : 'hover:border-muted-foreground/50'
-                          }`}
-                          onClick={() => selectProvider(p.id)}
-                        >
-                          <div className="flex justify-between items-center">
-                            <span className="font-bold text-sm">{p.display_name}</span>
-                            {p.auth_status === 'configured' && (
-                              <Badge variant="default" className="text-[8px] bg-green-500">READY</Badge>
-                            )}
-                          </div>
-                          <div className="text-xs text-muted-foreground mt-1">{p.model_count || 0} models</div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Other Providers */}
-                  {otherProviders.length > 0 && (
-                    <div className="mb-4">
-                      <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2">Other Providers</div>
-                      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-                        {otherProviders.map((p) => (
-                          <div
-                            key={p.id}
-                            className={`border rounded-lg p-3 cursor-pointer transition-colors ${
-                              selectedProvider === p.id
-                                ? 'border-primary bg-primary/5'
-                                : p.auth_status === 'configured'
-                                ? 'border-green-500 bg-green-50/50 dark:bg-green-950/20'
-                                : 'hover:border-muted-foreground/50'
-                            }`}
-                            onClick={() => selectProvider(p.id)}
-                          >
-                            <div className="flex justify-between items-center">
-                              <span className="font-bold text-sm">{p.display_name}</span>
-                              {p.auth_status === 'configured' && (
-                                <Badge variant="default" className="text-[8px] bg-green-500">READY</Badge>
-                              )}
-                            </div>
-                            <div className="text-xs text-muted-foreground mt-1">{p.model_count || 0} models</div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Configure Provider */}
-                  {selectedProviderObj && !providerIsConfigured(selectedProviderObj) && (
-                    <Card className="border-l-4 border-l-primary mt-4">
-                      <CardContent className="pt-4">
-                        <div className="font-medium mb-2">Configure {selectedProviderObj.display_name}</div>
-                        {selectedProviderObj.api_key_env && (
-                          <div className="text-xs text-muted-foreground mb-2">
-                            Environment variable: <code className="bg-muted px-1 py-0.5 rounded text-primary">{selectedProviderObj.api_key_env}</code>
-                          </div>
-                        )}
-                        {getProviderHelp(selectedProvider) && (
-                          <div className="text-xs mb-3">
-                            <a
-                              href={getProviderHelp(selectedProvider)?.url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-primary underline"
-                            >
-                              {getProviderHelp(selectedProvider)?.text}
-                            </a>
-                          </div>
-                        )}
-                        <div className="space-y-2">
-                          <Label>API Key</Label>
-                          <div className="flex gap-2">
-                            <Input
-                              type="password"
-                              placeholder={`Enter your ${selectedProviderObj.display_name} API key`}
-                              value={apiKeyInput}
-                              onChange={(e) => setApiKeyInput(e.target.value)}
-                              onKeyDown={(e) => e.key === 'Enter' && saveKey()}
-                            />
-                            <Button
-                              onClick={saveKey}
-                              disabled={savingKey || !apiKeyInput.trim()}
-                            >
-                              {savingKey ? (
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                              ) : (
-                                'Save & Test'
-                              )}
-                            </Button>
-                          </div>
-                        </div>
-                        {testResult && (
-                          <div className="mt-3">
-                            {testResult.status === 'ok' ? (
-                              <Badge className="bg-green-500 text-white px-3 py-1">
-                                Connected successfully{testResult.latency_ms ? ` (${testResult.latency_ms}ms)` : ''}
-                              </Badge>
-                            ) : (
-                              <Badge variant="destructive" className="px-3 py-1">
-                                {testResult.error || 'Connection failed'}
-                              </Badge>
-                            )}
-                          </div>
-                        )}
-                      </CardContent>
-                    </Card>
-                  )}
-
-                  {/* Already Configured Provider */}
-                  {selectedProviderObj && providerIsConfigured(selectedProviderObj) && (
-                    <Card className="border-l-4 border-l-green-500 mt-4">
-                      <CardContent className="pt-4">
-                        <div className="flex items-center gap-2 mb-2">
-                          <Check className="h-5 w-5 text-green-500" />
-                          <div>
-                            <div className="font-bold text-sm">{selectedProviderObj.display_name} is configured and ready</div>
-                            <div className="text-xs text-muted-foreground">You can test the connection or continue to the next step.</div>
-                          </div>
-                        </div>
-                        <div className="flex gap-2 mt-2">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={testKey}
-                            disabled={testingProvider}
-                          >
-                            {testingProvider ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                              'Test Connection'
-                            )}
-                          </Button>
-                        </div>
-                        {testResult && (
-                          <div className="mt-2">
-                            {testResult.status === 'ok' ? (
-                              <Badge className="bg-green-500 text-white px-3 py-1">
-                                Connected{testResult.latency_ms ? ` (${testResult.latency_ms}ms)` : ''}
-                              </Badge>
-                            ) : (
-                              <Badge variant="destructive" className="px-3 py-1">
-                                {testResult.error || 'Connection failed'}
-                              </Badge>
-                            )}
-                          </div>
-                        )}
-                      </CardContent>
-                    </Card>
-                  )}
-                </CardContent>
-                <div className="flex justify-between p-6 pt-0">
-                  <Button variant="ghost" onClick={prevStep}>
-                    <ChevronLeft className="h-4 w-4 mr-1" />
-                    Back
-                  </Button>
-                  <Button onClick={nextStep} disabled={!canGoNext}>
-                    {hasConfiguredProvider || keySaved ? 'Next' : 'Skip'}
-                  </Button>
-                </div>
-              </Card>
-            )}
-
-            {/* Step 3: Create First Agent */}
-            {step === 3 && (
-              <Card className="max-w-4xl mx-auto">
-                <CardContent className="pt-6">
-                  <h3 className="text-base font-bold mb-1">Create Your First Agent</h3>
-                  <p className="text-xs text-muted-foreground mb-4 leading-relaxed">
-                    Pick a template to get started quickly. You can customize the agent later or create more from the Agents page.
-                  </p>
-
-                  {/* Category filter pills */}
-                  <div className="flex flex-wrap gap-2 mb-4">
-                    {templateCategories.map((cat) => (
-                      <button
-                        key={cat}
-                        className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
-                          templateCategory === cat
-                            ? 'bg-primary text-primary-foreground'
-                            : 'bg-muted hover:bg-muted/80'
-                        }`}
-                        onClick={() => setTemplateCategory(cat)}
-                      >
-                        {cat}
-                      </button>
-                    ))}
-                  </div>
-
-                  {/* Template grid */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 mb-5">
-                    {filteredTemplates.map((tpl) => {
-                      const index = TEMPLATES.findIndex(t => t.id === tpl.id);
-                      return (
-                        <div
-                          key={tpl.id}
-                          className={`border rounded-lg p-3 cursor-pointer transition-colors ${
-                            selectedTemplate === index
-                              ? 'border-primary bg-primary/5'
-                              : 'hover:border-muted-foreground/50'
-                          }`}
-                          onClick={() => selectTemplate(index)}
-                        >
-                          <div className="flex items-center gap-2 mb-2">
-                            <div className="w-8 h-8 rounded bg-primary text-primary-foreground flex items-center justify-center font-bold text-xs">
-                              {tpl.icon}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-1">
-                                <span className="font-bold text-sm truncate">{tpl.name}</span>
-                                <Badge variant="secondary" className="text-[10px]">{tpl.category}</Badge>
-                              </div>
-                            </div>
-                          </div>
-                          <div className="text-xs text-muted-foreground leading-relaxed">{tpl.description}</div>
-                          <div className="flex justify-between items-center mt-2">
-                            <span className="text-xs text-muted-foreground">{tpl.provider} / {tpl.model}</span>
-                            <Badge variant="outline" className="text-[10px]">{tpl.profile}</Badge>
-                          </div>
-                          {profileInfo(tpl.profile).desc && (
-                            <div className="text-xs text-muted-foreground mt-1">{profileInfo(tpl.profile).desc}</div>
+                          key={idx}
+                          className={cn(
+                            'flex',
+                            msg.role === 'user' ? 'justify-end' : 'justify-start'
                           )}
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  {/* Agent name input */}
-                  <Card className="border-l-4 border-l-primary">
-                    <CardContent className="pt-4 space-y-3">
-                      <div className="space-y-2">
-                        <Label>Agent Name</Label>
-                        <Input
-                          type="text"
-                          value={agentName}
-                          onChange={(e) => setAgentName(e.target.value)}
-                          placeholder="my-assistant"
-                          className="max-w-xs"
-                          onKeyDown={(e) => e.key === 'Enter' && createAgent()}
-                        />
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        Will use {TEMPLATES[selectedTemplate]?.provider} / {TEMPLATES[selectedTemplate]?.model} with {profileInfo(TEMPLATES[selectedTemplate]?.profile || 'balanced').label} profile
-                      </div>
-                      <div>
-                        <Button
-                          onClick={createAgent}
-                          disabled={creatingAgent || !agentName.trim()}
                         >
-                          {creatingAgent ? (
-                            <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                          ) : null}
-                          Create Agent
-                        </Button>
-                      </div>
-                      {createdAgent && (
-                        <div className="mt-2">
-                          <Badge className="bg-green-500 text-white px-3 py-1">
-                            Agent "{createdAgent.name}" created successfully
-                          </Badge>
+                          <div
+                            className={cn(
+                              'max-w-[80%] px-4 py-2 rounded-2xl text-sm',
+                              msg.role === 'user'
+                                ? 'bg-[var(--neon-cyan)] text-[var(--void)] rounded-br-md'
+                                : 'bg-[var(--surface-tertiary)] text-[var(--text-primary)] rounded-bl-md'
+                            )}
+                          >
+                            {msg.content}
+                          </div>
                         </div>
-                      )}
-                    </CardContent>
-                  </Card>
-                </CardContent>
-                <div className="flex justify-between p-6 pt-0">
-                  <Button variant="ghost" onClick={prevStep}>
-                    <ChevronLeft className="h-4 w-4 mr-1" />
-                    Back
-                  </Button>
-                  <Button onClick={nextStep}>
-                    {createdAgent ? 'Next: Try It' : 'Skip'}
-                  </Button>
-                </div>
-              </Card>
-            )}
-
-            {/* Step 4: Try It (mini chat) */}
-            {step === 4 && (
-              <Card className="max-w-2xl mx-auto">
-                <CardContent className="pt-6">
-                  <h3 className="text-base font-bold mb-1">Try Your Agent</h3>
-                  <p className="text-xs text-muted-foreground mb-4 leading-relaxed">
-                    Send a quick message to test your new agent. Try one of the suggestions below or type your own.
-                  </p>
-
-                  {/* Suggested message chips */}
-                  <div className="flex flex-wrap gap-2 mb-4">
-                    {currentSuggestions.map((s, i) => (
-                      <button
-                        key={i}
-                        className="px-3 py-1.5 bg-muted hover:bg-muted/80 rounded-full text-xs transition-colors disabled:opacity-50"
-                        onClick={() => sendTryItMessage(s)}
-                        disabled={tryItSending}
-                      >
-                        {s}
-                      </button>
-                    ))}
-                  </div>
-
-                  {/* Mini chat messages */}
-                  <div className="border rounded-lg p-4 min-h-[100px] space-y-3 mb-4">
-                    {tryItMessages.map((msg, i) => (
-                      <div
-                        key={i}
-                        className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                      >
-                        <div
-                          className={`max-w-[80%] px-3 py-2 rounded-lg text-sm ${
-                            msg.role === 'user'
-                              ? 'bg-primary text-primary-foreground'
-                              : 'bg-muted'
-                          }`}
-                        >
-                          {msg.text}
-                        </div>
-                      </div>
-                    ))}
+                      ))
+                    )}
                     {tryItSending && (
                       <div className="flex justify-start">
-                        <div className="max-w-[80%] px-3 py-2 rounded-lg text-sm bg-muted opacity-50">
-                          Thinking...
+                        <div className="bg-[var(--surface-tertiary)] px-4 py-2 rounded-2xl rounded-bl-md">
+                          <Loader2 className="w-4 h-4 animate-spin text-[var(--neon-cyan)]" />
                         </div>
                       </div>
                     )}
@@ -1060,205 +729,259 @@ ${tpl.system_prompt}
 
                   {/* Input */}
                   <div className="flex gap-2">
-                    <Input
+                    <input
                       type="text"
                       value={tryItInput}
                       onChange={(e) => setTryItInput(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleTryItSend()}
                       placeholder="Type a message..."
-                      disabled={tryItSending}
-                      onKeyDown={(e) => e.key === 'Enter' && sendTryItMessage(tryItInput)}
+                      className="flex-1 bg-[var(--surface-secondary)] border border-[var(--border-default)] rounded-lg px-4 py-3 text-[var(--text-primary)] placeholder-[var(--text-primary)]/20"
                     />
-                    <Button
-                      size="sm"
-                      onClick={() => sendTryItMessage(tryItInput)}
-                      disabled={tryItSending || !tryItInput.trim()}
+                    <motion.button
+                      onClick={handleTryItSend}
+                      disabled={!tryItInput.trim() || tryItSending}
+                      className="px-4 py-2 rounded-lg bg-[var(--neon-cyan)] text-[var(--void)] disabled:opacity-50"
+                      whileHover={{ scale: 1.02 }}
+                      whileTap={{ scale: 0.98 }}
                     >
-                      <Send className="h-4 w-4" />
-                    </Button>
+                      {tryItSending ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
+                    </motion.button>
                   </div>
-                </CardContent>
-                <div className="flex justify-between p-6 pt-0">
-                  <Button variant="ghost" onClick={prevStep}>
-                    <ChevronLeft className="h-4 w-4 mr-1" />
-                    Back
-                  </Button>
-                  <Button onClick={nextStep}>Continue</Button>
                 </div>
-              </Card>
-            )}
+              </SpotlightCard>
+            </motion.div>
+          )}
 
-            {/* Step 5: Channel Setup (Optional) */}
-            {step === 5 && (
-              <Card className="max-w-4xl mx-auto">
-                <CardContent className="pt-6">
-                  <h3 className="text-base font-bold mb-1">
-                    Connect a Channel <Badge variant="secondary">Optional</Badge>
-                  </h3>
-                  <p className="text-xs text-muted-foreground mb-4 leading-relaxed">
-                    Channels let your agent communicate via messaging platforms. This is optional — you can always use the built-in web chat.
-                  </p>
-
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
-                    {CHANNEL_OPTIONS.map((ch) => (
-                      <div
-                        key={ch.name}
-                        className={`border rounded-lg p-3 cursor-pointer transition-colors ${
-                          channelType === ch.name
-                            ? 'border-primary bg-primary/5'
-                            : 'hover:border-muted-foreground/50'
-                        }`}
-                        onClick={() => selectChannel(ch.name)}
-                      >
-                        <div className="flex items-center gap-2 mb-2">
-                          <div className="w-8 h-8 rounded bg-muted flex items-center justify-center text-xs font-bold">
-                            {ch.icon}
-                          </div>
-                          <span className="font-bold text-sm">{ch.display_name}</span>
-                        </div>
-                        <div className="text-xs text-muted-foreground leading-relaxed">{ch.description}</div>
-                      </div>
-                    ))}
+          {/* Step 5: Channel */}
+          {step === 5 && (
+            <motion.div
+              key="step5"
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
+            >
+              <SpotlightCard glowColor="rgba(255, 184, 0, 0.1)">
+                <div className="p-6">
+                  <div className="flex items-center gap-3 mb-6">
+                    <div className="w-10 h-10 rounded-xl bg-[var(--neon-amber)]/10 flex items-center justify-center">
+                      <Radio className="w-5 h-5 text-[var(--neon-amber)]" />
+                    </div>
+                    <div>
+                      <h2 className="text-xl font-bold text-[var(--text-primary)]">Add Channel (Optional)</h2>
+                      <p className="text-sm text-[var(--text-muted)]">Connect your agent to external platforms</p>
+                    </div>
                   </div>
 
-                  {selectedChannelObj && (
-                    <Card className="border-l-4 border-l-primary">
-                      <CardContent className="pt-4 space-y-3">
-                        <div className="font-medium">Configure {selectedChannelObj.display_name}</div>
-                        <div className="text-xs text-muted-foreground">{selectedChannelObj.help}</div>
-                        <div className="space-y-2">
-                          <Label>{selectedChannelObj.token_label}</Label>
-                          <div className="flex gap-2">
-                            <Input
-                              type="password"
-                              placeholder={selectedChannelObj.token_placeholder}
-                              value={channelToken}
-                              onChange={(e) => setChannelToken(e.target.value)}
-                              onKeyDown={(e) => e.key === 'Enter' && configureChannel()}
-                            />
-                            <Button
-                              onClick={configureChannel}
-                              disabled={configuringChannel || !channelToken.trim()}
-                            >
-                              {configuringChannel ? (
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                              ) : (
-                                'Save'
-                              )}
-                            </Button>
+                  {/* Skip option */}
+                  <div className="mb-6">
+                    <label className="flex items-center gap-3 p-4 rounded-xl bg-[var(--surface-secondary)] border border-[var(--border-default)] cursor-pointer hover:border-[var(--neon-cyan)]/50 transition-colors">
+                      <input
+                        type="checkbox"
+                        checked={skipChannel}
+                        onChange={(e) => setSkipChannel(e.target.checked)}
+                        className="w-5 h-5 accent-[var(--neon-cyan)]"
+                      />
+                      <div>
+                        <div className="text-[var(--text-primary)] font-medium">Skip for now</div>
+                        <div className="text-sm text-[var(--text-muted)]">Configure channels later from the Channels page</div>
+                      </div>
+                    </label>
+                  </div>
+
+                  {!skipChannel && (
+                    <>
+                      {/* Channel Selector */}
+                      <div className="mb-6">
+                        <label className="text-sm text-[var(--text-muted)] block mb-2">Select Channel</label>
+                        {channels.length === 0 ? (
+                          <div className="p-4 rounded-xl bg-[var(--surface-secondary)] border border-[var(--border-default)] text-center text-[var(--text-muted)]">
+                            <Radio className="w-8 h-8 mx-auto mb-2 opacity-30" />
+                            <p>No unconfigured channels available</p>
+                            <p className="text-sm mt-1">All channels are already set up</p>
                           </div>
-                        </div>
-                        <div className="text-xs text-muted-foreground">
-                          Or set {selectedChannelObj.token_env} in your environment
-                        </div>
-                        {channelConfigured && (
-                          <div className="mt-2">
-                            <Badge className="bg-green-500 text-white px-3 py-1">
-                              {selectedChannelObj.display_name} configured and activated.
-                            </Badge>
+                        ) : (
+                          <div className="grid grid-cols-2 gap-3">
+                            {channels.map((channel) => (
+                              <motion.div
+                                key={channel.name}
+                                onClick={() => setSelectedChannel(channel.name)}
+                                className={cn(
+                                  'p-4 rounded-xl border cursor-pointer transition-all',
+                                  selectedChannel === channel.name
+                                    ? 'border-[var(--neon-cyan)] bg-[var(--neon-cyan)]/10'
+                                    : 'border-[var(--border-default)] bg-[var(--surface-secondary)] hover:border-[var(--border-hover)]'
+                                )}
+                                whileHover={{ scale: 1.02 }}
+                                whileTap={{ scale: 0.98 }}
+                              >
+                                <div className="flex items-center gap-3">
+                                  <span className="text-2xl">{channel.icon}</span>
+                                  <div>
+                                    <div className="font-medium text-[var(--text-primary)]">{channel.display_name}</div>
+                                    <div className="text-xs text-[var(--text-muted)]">{channel.name}</div>
+                                  </div>
+                                </div>
+                              </motion.div>
+                            ))}
                           </div>
                         )}
-                      </CardContent>
-                    </Card>
-                  )}
+                      </div>
 
-                  {!channelType && (
-                    <div className="bg-muted/50 rounded-lg p-4">
-                      <p className="text-sm text-muted-foreground">
-                        You can skip this step. The built-in web chat is always available from the <strong>Agents</strong> page.
-                        Add channels any time from <strong>Settings → Channels</strong>.
-                      </p>
-                    </div>
+                      {/* Channel Config Fields */}
+                      {selectedChannel && channelFields.length > 0 && (
+                        <motion.div
+                          initial={{ opacity: 0, height: 0 }}
+                          animate={{ opacity: 1, height: 'auto' }}
+                          className="space-y-4 mb-6"
+                        >
+                          <div className="text-sm text-[var(--text-muted)]">Configuration</div>
+                          {channelFields.map((field) => (
+                            <div key={field.key}>
+                              <label className="text-sm text-[var(--text-muted)] block mb-2">
+                                {field.label}
+                                {field.required && <span className="text-[var(--neon-magenta)] ml-1">*</span>}
+                              </label>
+                              {field.type === 'textarea' ? (
+                                <textarea
+                                  value={channelConfig[field.key] || ''}
+                                  onChange={(e) => setChannelConfig(prev => ({ ...prev, [field.key]: e.target.value }))}
+                                  placeholder={field.label}
+                                  rows={3}
+                                  className="w-full bg-[var(--surface-secondary)] border border-[var(--border-default)] rounded-lg px-4 py-3 text-[var(--text-primary)]"
+                                />
+                              ) : (
+                                <input
+                                  type={field.type === 'password' ? 'password' : 'text'}
+                                  value={channelConfig[field.key] || ''}
+                                  onChange={(e) => setChannelConfig(prev => ({ ...prev, [field.key]: e.target.value }))}
+                                  placeholder={field.label}
+                                  className="w-full bg-[var(--surface-secondary)] border border-[var(--border-default)] rounded-lg px-4 py-3 text-[var(--text-primary)]"
+                                />
+                              )}
+                            </div>
+                          ))}
+
+                          {/* Test Connection */}
+                          <motion.button
+                            onClick={handleTestChannel}
+                            disabled={channelLoading || channelFields.some(f => f.required && !channelConfig[f.key])}
+                            className="w-full py-3 rounded-lg bg-[var(--surface-tertiary)] text-[var(--text-primary)] font-medium disabled:opacity-50 flex items-center justify-center gap-2"
+                            whileHover={{ scale: 1.01 }}
+                            whileTap={{ scale: 0.99 }}
+                          >
+                            {channelLoading ? (
+                              <>
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                                Testing...
+                              </>
+                            ) : (
+                              <>
+                                <Check className="w-4 h-4" />
+                                Test Connection
+                              </>
+                            )}
+                          </motion.button>
+
+                          {channelTestResult && (
+                            <motion.div
+                              initial={{ opacity: 0, y: -10 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              className={cn(
+                                'p-3 rounded-lg text-sm',
+                                channelTestResult.success
+                                  ? 'bg-[var(--neon-green)]/10 text-[var(--neon-green)] border border-[var(--neon-green)]/30'
+                                  : 'bg-[var(--neon-magenta)]/10 text-[var(--neon-magenta)] border border-[var(--neon-magenta)]/30'
+                              )}
+                            >
+                              <div className="flex items-center gap-2">
+                                {channelTestResult.success ? (
+                                  <>
+                                    <Check className="w-4 h-4" />
+                                    <span>{channelTestResult.message || 'Connection successful!'}</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <AlertCircle className="w-4 h-4" />
+                                    <span>{channelTestResult.message || 'Connection failed'}</span>
+                                  </>
+                                )}
+                              </div>
+                            </motion.div>
+                          )}
+                        </motion.div>
+                      )}
+                    </>
                   )}
-                </CardContent>
-                <div className="flex justify-between p-6 pt-0">
-                  <Button variant="ghost" onClick={prevStep}>
-                    <ChevronLeft className="h-4 w-4 mr-1" />
-                    Back
-                  </Button>
-                  <Button onClick={nextStep}>
-                    {channelConfigured ? 'Next' : 'Skip'}
-                  </Button>
                 </div>
-              </Card>
-            )}
+              </SpotlightCard>
+            </motion.div>
+          )}
 
-            {/* Step 6: Done */}
-            {step === 6 && (
-              <Card className="max-w-2xl mx-auto text-center">
-                <CardContent className="pt-6">
-                  <div className="text-6xl mb-3 text-green-500">&#10003;</div>
-                  <h3 className="text-xl font-bold mb-2 text-primary">You're All Set!</h3>
-                  <p className="text-sm text-muted-foreground leading-relaxed mb-6">
-                    OpenFang is configured and ready to go. Here is a summary of what was set up:
-                  </p>
+          {/* Step 6: Launch */}
+          {step === 6 && (
+            <motion.div
+              key="step6"
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.9 }}
+              className="text-center py-12"
+            >
+              <motion.div
+                className="w-24 h-24 rounded-full bg-[var(--neon-green)]/10 flex items-center justify-center mx-auto mb-6"
+                animate={{ scale: [1, 1.1, 1] }}
+                transition={{ duration: 1, repeat: Infinity }}
+              >
+                <Rocket className="w-12 h-12 text-[var(--neon-green)]" />
+              </motion.div>
+              <h2 className="text-2xl font-bold text-[var(--text-primary)] mb-2">Ready to Launch!</h2>
+              <p className="text-[var(--text-muted)] mb-8">Your agent is configured and ready to go.</p>
+              <motion.button
+                onClick={handleCreate}
+                disabled={isLoading}
+                className="px-8 py-4 rounded-xl bg-[var(--neon-green)] text-[var(--void)] font-bold text-lg disabled:opacity-50"
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+              >
+                {isLoading ? (
+                  <Loader2 className="w-6 h-6 animate-spin inline mr-2" />
+                ) : (
+                  <Rocket className="w-6 h-6 inline mr-2" />
+                )}
+                Create Agent
+              </motion.button>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
-                  <Card className="text-left mb-5">
-                    <CardContent className="pt-4 space-y-3">
-                      <div className="flex justify-between items-center py-2 border-b">
-                        <span className="text-sm font-medium text-muted-foreground">LLM Provider</span>
-                        <span className="text-sm">
-                          {setupSummary.provider ? (
-                            setupSummary.provider
-                          ) : hasConfiguredProvider ? (
-                            <Badge className="bg-green-500 text-white">Pre-configured</Badge>
-                          ) : (
-                            <Badge variant="secondary">Skipped</Badge>
-                          )}
-                        </span>
-                      </div>
-                      <div className="flex justify-between items-center py-2 border-b">
-                        <span className="text-sm font-medium text-muted-foreground">First Agent</span>
-                        <span className="text-sm">
-                          {setupSummary.agent ? (
-                            setupSummary.agent
-                          ) : (
-                            <Badge variant="secondary">Skipped</Badge>
-                          )}
-                        </span>
-                      </div>
-                      <div className="flex justify-between items-center py-2">
-                        <span className="text-sm font-medium text-muted-foreground">Channel</span>
-                        <span className="text-sm">
-                          {setupSummary.channel ? (
-                            setupSummary.channel
-                          ) : (
-                            <Badge variant="outline">None (web chat available)</Badge>
-                          )}
-                        </span>
-                      </div>
-                    </CardContent>
-                  </Card>
+        {/* Navigation */}
+        {step < 6 && (
+          <motion.div
+            className="flex justify-between mt-8"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+          >
+            <motion.button
+              onClick={() => setStep(s => s - 1)}
+              disabled={step === 1}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[var(--surface-secondary)] text-[var(--text-secondary)] hover:bg-[var(--surface-tertiary)] disabled:opacity-30"
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+            >
+              <ChevronLeft className="w-4 h-4" />
+              Back
+            </motion.button>
 
-                  <Card className="text-left mb-5">
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-sm">Next Steps</CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-1 text-sm text-muted-foreground">
-                      {createdAgent ? (
-                        <div className="py-1">• Open <strong>Agents</strong> to start talking to your agent</div>
-                      ) : (
-                        <div className="py-1">• Go to <strong>Agents</strong> to create your first agent</div>
-                      )}
-                      <div className="py-1">• Browse <strong>Skills</strong> to add capabilities (web search, code execution, etc.)</div>
-                      <div className="py-1">• Check <strong>Settings</strong> for advanced configuration</div>
-                      {!setupSummary.channel && (
-                        <div className="py-1">• Visit <strong>Channels</strong> to connect messaging platforms</div>
-                      )}
-                    </CardContent>
-                  </Card>
-
-                  <div className="flex gap-2 justify-center">
-                    <Button onClick={finish}>
-                      {createdAgent ? 'Start Chatting' : 'Go to Dashboard'}
-                    </Button>
-                    <Button variant="ghost" onClick={prevStep}>
-                      Back
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-          </>
+            <motion.button
+              onClick={() => setStep(s => s + 1)}
+              disabled={!canProceed()}
+              className="flex items-center gap-2 px-6 py-2 rounded-lg bg-[var(--neon-cyan)] text-[var(--void)] font-medium disabled:opacity-30"
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+            >
+              {step === 5 ? 'Launch' : 'Next'}
+              <ChevronRight className="w-4 h-4" />
+            </motion.button>
+          </motion.div>
         )}
       </div>
     </div>

@@ -1,7 +1,12 @@
 import axios, { AxiosError, AxiosInstance } from 'axios';
 import type {
   HealthStatus, Agent, Session, Message,
-  Channel, Skill, Workflow, Config, UsageStats
+  Channel, Skill, Workflow, Config, UsageStats,
+  AgentDetail, AgentFile, ToolFilters,
+  ClawHubSkill, ClawHubSearchResult, ClawHubBrowseResult, SkillDetail,
+  McpServersResponse,
+  Hand, HandInstance, HandStats, HandBrowserState, InstallDepsResponse,
+  Profile, Template, Provider
 } from './types';
 import { getApiBaseUrl, getWsBaseUrl } from '@/lib/tauri';
 
@@ -157,10 +162,6 @@ class APIClient {
     await this.del(`/api/agents/${id}`);
   }
 
-  async spawnAgent(id: string): Promise<void> {
-    await this.post(`/api/agents/${id}/spawn`);
-  }
-
   async pauseAgent(id: string): Promise<void> {
     await this.post(`/api/agents/${id}/pause`);
   }
@@ -170,17 +171,20 @@ class APIClient {
   }
 
   async stopAgent(id: string): Promise<void> {
-    await this.post(`/api/agents/${id}/stop`);
+    await this.del(`/api/agents/${id}`);
   }
 
   // Messages
-  async sendMessage(agentId: string, message: string): Promise<Message> {
-    return this.post(`/api/agents/${agentId}/message`, { message });
+  async sendMessage(agentId: string, message: string, sessionId?: string): Promise<Message> {
+    const body: { message: string; session_id?: string } = { message };
+    if (sessionId) body.session_id = sessionId;
+    return this.post(`/api/agents/${agentId}/message`, body);
   }
 
-  async getMessages(agentId: string, sessionId?: string): Promise<Message[]> {
-    const params = sessionId ? `?session_id=${sessionId}` : '';
-    return this.get(`/api/agents/${agentId}/messages${params}`);
+  async getMessages(agentId: string, _sessionId?: string): Promise<Message[]> {
+    // Backend uses /session endpoint, not /messages
+    const res = await this.get<{ messages: Message[] }>(`/api/agents/${agentId}/session`);
+    return res.messages || [];
   }
 
   // Sessions
@@ -199,11 +203,15 @@ class APIClient {
   }
 
   async createSession(agentId: string, title?: string): Promise<Session> {
-    return this.post('/api/sessions', { agent_id: agentId, title });
+    return this.post(`/api/agents/${agentId}/sessions`, { title });
   }
 
   async deleteSession(id: string): Promise<void> {
     await this.del(`/api/sessions/${id}`);
+  }
+
+  async switchSession(agentId: string, sessionId: string): Promise<void> {
+    await this.post(`/api/agents/${agentId}/sessions/${sessionId}/switch`, {});
   }
 
   // Channels
@@ -282,6 +290,14 @@ class APIClient {
   }
 
   async changeAgentModel(id: string, model: string): Promise<void> {
+    await this.put(`/api/agents/${id}/model`, { model });
+  }
+
+  async setAgentMode(id: string, mode: string): Promise<void> {
+    await this.patch(`/api/agents/${id}/config`, { mode });
+  }
+
+  async setAgentModel(id: string, model: string): Promise<void> {
     await this.put(`/api/agents/${id}/model`, { model });
   }
 
@@ -366,15 +382,15 @@ class WebSocketManager {
     // Prevent duplicate connections to the same agent
     if (this.agentId === agentId) {
       if (this.ws?.readyState === WebSocket.OPEN) {
-        this.messageHandlers.push(onMessage);
+        // Replace handler instead of adding to prevent duplicates
+        this.messageHandlers = [onMessage];
+        this.callbacks = callbacks || {};
         return;
       }
       // If already connecting, wait for it
       if (this.ws?.readyState === WebSocket.CONNECTING && this.connectingPromise) {
-        this.messageHandlers.push(onMessage);
-        if (callbacks?.onStateChange) {
-          this.callbacks.onStateChange = callbacks.onStateChange;
-        }
+        this.messageHandlers = [onMessage];
+        this.callbacks = callbacks || {};
         return;
       }
     }
@@ -428,10 +444,15 @@ class WebSocketManager {
         this.callbacks.onError?.(error);
       };
 
-      this.ws.onclose = () => {
-        console.log('[WebSocket] Connection closed');
+      this.ws.onclose = (event) => {
+        console.log('[WebSocket] Connection closed, code:', event.code);
         this.connectingPromise = null;
         this.wsReadyPromise = null;
+        // Don't reconnect if this was a normal closure (code 1000) or if agentId is null
+        if (event.code === 1000 || !this.agentId) {
+          console.log('[WebSocket] Normal closure or disconnect requested, not reconnecting');
+          return;
+        }
         this.attemptReconnect();
       };
     } catch (error) {
@@ -497,9 +518,12 @@ class WebSocketManager {
   }
 
   disconnect() {
+    // Clear all state to prevent memory leaks and duplicate connections
     this.messageHandlers = [];
+    this.callbacks = {};
     if (this.ws) {
-      this.ws.close();
+      // Use code 1000 for normal closure
+      this.ws.close(1000, 'Disconnect requested');
       this.ws = null;
     }
     this.wsReadyPromise = null;
@@ -526,6 +550,8 @@ class ExtendedAPIClient extends APIClient {
     context_window?: number;
     supports_vision?: boolean;
     supports_tools?: boolean;
+    input_cost_per_m?: number;
+    output_cost_per_m?: number;
   }> }> {
     return this.get('/api/models');
   }
@@ -555,8 +581,28 @@ class ExtendedAPIClient extends APIClient {
     daily_limit: number;
     monthly_spend: number;
     monthly_limit: number;
+    alert_threshold?: number;
   }> {
     return this.get('/api/budget');
+  }
+
+  async updateBudget(data: {
+    hourly_limit?: number;
+    daily_limit?: number;
+    monthly_limit?: number;
+    alert_threshold?: number;
+  }): Promise<void> {
+    await this.put('/api/budget', data);
+  }
+
+  async getBudgetAgents(): Promise<Array<{
+    agent_id: string;
+    agent_name?: string;
+    spend: number;
+    calls: number;
+    tokens: number;
+  }>> {
+    return this.get('/api/budget/agents');
   }
 
   // Network
@@ -573,9 +619,487 @@ class ExtendedAPIClient extends APIClient {
     return this.get('/api/a2a/agents');
   }
 
+  async discoverA2A(url: string): Promise<{ success: boolean; agent?: { name: string; url: string }; error?: string }> {
+    return this.post('/api/a2a/discover', { url });
+  }
+
   // Commands
   async listCommands(): Promise<{ commands: Array<{ cmd: string; desc: string; source?: string }> }> {
     return this.get('/api/commands');
+  }
+
+  // ===== Agent Extended Operations =====
+
+  async getAgentDetail(id: string): Promise<AgentDetail> {
+    return this.get(`/api/agents/${id}`);
+  }
+
+  async getAgentFiles(id: string): Promise<{ files: AgentFile[] }> {
+    return this.get(`/api/agents/${id}/files`);
+  }
+
+  async getAgentFile(id: string, filename: string): Promise<{ content: string }> {
+    return this.get(`/api/agents/${id}/files/${encodeURIComponent(filename)}`);
+  }
+
+  async saveAgentFile(id: string, filename: string, content: string): Promise<void> {
+    await this.put(`/api/agents/${id}/files/${encodeURIComponent(filename)}`, { content });
+  }
+
+  async patchAgentConfig(id: string, config: Record<string, unknown>): Promise<void> {
+    await this.patch(`/api/agents/${id}/config`, config);
+  }
+
+  async getAgentTools(id: string): Promise<ToolFilters> {
+    return this.get(`/api/agents/${id}/tools`);
+  }
+
+  async setAgentTools(id: string, filters: ToolFilters): Promise<void> {
+    await this.put(`/api/agents/${id}/tools`, filters);
+  }
+
+  async cloneAgent(id: string, newName: string): Promise<{ agent_id: string; name: string }> {
+    return this.post(`/api/agents/${id}/clone`, { new_name: newName });
+  }
+
+  async clearAgentHistory(id: string): Promise<void> {
+    await this.del(`/api/agents/${id}/history`);
+  }
+
+  async getProfiles(): Promise<{ profiles: Profile[] }> {
+    return this.get('/api/profiles');
+  }
+
+  // ===== Skills / ClawHub Operations =====
+
+  async searchClawHub(query: string, limit = 20): Promise<ClawHubSearchResult> {
+    return this.get(`/api/clawhub/search?q=${encodeURIComponent(query)}&limit=${limit}`);
+  }
+
+  async browseClawHub(sort: string = 'trending', cursor?: string, limit = 20): Promise<ClawHubBrowseResult> {
+    let url = `/api/clawhub/browse?sort=${sort}&limit=${limit}`;
+    if (cursor) url += `&cursor=${encodeURIComponent(cursor)}`;
+    return this.get(url);
+  }
+
+  async installFromClawHub(slug: string): Promise<{ name: string; warnings?: string[] }> {
+    return this.post('/api/clawhub/install', { slug });
+  }
+
+  async getSkillDetail(slug: string): Promise<SkillDetail> {
+    return this.get(`/api/clawhub/skill/${encodeURIComponent(slug)}`);
+  }
+
+  async getSkillCode(slug: string): Promise<{ code: string; filename: string }> {
+    return this.get(`/api/clawhub/skill/${encodeURIComponent(slug)}/code`);
+  }
+
+  async getMcpServers(): Promise<McpServersResponse> {
+    return this.get('/api/mcp/servers');
+  }
+
+  async createSkill(data: {
+    name: string;
+    description: string;
+    runtime: string;
+    prompt_context?: string;
+  }): Promise<void> {
+    await this.post('/api/skills/create', data);
+  }
+
+  async uninstallSkill(name: string): Promise<void> {
+    await this.post('/api/skills/uninstall', { name });
+  }
+
+  // ===== Hands Operations =====
+
+  async getHandDetail(id: string): Promise<Hand> {
+    return this.get(`/api/hands/${id}`);
+  }
+
+  async getActiveHands(): Promise<{ instances: HandInstance[] }> {
+    return this.get('/api/hands/active');
+  }
+
+  async installHandDeps(id: string): Promise<InstallDepsResponse> {
+    return this.post(`/api/hands/${id}/install-deps`);
+  }
+
+  async checkHandDeps(id: string): Promise<{ requirements: Array<{ key: string; satisfied: boolean }> }> {
+    return this.post(`/api/hands/${id}/check-deps`);
+  }
+
+  async activateHand(id: string, config: Record<string, unknown>): Promise<{ instance_id: string }> {
+    return this.post(`/api/hands/${id}/activate`, { config });
+  }
+
+  async pauseHandInstance(id: string): Promise<void> {
+    await this.post(`/api/hands/instances/${id}/pause`);
+  }
+
+  async resumeHandInstance(id: string): Promise<void> {
+    await this.post(`/api/hands/instances/${id}/resume`);
+  }
+
+  async deactivateHandInstance(id: string): Promise<void> {
+    await this.del(`/api/hands/instances/${id}`);
+  }
+
+  async getHandInstanceStats(id: string): Promise<HandStats> {
+    return this.get(`/api/hands/instances/${id}/stats`);
+  }
+
+  async getHandInstanceBrowser(id: string): Promise<HandBrowserState> {
+    return this.get(`/api/hands/instances/${id}/browser`);
+  }
+
+  // ===== Templates Operations =====
+
+  async getTemplates(): Promise<{ templates: Template[] }> {
+    return this.get('/api/templates');
+  }
+
+  async getTemplate(name: string): Promise<{ manifest_toml: string }> {
+    return this.get(`/api/templates/${encodeURIComponent(name)}`);
+  }
+
+  // ===== Agent Memory Operations =====
+
+  async getAgentMemoryKV(agentId: string): Promise<{ kv_pairs: Array<{ key: string; value: unknown }> }> {
+    return this.get(`/api/memory/agents/${agentId}/kv`);
+  }
+
+  async setAgentMemoryKV(agentId: string, key: string, value: unknown): Promise<void> {
+    await this.put(`/api/memory/agents/${agentId}/kv/${encodeURIComponent(key)}`, { value });
+  }
+
+  async deleteAgentMemoryKV(agentId: string, key: string): Promise<void> {
+    await this.del(`/api/memory/agents/${agentId}/kv/${encodeURIComponent(key)}`);
+  }
+
+  // ===== Approvals Operations =====
+
+  async listApprovals(): Promise<Array<{
+    id: string;
+    agent_id: string;
+    tool_name: string;
+    risk_level: 'low' | 'medium' | 'high';
+    status: 'pending' | 'approved' | 'rejected';
+    created_at: string;
+    expires_at?: string;
+    detail?: string;
+  }>> {
+    return this.get('/api/approvals');
+  }
+
+  async approveAction(id: string): Promise<void> {
+    await this.post(`/api/approvals/${id}/approve`);
+  }
+
+  async rejectAction(id: string): Promise<void> {
+    await this.post(`/api/approvals/${id}/reject`);
+  }
+
+  // ===== Workflow Operations =====
+
+  async createWorkflow(data: {
+    name: string;
+    description?: string;
+    steps: Array<{
+      name: string;
+      agent_name?: string;
+      mode: 'sequential' | 'parallel' | 'loop';
+      prompt?: string;
+    }>;
+  }): Promise<{ workflow_id: string }> {
+    return this.post('/api/workflows', data);
+  }
+
+  async runWorkflow(id: string, input?: string): Promise<{ run_id: string; status: string }> {
+    return this.post(`/api/workflows/${id}/run`, { input });
+  }
+
+  async getWorkflowRuns(id: string): Promise<Array<{
+    run_id: string;
+    status: string;
+    started_at: string;
+    completed_at?: string;
+    result?: string;
+  }>> {
+    return this.get(`/api/workflows/${id}/runs`);
+  }
+
+  // ===== Scheduler Operations =====
+
+  async listCronJobs(): Promise<Array<{
+    id: string;
+    name: string;
+    schedule: { kind: 'cron'; expr: string };
+    agent_id: string;
+    action: { kind: 'agent_turn'; message: string };
+    enabled: boolean;
+    last_run?: string;
+    next_run?: string;
+  }>> {
+    return this.get('/api/cron/jobs');
+  }
+
+  async createCronJob(data: {
+    name: string;
+    cron: string;
+    agent_id: string;
+    message: string;
+    enabled?: boolean;
+  }): Promise<{ job_id: string }> {
+    return this.post('/api/cron/jobs', data);
+  }
+
+  async toggleCronJob(id: string, enabled: boolean): Promise<void> {
+    await this.put(`/api/cron/jobs/${id}/enable`, { enabled });
+  }
+
+  async deleteCronJob(id: string): Promise<void> {
+    await this.del(`/api/cron/jobs/${id}`);
+  }
+
+  async runJobNow(id: string): Promise<void> {
+    await this.post(`/api/schedules/${id}/run`);
+  }
+
+  async listTriggers(): Promise<Array<{
+    id: string;
+    name: string;
+    pattern: string;
+    enabled: boolean;
+    trigger_count: number;
+  }>> {
+    return this.get('/api/triggers');
+  }
+
+  async updateTrigger(id: string, data: { enabled?: boolean; pattern?: string }): Promise<void> {
+    await this.put(`/api/triggers/${id}`, data);
+  }
+
+  async deleteTrigger(id: string): Promise<void> {
+    await this.del(`/api/triggers/${id}`);
+  }
+
+  // ===== Channel Operations =====
+
+  async configureChannel(name: string, fields: Record<string, string>): Promise<void> {
+    await this.post(`/api/channels/${encodeURIComponent(name)}/configure`, { fields });
+  }
+
+  async removeChannel(name: string): Promise<void> {
+    await this.del(`/api/channels/${encodeURIComponent(name)}/configure`);
+  }
+
+  async testChannel(name: string): Promise<{ success: boolean; message?: string }> {
+    return this.post(`/api/channels/${encodeURIComponent(name)}/test`);
+  }
+
+  async startWhatsAppQR(): Promise<{ session_id: string; qr_code?: string; status: string }> {
+    return this.post('/api/channels/whatsapp/qr/start');
+  }
+
+  async getWhatsAppQRStatus(sessionId: string): Promise<{ status: string; qr_code?: string; connected?: boolean }> {
+    return this.get(`/api/channels/whatsapp/qr/status?session_id=${encodeURIComponent(sessionId)}`);
+  }
+
+  // ===== Usage Analytics Operations =====
+
+  async getUsageSummary(): Promise<{
+    total_input_tokens: number;
+    total_output_tokens: number;
+    total_cost_usd: number;
+    call_count: number;
+    total_tool_calls: number;
+  }> {
+    return this.get('/api/usage/summary');
+  }
+
+  async getUsageByModel(): Promise<Array<{
+    model: string;
+    provider: string;
+    total_input_tokens: number;
+    total_output_tokens: number;
+    total_cost_usd: number;
+    call_count: number;
+  }>> {
+    return this.get('/api/usage/by-model');
+  }
+
+  async getDailyCosts(): Promise<{
+    daily: Array<{ date: string; cost_usd: number; tokens: number; calls: number }>;
+    first_event_date?: string;
+  }> {
+    return this.get('/api/usage/daily');
+  }
+
+  // ===== Logs & Audit Operations =====
+
+  async getRecentAudit(n = 100): Promise<Array<{
+    seq: number;
+    timestamp: string;
+    action: string;
+    agent_id?: string;
+    detail?: string;
+    hash: string;
+    prev_hash: string;
+  }>> {
+    return this.get(`/api/audit/recent?n=${n}`);
+  }
+
+  async verifyAuditChain(): Promise<{ valid: boolean; entries_checked: number; message?: string }> {
+    return this.get('/api/audit/verify');
+  }
+
+  // ===== Model & Provider Operations =====
+
+  async addCustomModel(data: {
+    id: string;
+    provider: string;
+    context_window?: number;
+    max_output_tokens?: number;
+  }): Promise<void> {
+    await this.post('/api/models/custom', data);
+  }
+
+  async deleteCustomModel(id: string): Promise<void> {
+    await this.del(`/api/models/custom/${encodeURIComponent(id)}`);
+  }
+
+  async saveProviderKey(provider: string, key: string): Promise<void> {
+    await this.post(`/api/providers/${encodeURIComponent(provider)}/key`, { key });
+  }
+
+  async removeProviderKey(provider: string): Promise<void> {
+    await this.del(`/api/providers/${encodeURIComponent(provider)}/key`);
+  }
+
+  async testProvider(provider: string): Promise<{ success: boolean; latency_ms?: number; error?: string }> {
+    return this.post(`/api/providers/${encodeURIComponent(provider)}/test`);
+  }
+
+  async saveProviderUrl(provider: string, url: string): Promise<void> {
+    await this.put(`/api/providers/${encodeURIComponent(provider)}/url`, { url });
+  }
+
+  async startCopilotOAuth(): Promise<{ device_code: string; user_code: string; verification_uri: string; poll_id: string }> {
+    return this.post('/api/providers/github-copilot/oauth/start');
+  }
+
+  async pollCopilotOAuth(pollId: string): Promise<{ status: string; message?: string; configured?: boolean }> {
+    return this.get(`/api/providers/github-copilot/oauth/poll/${encodeURIComponent(pollId)}`);
+  }
+
+  // ===== Comms Operations =====
+
+  async getCommsTopology(): Promise<{
+    nodes: Array<{ id: string; name: string; type: string; children?: string[]; peers?: string[] }>;
+    edges: Array<{ from: string; to: string; type: string }>;
+  }> {
+    return this.get('/api/comms/topology');
+  }
+
+  async getCommsEvents(limit = 200): Promise<Array<{
+    id: string;
+    timestamp: string;
+    type: string;
+    from?: string;
+    to?: string;
+    detail?: string;
+  }>> {
+    return this.get(`/api/comms/events?limit=${limit}`);
+  }
+
+  async sendCommsMessage(from: string, to: string, message: string): Promise<void> {
+    await this.post('/api/comms/send', { from, to, message });
+  }
+
+  async postTask(title: string, description: string, assignee?: string): Promise<{ task_id: string }> {
+    return this.post('/api/comms/task', { title, description, assignee });
+  }
+
+  // ===== Migration Operations =====
+
+  async detectMigration(): Promise<{ detected: boolean; source?: string; reason?: string }> {
+    return this.get('/api/migrate/detect');
+  }
+
+  async scanMigrationPath(path: string): Promise<{
+    agents: number;
+    sessions: number;
+    workflows: number;
+    skills: number;
+    total_size_mb: number;
+  }> {
+    return this.post('/api/migrate/scan', { path });
+  }
+
+  async runMigration(data: { path: string; dry_run?: boolean; include_sessions?: boolean }): Promise<{
+    success: boolean;
+    migrated: { agents: number; workflows: number; skills: number };
+    errors: string[];
+  }> {
+    return this.post('/api/migrate', data);
+  }
+
+  // ===== System Operations =====
+
+  async getConfigSchema(): Promise<{
+    schema: Record<string, { type: string; description: string; default?: unknown; enum?: unknown[] }>;
+  }> {
+    return this.get('/api/config/schema');
+  }
+
+  async getVersion(): Promise<{ version: string; build_time?: string; git_commit?: string; platform?: string; arch?: string }> {
+    return this.get('/api/version');
+  }
+
+  async getSystemStatus(): Promise<{
+    uptime_seconds: number;
+    agent_count: number;
+    default_provider?: string;
+    default_model?: string;
+  }> {
+    return this.get('/api/status');
+  }
+
+  async listTools(): Promise<Array<{
+    name: string;
+    description?: string;
+    category?: string;
+    parameters?: Record<string, unknown>;
+  }>> {
+    return this.get('/api/tools');
+  }
+
+  async getSecurityStatus(): Promise<{
+    features: Record<string, boolean>;
+    audit_enabled: boolean;
+    chain_valid: boolean;
+    configurable?: Record<string, boolean>;
+    monitoring?: Record<string, unknown>;
+  }> {
+    return this.get('/api/security');
+  }
+
+  async listPeers(): Promise<Array<{
+    id: string;
+    name?: string;
+    address?: string;
+    status: string;
+    agent_count?: number;
+    last_seen?: string;
+  }>> {
+    return this.get('/api/peers');
+  }
+
+  // ===== Provider Operations =====
+
+  async listProviders(): Promise<{ providers: Provider[] }> {
+    return this.get('/api/providers');
   }
 }
 

@@ -1,18 +1,18 @@
+// Scheduler - Chronos Clockwork Style
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Card, CardContent } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { Switch } from '@/components/ui/switch';
+import { motion, AnimatePresence } from 'framer-motion';
 import { api } from '@/api/client';
-import { Plus, Loader2, Play, Trash2, Clock, CalendarDays } from 'lucide-react';
+import { NeonText } from '@/components/motion/NeonText';
+import { SpotlightCard } from '@/components/motion/SpotlightCard';
+import { cyberColors } from '@/lib/animations';
+import {
+  Clock, Plus, Play, Trash2, CalendarDays, Loader2,
+  Pause, Check, X, Timer, Zap
+} from 'lucide-react';
+import { cn } from '@/lib/utils';
 
-// Types matching Alpine.js scheduler.js
+// Types
 interface CronJob {
   id: string;
   name: string;
@@ -52,7 +52,7 @@ interface Agent {
   model_name?: string;
 }
 
-// Cron presets from scheduler.js
+// Cron presets
 const CRON_PRESETS = [
   { label: 'Every minute', cron: '* * * * *' },
   { label: 'Every 5 minutes', cron: '*/5 * * * *' },
@@ -67,7 +67,7 @@ const CRON_PRESETS = [
   { label: 'First of month', cron: '0 0 1 * *' },
 ];
 
-// Utility functions from scheduler.js
+// Helper functions
 function describeCron(expr: string): string {
   if (!expr) return '';
   if (expr.startsWith('every ')) return expr;
@@ -75,58 +75,18 @@ function describeCron(expr: string): string {
 
   const map: Record<string, string> = {
     '* * * * *': 'Every minute',
-    '*/2 * * * *': 'Every 2 minutes',
     '*/5 * * * *': 'Every 5 minutes',
-    '*/10 * * * *': 'Every 10 minutes',
     '*/15 * * * *': 'Every 15 minutes',
     '*/30 * * * *': 'Every 30 minutes',
     '0 * * * *': 'Every hour',
-    '0 */2 * * *': 'Every 2 hours',
-    '0 */4 * * *': 'Every 4 hours',
     '0 */6 * * *': 'Every 6 hours',
-    '0 */12 * * *': 'Every 12 hours',
     '0 0 * * *': 'Daily at midnight',
-    '0 6 * * *': 'Daily at 6:00 AM',
     '0 9 * * *': 'Daily at 9:00 AM',
-    '0 12 * * *': 'Daily at noon',
-    '0 18 * * *': 'Daily at 6:00 PM',
     '0 9 * * 1-5': 'Weekdays at 9:00 AM',
     '0 9 * * 1': 'Mondays at 9:00 AM',
-    '0 0 * * 0': 'Sundays at midnight',
     '0 0 1 * *': '1st of every month',
-    '0 0 * * 1': 'Mondays at midnight',
   };
   if (map[expr]) return map[expr];
-
-  const parts = expr.split(' ');
-  if (parts.length !== 5) return expr;
-
-  const [min, hour, dom, mon, dow] = parts;
-
-  if (min.startsWith('*/') && hour === '*' && dom === '*' && mon === '*' && dow === '*') {
-    return 'Every ' + min.substring(2) + ' minutes';
-  }
-  if (min === '0' && hour.startsWith('*/') && dom === '*' && mon === '*' && dow === '*') {
-    return 'Every ' + hour.substring(2) + ' hours';
-  }
-
-  const dowNames: Record<string, string> = {
-    '0': 'Sun', '1': 'Mon', '2': 'Tue', '3': 'Wed', '4': 'Thu', '5': 'Fri', '6': 'Sat', '7': 'Sun',
-    '1-5': 'Weekdays', '0,6': 'Weekends', '6,0': 'Weekends'
-  };
-
-  if (dom === '*' && mon === '*' && /^\d+$/.test(min) && /^\d+$/.test(hour)) {
-    const h = parseInt(hour, 10);
-    const m = parseInt(min, 10);
-    const ampm = h >= 12 ? 'PM' : 'AM';
-    const h12 = h === 0 ? 12 : (h > 12 ? h - 12 : h);
-    const mStr = m < 10 ? '0' + m : '' + m;
-    const timeStr = h12 + ':' + mStr + ' ' + ampm;
-    if (dow === '*') return 'Daily at ' + timeStr;
-    const dowLabel = dowNames[dow] || ('DoW ' + dow);
-    return dowLabel + ' at ' + timeStr;
-  }
-
   return expr;
 }
 
@@ -175,16 +135,126 @@ function triggerType(pattern: Record<string, unknown> | string): string {
     system: 'System',
     system_keyword: 'System Keyword',
     memory_update: 'Memory Update',
-    memory_key_pattern: 'Memory Key',
-    all: 'All Events',
     content_match: 'Content Match',
   };
   return names[key] || key.replace(/_/g, ' ');
 }
 
+// Status badge with neon colors
+function StatusBadge({ active }: { active: boolean }) {
+  return (
+    <span
+      className={cn(
+        'px-2 py-0.5 rounded text-[10px] font-mono uppercase',
+        active
+          ? 'bg-[var(--neon-green)]/15 text-[var(--neon-green)] border border-[var(--neon-green)]/30'
+          : 'bg-[var(--surface-secondary)] text-[var(--text-muted)] border border-[var(--border-default)]'
+      )}
+    >
+      {active ? 'ACTIVE' : 'PAUSED'}
+    </span>
+  );
+}
+
+// Job card with gear animation
+function JobCard({
+  job,
+  agentName,
+  onToggle,
+  onDelete,
+  onRun,
+  isRunning
+}: {
+  job: CronJob;
+  agentName: string;
+  onToggle: () => void;
+  onDelete: () => void;
+  onRun: () => void;
+  isRunning: boolean;
+}) {
+  return (
+    <motion.div
+      layout
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, scale: 0.95 }}
+    >
+      <SpotlightCard glowColor={job.enabled ? 'rgba(255, 184, 0, 0.1)' : 'rgba(255,255,255,0.05)'}>
+        <div className="p-4">
+          <div className="flex items-start justify-between mb-3">
+            <div className="flex items-center gap-3">
+              <motion.div
+                className="w-10 h-10 rounded-lg bg-[var(--neon-amber)]/10 flex items-center justify-center"
+                animate={{ rotate: job.enabled ? 360 : 0 }}
+                transition={{ duration: 20, repeat: job.enabled ? Infinity : 0, ease: 'linear' }}
+              >
+                <Clock className="w-5 h-5 text-[var(--neon-amber)]" />
+              </motion.div>
+              <div>
+                <h3 className="font-semibold text-[var(--text-primary)]">{job.name || '(unnamed)'}</h3>
+                <StatusBadge active={job.enabled} />
+              </div>
+            </div>
+            <div className="flex items-center gap-1">
+              <motion.button
+                onClick={onRun}
+                disabled={isRunning}
+                className="p-2 rounded-lg bg-[var(--surface-tertiary)] text-[var(--text-secondary)] hover:bg-[var(--neon-cyan)]/10 hover:text-[var(--neon-cyan)]"
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+              >
+                {isRunning ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+              </motion.button>
+              <motion.button
+                onClick={onToggle}
+                className={cn(
+                  'p-2 rounded-lg',
+                  job.enabled
+                    ? 'bg-[var(--neon-amber)]/10 text-[var(--neon-amber)]'
+                    : 'bg-[var(--surface-tertiary)] text-[var(--text-muted)]'
+                )}
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+              >
+                {job.enabled ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+              </motion.button>
+              <motion.button
+                onClick={onDelete}
+                className="p-2 rounded-lg text-[var(--text-muted)] hover:text-[var(--neon-magenta)] hover:bg-[var(--neon-magenta)]/10"
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+              >
+                <Trash2 className="w-4 h-4" />
+              </motion.button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3 mb-3">
+            <div className="px-3 py-2 rounded-lg bg-[var(--surface-tertiary)]">
+              <div className="text-[10px] text-[var(--text-muted)] uppercase font-mono mb-1">Schedule</div>
+              <code className="text-xs text-[var(--neon-amber)] font-mono">{job.cron}</code>
+              <div className="text-[10px] text-[var(--text-muted)]">{describeCron(job.cron)}</div>
+            </div>
+            <div className="px-3 py-2 rounded-lg bg-[var(--surface-tertiary)]">
+              <div className="text-[10px] text-[var(--text-muted)] uppercase font-mono mb-1">Agent</div>
+              <div className="text-xs text-[var(--text-secondary)]">{agentName}</div>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between text-xs text-[var(--text-muted)]">
+            <span>Last: {relativeTime(job.last_run)}</span>
+            <span>Next: {relativeTime(job.next_run)}</span>
+          </div>
+        </div>
+      </SpotlightCard>
+    </motion.div>
+  );
+}
+
 export function Scheduler() {
   const [activeTab, setActiveTab] = useState<'jobs' | 'triggers' | 'history'>('jobs');
-  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [runningJobId, setRunningJobId] = useState<string>('');
   const [newJob, setNewJob] = useState({
     name: '',
     cron: '',
@@ -192,26 +262,20 @@ export function Scheduler() {
     message: '',
     enabled: true,
   });
-  const [runningJobId, setRunningJobId] = useState<string>('');
   const queryClient = useQueryClient();
 
-  // Fetch agents for dropdown
+  // Fetch agents
   const { data: agents = [] } = useQuery<Agent[]>({
     queryKey: ['agents'],
     queryFn: () => api.get('/api/agents'),
   });
 
-  // Fetch scheduled jobs
-  const {
-    data: jobsData,
-    isLoading: jobsLoading,
-    error: jobsError,
-  } = useQuery<{ jobs: unknown[] }>({
+  // Fetch jobs
+  const { data: jobsData, isLoading: jobsLoading } = useQuery<{ jobs: unknown[] }>({
     queryKey: ['cron-jobs'],
     queryFn: () => api.get('/api/cron/jobs'),
   });
 
-  // Normalize jobs to match UI expectations
   const jobs: CronJob[] = useMemo(() => {
     const raw = jobsData?.jobs || [];
     return raw.map((j: unknown) => {
@@ -249,17 +313,13 @@ export function Scheduler() {
   }, [jobsData]);
 
   // Fetch triggers
-  const {
-    data: triggers = [],
-    isLoading: triggersLoading,
-    error: triggersError,
-  } = useQuery<Trigger[]>({
+  const { data: triggers = [], isLoading: triggersLoading } = useQuery<Trigger[]>({
     queryKey: ['triggers'],
     queryFn: () => api.get('/api/triggers'),
     enabled: activeTab === 'triggers',
   });
 
-  // Build history from jobs and triggers
+  // Build history
   const history: HistoryItem[] = useMemo(() => {
     const items: HistoryItem[] = [];
     jobs.forEach((job) => {
@@ -303,8 +363,8 @@ export function Scheduler() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['cron-jobs'] });
-      setShowCreateForm(false);
-      setNewJob({ name: '', cron: '', agent_id: '__any__', message: '', enabled: true });
+      setShowCreateModal(false);
+      setNewJob({ name: '', cron: '', agent_id: '', message: '', enabled: true });
     },
   });
 
@@ -339,485 +399,383 @@ export function Scheduler() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['triggers'] }),
   });
 
-  // Helpers
-  const agentName = (agentId?: string): string => {
+  const getAgentName = (agentId?: string): string => {
     if (!agentId) return '(any)';
-    const agent = agents.find((a) => a.id === agentId);
+    const agent = agents.find((a: Agent) => a.id === agentId);
     if (agent) return agent.name;
-    if (agentId.length > 12) return agentId.substring(0, 8) + '...';
-    return agentId;
+    return agentId.length > 12 ? agentId.substring(0, 8) + '...' : agentId;
   };
 
   const enabledJobCount = jobs.filter((j) => j.enabled).length;
 
-  const handleCreateJob = () => {
-    if (!newJob.name.trim()) return;
-    if (!newJob.cron.trim()) return;
-    createMutation.mutate();
-  };
-
-  const handleRunNow = (job: CronJob) => {
-    setRunningJobId(job.id);
-    runNowMutation.mutate(job.id);
-  };
-
   return (
-    <div className="flex-1 overflow-auto p-6">
-      <div className="max-w-6xl mx-auto space-y-6">
+    <div className="h-full overflow-auto p-6">
+      <div className="max-w-6xl mx-auto">
         {/* Header */}
-        <div className="flex items-center justify-between">
+        <motion.div
+          className="flex items-center justify-between mb-8"
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+        >
           <div>
-            <h1 className="text-2xl font-bold">Scheduler</h1>
-            <p className="text-muted-foreground">Schedule automated tasks and workflows</p>
+            <h1 className="text-3xl font-bold">
+              <NeonText color="amber">Scheduler</NeonText>
+            </h1>
+            <p className="text-[var(--text-muted)] mt-1">
+              {jobs.length} job{jobs.length !== 1 ? 's' : ''} • {enabledJobCount} active
+            </p>
           </div>
           {activeTab === 'jobs' && (
-            <Button onClick={() => setShowCreateForm(true)}>
-              <Plus className="w-4 h-4 mr-2" />
-              New Job
-            </Button>
+            <motion.button
+              onClick={() => setShowCreateModal(true)}
+              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[var(--neon-amber)] text-[var(--void)] font-medium"
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+            >
+              <Plus className="w-5 h-5" /> New Job
+            </motion.button>
           )}
-        </div>
+        </motion.div>
 
         {/* Tabs */}
-        <div className="flex border-b">
-          <button
-            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-              activeTab === 'jobs'
-                ? 'border-primary text-primary'
-                : 'border-transparent text-muted-foreground hover:text-foreground'
-            }`}
-            onClick={() => setActiveTab('jobs')}
-          >
-            Scheduled Jobs
-            {jobs.length > 0 && (
-              <Badge variant="secondary" className="ml-2">
-                {enabledJobCount}/{jobs.length} active
-              </Badge>
-            )}
-          </button>
-          <button
-            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-              activeTab === 'triggers'
-                ? 'border-primary text-primary'
-                : 'border-transparent text-muted-foreground hover:text-foreground'
-            }`}
-            onClick={() => setActiveTab('triggers')}
-          >
-            Event Triggers
-            {triggers.length > 0 && (
-              <Badge variant="secondary" className="ml-2">
-                {triggers.length}
-              </Badge>
-            )}
-          </button>
-          <button
-            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-              activeTab === 'history'
-                ? 'border-primary text-primary'
-                : 'border-transparent text-muted-foreground hover:text-foreground'
-            }`}
-            onClick={() => setActiveTab('history')}
-          >
-            Run History
-          </button>
-        </div>
+        <motion.div
+          className="flex gap-1 mb-6 bg-[var(--surface-secondary)] rounded-xl p-1 w-fit"
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+        >
+          {(['jobs', 'triggers', 'history'] as const).map((tab) => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className={cn(
+                'px-4 py-2 rounded-lg text-sm font-medium capitalize transition-colors',
+                activeTab === tab
+                  ? 'bg-[var(--neon-amber)]/20 text-[var(--neon-amber)]'
+                  : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
+              )}
+            >
+              {tab}
+              {tab === 'jobs' && jobs.length > 0 && (
+                <span className="ml-2 text-xs opacity-60">{enabledJobCount}/{jobs.length}</span>
+              )}
+              {tab === 'triggers' && triggers.length > 0 && (
+                <span className="ml-2 text-xs opacity-60">{triggers.length}</span>
+              )}
+            </button>
+          ))}
+        </motion.div>
 
         {/* Jobs Tab */}
         {activeTab === 'jobs' && (
-          <div className="space-y-6">
+          <AnimatePresence mode="wait">
             {jobsLoading ? (
-              <div className="flex items-center justify-center py-12">
-                <Loader2 className="h-8 w-8 animate-spin" />
-                <span className="ml-3 text-muted-foreground">Loading scheduled jobs...</span>
-              </div>
-            ) : jobsError ? (
-              <div className="text-center py-12 text-destructive">
-                <p>Failed to load jobs</p>
-                <p className="text-sm text-muted-foreground">{(jobsError as Error).message}</p>
-                <Button variant="outline" className="mt-4" onClick={() => queryClient.invalidateQueries({ queryKey: ['cron-jobs'] })}>
-                  Retry
-                </Button>
-              </div>
+              <motion.div
+                key="loading"
+                className="flex items-center justify-center h-64"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+              >
+                <div className="w-8 h-8 border-2 border-[var(--neon-amber)] border-t-transparent rounded-full animate-spin" />
+              </motion.div>
+            ) : jobs.length === 0 ? (
+              <motion.div
+                key="empty"
+                className="text-center py-20"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+              >
+                <div className="w-20 h-20 rounded-3xl bg-[var(--surface-secondary)] flex items-center justify-center mx-auto mb-6">
+                  <Clock className="w-10 h-10 text-[var(--text-muted)]" />
+                </div>
+                <h3 className="text-xl font-semibold text-[var(--text-primary)] mb-2">No scheduled jobs</h3>
+                <p className="text-[var(--text-muted)] mb-6">Create cron jobs to run agents on a schedule</p>
+                <button
+                  onClick={() => setShowCreateModal(true)}
+                  className="px-6 py-3 rounded-xl bg-[var(--neon-amber)] text-[var(--void)] font-medium"
+                >
+                  Create Job
+                </button>
+              </motion.div>
             ) : (
-              <>
-                {/* Explainer Card */}
-                <Card className="border-l-4 border-l-primary">
-                  <CardContent className="pt-4">
-                    <div className="font-semibold text-sm mb-1">Scheduled Jobs</div>
-                    <div className="text-sm text-muted-foreground leading-relaxed">
-                      Create cron-based scheduled jobs that send messages to agents on a recurring schedule.
-                      Use cron expressions like <code className="text-primary">*/5 * * * *</code> (every 5 min) or
-                      <code className="text-primary"> 0 9 * * 1-5</code> (weekdays at 9am). You can also run any job
-                      manually with the &quot;Run Now&quot; button.
-                    </div>
-                  </CardContent>
-                </Card>
-
-                {/* Jobs Table */}
-                {jobs.length > 0 ? (
-                  <Card>
-                    <CardContent className="p-0">
-                      <table className="w-full">
-                        <thead>
-                          <tr className="border-b">
-                            <th className="text-left p-4 font-medium">Name</th>
-                            <th className="text-left p-4 font-medium">Schedule</th>
-                            <th className="text-left p-4 font-medium">Agent</th>
-                            <th className="text-left p-4 font-medium">Status</th>
-                            <th className="text-left p-4 font-medium">Last Run</th>
-                            <th className="text-left p-4 font-medium">Next Run</th>
-                            <th className="text-left p-4 font-medium">Actions</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {jobs.map((job) => (
-                            <tr key={job.id} className="border-b last:border-0 hover:bg-muted/50">
-                              <td className="p-4">
-                                <div className="font-semibold">{job.name || job.message || '(unnamed)'}</div>
-                                {job.message && (
-                                  <div className="text-xs text-muted-foreground truncate max-w-[200px]" title={job.message}>
-                                    {job.message.substring(0, 60) + (job.message.length > 60 ? '...' : '')}
-                                  </div>
-                                )}
-                              </td>
-                              <td className="p-4">
-                                <code className="text-xs text-primary font-mono">{job.cron}</code>
-                                <div className="text-xs text-muted-foreground">{describeCron(job.cron)}</div>
-                              </td>
-                              <td className="p-4 truncate max-w-[120px]" title={job.agent_id}>
-                                {agentName(job.agent_id)}
-                              </td>
-                              <td className="p-4">
-                                <Badge variant={job.enabled ? 'default' : 'secondary'}>
-                                  {job.enabled ? 'Active' : 'Paused'}
-                                </Badge>
-                              </td>
-                              <td className="p-4 text-xs" title={formatTime(job.last_run)}>
-                                {relativeTime(job.last_run)}
-                              </td>
-                              <td className="p-4 text-xs" title={formatTime(job.next_run)}>
-                                {relativeTime(job.next_run)}
-                              </td>
-                              <td className="p-4">
-                                <div className="flex gap-1">
-                                  <Button
-                                    size="sm"
-                                    onClick={() => handleRunNow(job)}
-                                    disabled={runningJobId === job.id}
-                                  >
-                                    {runningJobId === job.id ? (
-                                      <Loader2 className="h-3 w-3 animate-spin" />
-                                    ) : (
-                                      <Play className="h-3 w-3" />
-                                    )}
-                                    <span className="ml-1">Run</span>
-                                  </Button>
-                                  <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    onClick={() => toggleJobMutation.mutate({ id: job.id, enabled: !job.enabled })}
-                                  >
-                                    {job.enabled ? 'Pause' : 'Enable'}
-                                  </Button>
-                                  <Button
-                                    size="sm"
-                                    variant="destructive"
-                                    onClick={() => deleteJobMutation.mutate(job.id)}
-                                  >
-                                    <Trash2 className="h-3 w-3" />
-                                  </Button>
-                                </div>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </CardContent>
-                  </Card>
-                ) : (
-                  <div className="text-center py-12">
-                    <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-muted mb-4">
-                      <Clock className="h-8 w-8 text-muted-foreground" />
-                    </div>
-                    <h3 className="text-lg font-semibold mb-2">No scheduled jobs</h3>
-                    <p className="text-muted-foreground mb-4 max-w-md mx-auto">
-                      Create a cron job to run agents on a recurring schedule. Jobs are stored persistently and survive restarts.
-                    </p>
-                    <Button onClick={() => setShowCreateForm(true)}>
-                      <Plus className="w-4 h-4 mr-2" />
-                      Create Scheduled Job
-                    </Button>
-                  </div>
-                )}
-              </>
+              <motion.div
+                key="list"
+                className="grid grid-cols-1 md:grid-cols-2 gap-4"
+                layout
+              >
+                <AnimatePresence>
+                  {jobs.map((job) => (
+                    <JobCard
+                      key={job.id}
+                      job={job}
+                      agentName={getAgentName(job.agent_id)}
+                      onToggle={() => toggleJobMutation.mutate({ id: job.id, enabled: !job.enabled })}
+                      onDelete={() => {
+                        if (confirm(`Delete job "${job.name}"?`)) {
+                          deleteJobMutation.mutate(job.id);
+                        }
+                      }}
+                      onRun={() => {
+                        setRunningJobId(job.id);
+                        runNowMutation.mutate(job.id);
+                      }}
+                      isRunning={runningJobId === job.id}
+                    />
+                  ))}
+                </AnimatePresence>
+              </motion.div>
             )}
-          </div>
+          </AnimatePresence>
         )}
 
         {/* Triggers Tab */}
         {activeTab === 'triggers' && (
-          <div className="space-y-6">
+          <AnimatePresence mode="wait">
             {triggersLoading ? (
-              <div className="flex items-center justify-center py-12">
-                <Loader2 className="h-8 w-8 animate-spin" />
-                <span className="ml-3 text-muted-foreground">Loading triggers...</span>
-              </div>
-            ) : triggersError ? (
-              <div className="text-center py-12 text-destructive">
-                <p>Failed to load triggers</p>
-                <p className="text-sm text-muted-foreground">{(triggersError as Error).message}</p>
-                <Button variant="outline" className="mt-4" onClick={() => queryClient.invalidateQueries({ queryKey: ['triggers'] })}>
-                  Retry
-                </Button>
-              </div>
+              <motion.div className="flex items-center justify-center h-64">
+                <div className="w-8 h-8 border-2 border-[var(--neon-amber)] border-t-transparent rounded-full animate-spin" />
+              </motion.div>
+            ) : triggers.length === 0 ? (
+              <motion.div className="text-center py-20">
+                <div className="w-20 h-20 rounded-3xl bg-[var(--surface-secondary)] flex items-center justify-center mx-auto mb-6">
+                  <Zap className="w-10 h-10 text-[var(--text-muted)]" />
+                </div>
+                <h3 className="text-xl font-semibold text-[var(--text-primary)] mb-2">No triggers</h3>
+                <p className="text-[var(--text-muted)]">Create event triggers on the Workflows page</p>
+              </motion.div>
             ) : (
-              <>
-                <Card className="border-l-4 border-l-primary">
-                  <CardContent className="pt-4">
-                    <div className="font-semibold text-sm mb-1">Event Triggers</div>
-                    <div className="text-sm text-muted-foreground leading-relaxed">
-                      Event triggers fire agents in response to system events (agent lifecycle, memory updates, custom events).
-                      Create and manage triggers on the <a href="#/workflows" className="text-primary hover:underline">Workflows</a> page.
-                      This view shows all active triggers for monitoring.
+              <motion.div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {triggers.map((trigger) => (
+                  <SpotlightCard key={trigger.id} glowColor="rgba(255, 184, 0, 0.1)">
+                    <div className="p-4">
+                      <div className="flex items-start justify-between mb-3">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-lg bg-[var(--neon-amber)]/10 flex items-center justify-center">
+                            <Zap className="w-5 h-5 text-[var(--neon-amber)]" />
+                          </div>
+                          <div>
+                            <h3 className="font-semibold text-[var(--text-primary)]">{triggerType(trigger.pattern)}</h3>
+                            <StatusBadge active={trigger.enabled} />
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <motion.button
+                            onClick={() => toggleTriggerMutation.mutate({ id: trigger.id, enabled: !trigger.enabled })}
+                            className={cn(
+                              'p-2 rounded-lg',
+                              trigger.enabled
+                                ? 'bg-[var(--neon-amber)]/10 text-[var(--neon-amber)]'
+                                : 'bg-[var(--surface-secondary)] text-[var(--text-muted)]'
+                            )}
+                            whileHover={{ scale: 1.05 }}
+                            whileTap={{ scale: 0.95 }}
+                          >
+                            {trigger.enabled ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+                          </motion.button>
+                          <motion.button
+                            onClick={() => {
+                              if (confirm('Delete this trigger?')) {
+                                deleteTriggerMutation.mutate(trigger.id);
+                              }
+                            }}
+                            className="p-2 rounded-lg text-[var(--text-muted)] hover:text-[var(--neon-magenta)] hover:bg-[var(--neon-magenta)]/10"
+                            whileHover={{ scale: 1.05 }}
+                            whileTap={{ scale: 0.95 }}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </motion.button>
+                        </div>
+                      </div>
+                      <div className="text-sm text-[var(--text-muted)] mb-2 line-clamp-2">{trigger.prompt_template}</div>
+                      <div className="flex items-center justify-between text-xs text-[var(--text-muted)]">
+                        <span>Fires: {trigger.fire_count}{trigger.max_fires > 0 ? '/' + trigger.max_fires : ''}</span>
+                        <span>Agent: {getAgentName(trigger.agent_id)}</span>
+                      </div>
                     </div>
-                  </CardContent>
-                </Card>
-
-                {triggers.length > 0 ? (
-                  <Card>
-                    <CardContent className="p-0">
-                      <table className="w-full">
-                        <thead>
-                          <tr className="border-b">
-                            <th className="text-left p-4 font-medium">Agent</th>
-                            <th className="text-left p-4 font-medium">Pattern</th>
-                            <th className="text-left p-4 font-medium">Prompt</th>
-                            <th className="text-left p-4 font-medium">Fires</th>
-                            <th className="text-left p-4 font-medium">Enabled</th>
-                            <th className="text-left p-4 font-medium">Created</th>
-                            <th className="text-left p-4 font-medium">Actions</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {triggers.map((t) => (
-                            <tr key={t.id} className="border-b last:border-0 hover:bg-muted/50">
-                              <td className="p-4 font-semibold truncate max-w-[120px]" title={t.agent_id}>
-                                {agentName(t.agent_id)}
-                              </td>
-                              <td className="p-4">
-                                <Badge variant="outline">{triggerType(t.pattern)}</Badge>
-                              </td>
-                              <td className="p-4 text-xs text-muted-foreground truncate max-w-[180px]" title={t.prompt_template}>
-                                {t.prompt_template}
-                              </td>
-                              <td className="p-4">
-                                {t.fire_count}{t.max_fires > 0 ? '/' + t.max_fires : ''}
-                              </td>
-                              <td className="p-4">
-                                <Switch
-                                  checked={t.enabled}
-                                  onCheckedChange={() => toggleTriggerMutation.mutate({ id: t.id, enabled: !t.enabled })}
-                                />
-                              </td>
-                              <td className="p-4 text-xs">
-                                {new Date(t.created_at).toLocaleDateString()}
-                              </td>
-                              <td className="p-4">
-                                <Button
-                                  size="sm"
-                                  variant="destructive"
-                                  onClick={() => deleteTriggerMutation.mutate(t.id)}
-                                >
-                                  Delete
-                                </Button>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </CardContent>
-                  </Card>
-                ) : (
-                  <div className="text-center py-12">
-                    <h3 className="text-lg font-semibold mb-2">No event triggers</h3>
-                    <p className="text-muted-foreground mb-4">
-                      Create event triggers on the <a href="#/workflows" className="text-primary hover:underline">Workflows page</a> to fire agents in response to system events.
-                    </p>
-                  </div>
-                )}
-              </>
+                  </SpotlightCard>
+                ))}
+              </motion.div>
             )}
-          </div>
+          </AnimatePresence>
         )}
 
         {/* History Tab */}
         {activeTab === 'history' && (
-          <div className="space-y-6">
-            <Card className="border-l-4 border-l-primary">
-              <CardContent className="pt-4">
-                <div className="font-semibold text-sm mb-1">Run History</div>
-                <div className="text-sm text-muted-foreground leading-relaxed">
-                  Recent executions of scheduled jobs and event trigger fires. History is aggregated from schedule run counts and trigger fire counts.
+          <motion.div
+            className="space-y-0"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+          >
+            {history.length === 0 ? (
+              <div className="text-center py-20">
+                <div className="w-20 h-20 rounded-3xl bg-[var(--surface-secondary)] flex items-center justify-center mx-auto mb-6">
+                  <CalendarDays className="w-10 h-10 text-[var(--text-muted)]" />
                 </div>
-              </CardContent>
-            </Card>
-
-            {history.length > 0 ? (
-              <Card>
-                <CardContent className="p-0">
-                  <table className="w-full">
-                    <thead>
-                      <tr className="border-b">
-                        <th className="text-left p-4 font-medium">Time</th>
-                        <th className="text-left p-4 font-medium">Name</th>
-                        <th className="text-left p-4 font-medium">Type</th>
-                        <th className="text-left p-4 font-medium">Status</th>
-                        <th className="text-left p-4 font-medium">Total Runs</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {history.map((h, idx) => (
-                        <tr key={idx} className="border-b last:border-0 hover:bg-muted/50">
-                          <td className="p-4 text-xs whitespace-nowrap">{formatTime(h.timestamp)}</td>
-                          <td className="p-4 font-semibold">{h.name}</td>
-                          <td className="p-4">
-                            <Badge variant={h.type === 'schedule' ? 'default' : 'secondary'}>
-                              {h.type === 'schedule' ? 'Cron Job' : 'Trigger'}
-                            </Badge>
-                          </td>
-                          <td className="p-4">
-                            <Badge variant="outline" className="text-green-600">{h.status}</Badge>
-                          </td>
-                          <td className="p-4">{h.run_count}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </CardContent>
-              </Card>
+                <h3 className="text-xl font-semibold text-[var(--text-primary)] mb-2">No run history</h3>
+                <p className="text-[var(--text-muted)]">History will appear after jobs run</p>
+              </div>
             ) : (
-              <div className="text-center py-12">
-                <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-muted mb-4">
-                  <CalendarDays className="h-8 w-8 text-muted-foreground" />
-                </div>
-                <h3 className="text-lg font-semibold mb-2">No run history yet</h3>
-                <p className="text-muted-foreground">
-                  Run history will appear here after scheduled jobs or triggers execute.
-                </p>
+              <div className="space-y-2">
+                {history.map((item, idx) => (
+                  <motion.div
+                    key={idx}
+                    initial={{ opacity: 0, x: -20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: idx * 0.05 }}
+                    className="flex items-center gap-4 p-3 rounded-xl bg-[var(--text-primary)]/[0.02] border border-[var(--border-subtle)]"
+                  >
+                    <div className={cn(
+                      'w-2 h-2 rounded-full',
+                      item.type === 'schedule' ? 'bg-[var(--neon-amber)]' : 'bg-[var(--neon-magenta)]'
+                    )} />
+                    <div className="flex-1">
+                      <div className="text-sm text-[var(--text-primary)]">{item.name}</div>
+                      <div className="text-xs text-[var(--text-muted)]">
+                        {item.type === 'schedule' ? 'Scheduled Job' : 'Event Trigger'}
+                      </div>
+                    </div>
+                    <div className="text-xs text-[var(--text-muted)]">{relativeTime(item.timestamp)}</div>
+                  </motion.div>
+                ))}
               </div>
             )}
-          </div>
+          </motion.div>
         )}
+      </div>
 
-        {/* Create Job Modal */}
-        <Dialog open={showCreateForm} onOpenChange={setShowCreateForm}>
-          <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>Create Scheduled Job</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4 py-4">
-              <div className="space-y-2">
-                <Label>Job Name</Label>
-                <Input
-                  value={newJob.name}
-                  onChange={(e) => setNewJob((prev) => ({ ...prev, name: e.target.value }))}
-                  placeholder="daily-report"
-                />
+      {/* Create Modal */}
+      {showCreateModal && (
+        <ModalOverlay onClose={() => setShowCreateModal(false)}>
+          <div className="w-full max-w-lg">
+            <h2 className="text-xl font-bold text-[var(--text-primary)] mb-4">
+              <NeonText color="amber">Create Scheduled Job</NeonText>
+            </h2>
+            <div className="space-y-4">
+              <input
+                type="text"
+                value={newJob.name}
+                onChange={(e) => setNewJob(prev => ({ ...prev, name: e.target.value }))}
+                placeholder="Job name..."
+                className="w-full bg-[var(--surface-secondary)] border border-[var(--border-default)] rounded-lg px-4 py-3 text-[var(--text-primary)] placeholder-[var(--text-primary)]/30"
+              />
+              <input
+                type="text"
+                value={newJob.cron}
+                onChange={(e) => setNewJob(prev => ({ ...prev, cron: e.target.value }))}
+                placeholder="Cron expression (e.g., 0 9 * * 1-5)"
+                className="w-full bg-[var(--surface-secondary)] border border-[var(--border-default)] rounded-lg px-4 py-3 text-[var(--text-primary)] placeholder-[var(--text-primary)]/30 font-mono text-sm"
+              />
+              {newJob.cron && (
+                <div className="text-xs text-[var(--neon-amber)]">{describeCron(newJob.cron)}</div>
+              )}
+
+              {/* Presets */}
+              <div className="flex flex-wrap gap-2">
+                {CRON_PRESETS.slice(0, 6).map((preset) => (
+                  <button
+                    key={preset.cron}
+                    onClick={() => setNewJob(prev => ({ ...prev, cron: preset.cron }))}
+                    className={cn(
+                      'px-3 py-1.5 rounded-lg text-xs transition-colors',
+                      newJob.cron === preset.cron
+                        ? 'bg-[var(--neon-amber)]/20 text-[var(--neon-amber)] border border-[var(--neon-amber)]/30'
+                        : 'bg-[var(--surface-secondary)] text-[var(--text-muted)] hover:bg-[var(--surface-tertiary)]'
+                    )}
+                  >
+                    {preset.label}
+                  </button>
+                ))}
               </div>
 
-              <div className="space-y-2">
-                <Label>Cron Expression</Label>
-                <Input
-                  value={newJob.cron}
-                  onChange={(e) => setNewJob((prev) => ({ ...prev, cron: e.target.value }))}
-                  placeholder="0 9 * * 1-5"
-                  className="font-mono"
-                />
-                {newJob.cron && (
-                  <div className="text-xs text-muted-foreground">{describeCron(newJob.cron)}</div>
-                )}
-                <div className="text-xs text-muted-foreground">
-                  Format: <code>minute hour day-of-month month day-of-week</code>
-                </div>
-              </div>
+              <select
+                value={newJob.agent_id}
+                onChange={(e) => setNewJob(prev => ({ ...prev, agent_id: e.target.value }))}
+                className="w-full bg-[var(--surface-secondary)] border border-[var(--border-default)] rounded-lg px-4 py-3 text-[var(--text-primary)]"
+              >
+                <option value="" className="bg-[var(--surface-primary)]">Any agent</option>
+                {agents.map((agent: Agent) => (
+                  <option key={agent.id} value={agent.id} className="bg-[var(--surface-primary)]">
+                    {agent.name}
+                  </option>
+                ))}
+              </select>
 
-              <div className="space-y-2">
-                <Label>Quick Presets</Label>
-                <div className="flex gap-1 flex-wrap">
-                  {CRON_PRESETS.map((preset) => (
-                    <Button
-                      key={preset.cron}
-                      size="sm"
-                      variant={newJob.cron === preset.cron ? 'default' : 'ghost'}
-                      onClick={() => setNewJob((prev) => ({ ...prev, cron: preset.cron }))}
-                    >
-                      {preset.label}
-                    </Button>
-                  ))}
-                </div>
-              </div>
+              <textarea
+                value={newJob.message}
+                onChange={(e) => setNewJob(prev => ({ ...prev, message: e.target.value }))}
+                placeholder="Message to send..."
+                rows={3}
+                className="w-full bg-[var(--surface-secondary)] border border-[var(--border-default)] rounded-lg px-4 py-3 text-[var(--text-primary)] placeholder-[var(--text-primary)]/30"
+              />
 
-              <div className="space-y-2">
-                <Label>Target Agent</Label>
-                <Select
-                  value={newJob.agent_id}
-                  onValueChange={(v) => setNewJob((prev) => ({ ...prev, agent_id: v }))}
+              <div className="flex items-center gap-3">
+                <motion.button
+                  onClick={() => setNewJob(prev => ({ ...prev, enabled: !prev.enabled }))}
+                  className={cn(
+                    'w-12 h-6 rounded-full relative transition-colors',
+                    newJob.enabled ? 'bg-[var(--neon-green)]' : 'bg-[var(--surface-tertiary)]'
+                  )}
                 >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Any available agent" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__any__">Any available agent</SelectItem>
-                    {agents.map((a) => (
-                      <SelectItem key={a.id} value={a.id}>
-                        {a.name} ({a.model_provider || 'unknown'}:{a.model_name || 'unknown'})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {agents.length === 0 && (
-                  <div className="text-xs text-muted-foreground">
-                    No agents running. <a href="#/agents" className="text-primary hover:underline">Spawn one first.</a>
-                  </div>
-                )}
-              </div>
-
-              <div className="space-y-2">
-                <Label>Message to Send</Label>
-                <Textarea
-                  value={newJob.message}
-                  onChange={(e) => setNewJob((prev) => ({ ...prev, message: e.target.value }))}
-                  placeholder="Generate and email the daily status report..."
-                  rows={3}
-                />
-                <div className="text-xs text-muted-foreground">
-                  The message sent to the agent each time this job runs.
-                </div>
-              </div>
-
-              <div className="flex items-center gap-3 pt-2">
-                <Switch
-                  checked={newJob.enabled}
-                  onCheckedChange={(v) => setNewJob((prev) => ({ ...prev, enabled: v }))}
-                />
-                <span className="text-sm">
-                  {newJob.enabled ? 'Enabled (will start running immediately)' : 'Disabled (create paused)'}
+                  <motion.div
+                    className="absolute top-1 w-4 h-4 rounded-full bg-[var(--text-primary)] shadow-lg"
+                    animate={{ left: newJob.enabled ? '28px' : '4px' }}
+                    transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                  />
+                </motion.button>
+                <span className="text-sm text-[var(--text-secondary)]">
+                  {newJob.enabled ? 'Enabled' : 'Disabled'}
                 </span>
               </div>
 
-              <Button
-                className="w-full mt-4"
-                onClick={handleCreateJob}
-                disabled={!newJob.name || !newJob.cron || createMutation.isPending}
-              >
-                {createMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                Create Schedule
-              </Button>
+              <div className="flex gap-3 pt-4">
+                <button
+                  onClick={() => setShowCreateModal(false)}
+                  className="flex-1 py-2 rounded-lg bg-[var(--surface-secondary)] text-[var(--text-secondary)] hover:bg-[var(--surface-tertiary)]"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => createMutation.mutate()}
+                  disabled={!newJob.name || !newJob.cron || createMutation.isPending}
+                  className="flex-1 py-2 rounded-lg bg-[var(--neon-amber)] text-[var(--void)] font-medium disabled:opacity-50"
+                >
+                  {createMutation.isPending ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <Loader2 className="w-4 h-4 animate-spin" /> Creating...
+                    </span>
+                  ) : (
+                    'Create'
+                  )}
+                </button>
+              </div>
             </div>
-          </DialogContent>
-        </Dialog>
-      </div>
+          </div>
+        </ModalOverlay>
+      )}
     </div>
+  );
+}
+
+// Modal overlay
+function ModalOverlay({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 bg-[var(--void)]/80 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <motion.div
+        initial={{ scale: 0.95, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.95, opacity: 0 }}
+        className="bg-[#12121A] border border-[var(--border-default)] rounded-2xl p-6 max-w-lg w-full"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {children}
+      </motion.div>
+    </motion.div>
   );
 }
 

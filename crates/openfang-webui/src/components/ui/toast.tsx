@@ -32,7 +32,7 @@ export function Toast({ toast, onClose }: ToastProps) {
       <span className="flex-1 text-sm">{toast.message}</span>
       <button
         onClick={onClose}
-        className="shrink-0 p-1 rounded hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+        className="shrink-0 p-1 rounded hover:bg-[var(--void)]/5 dark:hover:bg-[var(--text-primary)]/5 transition-colors"
         style={{ '--tw-hover-opacity': '0.05' } as React.CSSProperties}
       >
         <X className="h-4 w-4" />

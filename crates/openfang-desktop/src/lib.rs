@@ -110,7 +110,7 @@ pub fn run() {
             // - 开发模式：自动使用tauri.conf.json中的devUrl (localhost:5173)
             // - 生产模式：自动使用frontendDist (../openfang-webui/dist)
             let _window = WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
-                .title("OpenFang")
+                .title("Empower")
                 .inner_size(1280.0, 800.0)
                 .min_inner_size(800.0, 600.0)
                 .center()

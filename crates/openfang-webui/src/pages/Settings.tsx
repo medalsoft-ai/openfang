@@ -1,76 +1,287 @@
-import { useState, useEffect, useRef } from 'react';
+// Settings - Control Center Style
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { motion, AnimatePresence } from 'framer-motion';
 import { api } from '@/api/client';
-import { Loader2, Key, Shield, Wrench, Database, Network, Plus, Trash2, Check, X, ExternalLink, DollarSign, Info } from 'lucide-react';
+import { NeonText } from '@/components/motion/NeonText';
+import { SpotlightCard } from '@/components/motion/SpotlightCard';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  Key, Shield, Wrench, Database, Network, Loader2,
+  Check, X, ExternalLink, Save, Cpu, Settings2, Package,
+  ArrowRightLeft, Search, Plus, Trash2, TestTube,
+  Play, AlertCircle, RefreshCw, DollarSign, Info, FlaskConical
+} from 'lucide-react';
+import { cn } from '@/lib/utils';
+import type { Provider, Model, SecurityStatus, Budget, AgentBudget, A2AAgent, PeerDetail, SystemVersion, SystemStatus } from '@/api/types';
 
-// Types
-interface Provider {
-  id: string;
-  display_name: string;
-  auth_status: 'configured' | 'not_set' | 'missing' | 'no_key';
-  is_local?: boolean;
-  base_url?: string;
-  health?: string;
-  api_key_env?: string;
-  model_count?: number;
-  key_required?: boolean;
+// Control Center Toggle
+function ControlToggle({
+  label,
+  description,
+  enabled,
+  onToggle
+}: {
+  label: string;
+  description?: string;
+  enabled: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <motion.div
+      className="flex items-center justify-between p-4 rounded-xl bg-[var(--surface-secondary)] border border-[var(--border-subtle)]"
+      whileHover={{ backgroundColor: 'var(--surface-tertiary)' }}
+    >
+      <div>
+        <div className="font-medium text-[var(--text-primary)]">{label}</div>
+        {description && <div className="text-xs text-[var(--text-muted)]">{description}</div>}
+      </div>
+      <motion.button
+        onClick={onToggle}
+        className={cn(
+          'w-12 h-6 rounded-full relative transition-colors',
+          enabled ? 'bg-[var(--neon-green)]' : 'bg-[var(--surface-elevated)]'
+        )}
+        whileTap={{ scale: 0.95 }}
+      >
+        <motion.div
+          className="absolute top-1 w-4 h-4 rounded-full bg-[var(--void)] shadow-lg"
+          animate={{ left: enabled ? '28px' : '4px' }}
+          transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+        />
+      </motion.button>
+    </motion.div>
+  );
 }
 
-interface Model {
-  id: string;
-  display_name?: string;
-  provider: string;
-  tier?: string;
-  context_window?: number;
-  pricing?: { input?: number; output?: number };
+// Provider card for Control Center
+function ProviderCard({
+  provider,
+  onSaveKey,
+  onRemoveKey,
+  onTest,
+  onSaveUrl,
+}: {
+  provider: Provider;
+  onSaveKey: (key: string) => void;
+  onRemoveKey: () => void;
+  onTest: () => Promise<{ success: boolean; latency_ms?: number; error?: string }>;
+  onSaveUrl?: (url: string) => void;
+}) {
+  const [keyInput, setKeyInput] = useState('');
+  const [urlInput, setUrlInput] = useState(provider.base_url || '');
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [testResult, setTestResult] = useState<{ success: boolean; latency_ms?: number; error?: string } | null>(null);
+  const [isTesting, setIsTesting] = useState(false);
+  const [activeTab, setActiveTab] = useState<'key' | 'url'>('key');
+
+  const isConfigured = provider.auth_status === 'configured' || provider.auth_status === 'not_set';
+  const hasNoKey = provider.auth_status === 'no_key' || provider.auth_status === 'missing';
+
+  const handleTest = async () => {
+    setIsTesting(true);
+    try {
+      const result = await onTest();
+      setTestResult(result);
+    } finally {
+      setIsTesting(false);
+    }
+  };
+
+  const getStatusColor = () => {
+    if (hasNoKey) return 'var(--neon-amber)';
+    if (isConfigured) return 'var(--neon-green)';
+    return 'var(--text-muted)';
+  };
+
+  const getStatusText = () => {
+    if (hasNoKey) return 'No Key Required';
+    if (isConfigured) return 'Configured';
+    return 'Not configured';
+  };
+
+  return (
+    <motion.div
+      layout
+      className={cn(
+        'rounded-xl border overflow-hidden',
+        isConfigured && !hasNoKey
+          ? 'bg-[var(--neon-green)]/5 border-[var(--neon-green)]/20'
+          : hasNoKey
+          ? 'bg-[var(--neon-amber)]/5 border-[var(--neon-amber)]/20'
+          : 'bg-[var(--surface-secondary)] border-[var(--border-subtle)]'
+      )}
+    >
+      <button
+        onClick={() => setIsExpanded(!isExpanded)}
+        className="w-full p-4 flex items-center justify-between"
+      >
+        <div className="flex items-center gap-3">
+          <div
+            className={cn(
+              'w-10 h-10 rounded-lg flex items-center justify-center',
+              isConfigured || hasNoKey ? 'bg-[var(--neon-green)]/20' : 'bg-[var(--surface-tertiary)]'
+            )}
+            style={{ backgroundColor: isConfigured || hasNoKey ? `${getStatusColor()}20` : undefined }}
+          >
+            <Key
+              className={cn('w-5 h-5')}
+              style={{ color: getStatusColor() }}
+            />
+          </div>
+          <div className="text-left">
+            <div className="font-medium text-[var(--text-primary)]">{provider.display_name}</div>
+            <div className="text-xs text-[var(--text-muted)]" style={{ color: getStatusColor() }}>
+              {getStatusText()}
+              {provider.model_count !== undefined && ` · ${provider.model_count} models`}
+            </div>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          {testResult && (
+            <span className={cn(
+              'text-xs',
+              testResult.success ? 'text-[var(--neon-green)]' : 'text-[var(--neon-red)]'
+            )}>
+              {testResult.success ? `✓ ${testResult.latency_ms}ms` : '✗ Failed'}
+            </span>
+          )}
+          <div
+            className="w-2 h-2 rounded-full"
+            style={{ backgroundColor: getStatusColor() }}
+          />
+        </div>
+      </button>
+
+      <AnimatePresence>
+        {isExpanded && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="px-4 pb-4 border-t border-[var(--border-subtle)]"
+          >
+            {/* Tabs for Key / URL */}
+            {provider.is_local ? (
+              <div className="flex gap-2 mt-3 mb-3">
+                <button
+                  onClick={() => setActiveTab('key')}
+                  className={cn(
+                    'px-3 py-1.5 text-xs rounded-lg transition-colors',
+                    activeTab === 'key'
+                      ? 'bg-[var(--neon-cyan)]/20 text-[var(--neon-cyan)]'
+                      : 'bg-[var(--surface-tertiary)] text-[var(--text-muted)]'
+                  )}
+                >
+                  API Key
+                </button>
+                <button
+                  onClick={() => setActiveTab('url')}
+                  className={cn(
+                    'px-3 py-1.5 text-xs rounded-lg transition-colors',
+                    activeTab === 'url'
+                      ? 'bg-[var(--neon-cyan)]/20 text-[var(--neon-cyan)]'
+                      : 'bg-[var(--surface-tertiary)] text-[var(--text-muted)]'
+                  )}
+                >
+                  Base URL
+                </button>
+              </div>
+            ) : (
+              <div className="mt-3" />
+            )}
+
+            {/* Key Tab */}
+            {(!provider.is_local || activeTab === 'key') && (
+              <div className="space-y-3">
+                {provider.key_required !== false && (
+                  <>
+                    <div className="flex gap-2">
+                      <input
+                        type="password"
+                        value={keyInput}
+                        onChange={(e) => setKeyInput(e.target.value)}
+                        placeholder={isConfigured ? 'Update API key' : 'Enter API key'}
+                        className="flex-1 bg-[var(--surface-tertiary)] border border-[var(--border-default)] rounded-lg px-3 py-2 text-[var(--text-primary)] text-sm"
+                      />
+                      <motion.button
+                        onClick={() => {
+                          if (keyInput) {
+                            onSaveKey(keyInput);
+                            setKeyInput('');
+                          }
+                        }}
+                        disabled={!keyInput}
+                        className="px-4 py-2 rounded-lg bg-[var(--neon-cyan)] text-[var(--void)] text-sm font-medium disabled:opacity-50"
+                        whileHover={{ scale: 1.02 }}
+                        whileTap={{ scale: 0.98 }}
+                      >
+                        Save
+                      </motion.button>
+                    </div>
+                    {isConfigured && (
+                      <motion.button
+                        onClick={onRemoveKey}
+                        className="w-full px-4 py-2 rounded-lg bg-[var(--neon-red)]/10 text-[var(--neon-red)] text-sm font-medium border border-[var(--neon-red)]/20"
+                        whileHover={{ scale: 1.01 }}
+                        whileTap={{ scale: 0.99 }}
+                      >
+                        Remove API Key
+                      </motion.button>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+
+            {/* URL Tab for local providers */}
+            {provider.is_local && activeTab === 'url' && onSaveUrl && (
+              <div className="space-y-3">
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={urlInput}
+                    onChange={(e) => setUrlInput(e.target.value)}
+                    placeholder="Enter base URL (e.g., http://localhost:11434)"
+                    className="flex-1 bg-[var(--surface-tertiary)] border border-[var(--border-default)] rounded-lg px-3 py-2 text-[var(--text-primary)] text-sm"
+                  />
+                  <motion.button
+                    onClick={() => onSaveUrl(urlInput)}
+                    disabled={!urlInput}
+                    className="px-4 py-2 rounded-lg bg-[var(--neon-cyan)] text-[var(--void)] text-sm font-medium disabled:opacity-50"
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                  >
+                    Save
+                  </motion.button>
+                </div>
+              </div>
+            )}
+
+            {/* Test Button */}
+            <motion.button
+              onClick={handleTest}
+              disabled={isTesting}
+              className="w-full mt-3 flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-[var(--surface-tertiary)] text-[var(--text-primary)] text-sm font-medium border border-[var(--border-default)]"
+              whileHover={{ scale: 1.01 }}
+              whileTap={{ scale: 0.99 }}
+            >
+              {isTesting ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <TestTube className="w-4 h-4" />
+              )}
+              Test Connection
+            </motion.button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
+  );
 }
 
-interface Tool {
-  name: string;
-  description: string;
-  category: string;
-}
-
-interface SecurityData {
-  core_protections?: Record<string, boolean>;
-  configurable?: Record<string, any>;
-  monitoring?: Record<string, any>;
-}
-
-interface Peer {
-  node_id: string;
-  node_name: string;
-  address: string;
-  state: string;
-  agent_count: number;
-  protocol_version: number;
-}
-
-// Providers Tab
-function ProvidersTab() {
-  const [keyInputs, setKeyInputs] = useState<Record<string, string>>({});
-  const [urlInputs, setUrlInputs] = useState<Record<string, string>>({});
-  const [customProviderName, setCustomProviderName] = useState('');
-  const [customProviderUrl, setCustomProviderUrl] = useState('');
-  const [customProviderKey, setCustomProviderKey] = useState('');
-  const [copilotOAuth, setCopilotOAuth] = useState<{ polling: boolean; userCode?: string; verificationUri?: string }>({ polling: false });
-  const pollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+export function Settings() {
   const queryClient = useQueryClient();
-
-  // Cleanup poll timeout on unmount
-  useEffect(() => {
-    return () => {
-      if (pollTimeoutRef.current) {
-        clearTimeout(pollTimeoutRef.current);
-      }
-    };
-  }, []);
 
   const { data: providers = [], isLoading } = useQuery<Provider[]>({
     queryKey: ['providers'],
@@ -80,1126 +291,1642 @@ function ProvidersTab() {
     },
   });
 
-  // Initialize URL inputs from providers
-  useEffect(() => {
-    const urls: Record<string, string> = {};
-    providers.forEach((p) => {
-      if (p.is_local && p.base_url) {
-        urls[p.id] = p.base_url;
-      }
-    });
-    setUrlInputs(urls);
-  }, [providers]);
-
   const saveKeyMutation = useMutation({
     mutationFn: async ({ id, key }: { id: string; key: string }) => {
       await api.post(`/api/providers/${encodeURIComponent(id)}/key`, { key });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['providers'] });
-      queryClient.invalidateQueries({ queryKey: ['models'] });
     },
   });
 
   const removeKeyMutation = useMutation({
     mutationFn: async (id: string) => {
-      await api.del(`/api/providers/${encodeURIComponent(id)}/key`);
+      await api.removeProviderKey(id);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['providers'] });
-      queryClient.invalidateQueries({ queryKey: ['models'] });
     },
   });
 
-  const testMutation = useMutation({
+  const testProviderMutation = useMutation({
     mutationFn: async (id: string) => {
-      return api.post<{ status: string; latency_ms?: number; error?: string }>(`/api/providers/${encodeURIComponent(id)}/test`, {});
+      return api.testProvider(id);
     },
   });
 
   const saveUrlMutation = useMutation({
     mutationFn: async ({ id, url }: { id: string; url: string }) => {
-      return api.put<{ reachable: boolean; latency_ms?: number }>(`/api/providers/${encodeURIComponent(id)}/url`, { base_url: url });
+      await api.saveProviderUrl(id, url);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['providers'] });
     },
   });
-
-  const addCustomProviderMutation = useMutation({
-    mutationFn: async ({ name, url, key }: { name: string; url: string; key: string }) => {
-      const result = await api.put(`/api/providers/${encodeURIComponent(name)}/url`, { base_url: url });
-      if (key.trim()) {
-        await api.post(`/api/providers/${encodeURIComponent(name)}/key`, { key: key.trim() });
-      }
-      return result;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['providers'] });
-      setCustomProviderName('');
-      setCustomProviderUrl('');
-      setCustomProviderKey('');
-    },
-  });
-
-  const startCopilotOAuth = async () => {
-    setCopilotOAuth({ polling: true });
-    try {
-      const resp = await api.post<{ user_code: string; verification_uri: string; poll_id: string; interval: number }>('/api/providers/github-copilot/oauth/start', {});
-      setCopilotOAuth({
-        polling: true,
-        userCode: resp.user_code,
-        verificationUri: resp.verification_uri,
-      });
-      window.open(resp.verification_uri, '_blank');
-      pollCopilotOAuth(resp.poll_id, resp.interval || 5);
-    } catch (e) {
-      setCopilotOAuth({ polling: false });
-    }
-  };
-
-  const pollCopilotOAuth = (pollId: string, interval: number) => {
-    const poll = async () => {
-      try {
-        const resp = await api.get<{ status: string; error?: string }>(`/api/providers/github-copilot/oauth/poll/${pollId}`);
-        if (resp.status === 'complete') {
-          setCopilotOAuth({ polling: false });
-          queryClient.invalidateQueries({ queryKey: ['providers'] });
-        } else if (resp.status === 'pending') {
-          pollTimeoutRef.current = setTimeout(poll, interval * 1000);
-        } else {
-          setCopilotOAuth({ polling: false });
-        }
-      } catch (e) {
-        setCopilotOAuth({ polling: false });
-      }
-    };
-    pollTimeoutRef.current = setTimeout(poll, interval * 1000);
-  };
-
-  const getAuthBadge = (status: string, health?: string) => {
-    if (status === 'configured') {
-      if (health === 'cooldown' || health === 'open') {
-        return <Badge variant="outline" className="text-yellow-600">Limited</Badge>;
-      }
-      return <Badge variant="default">Configured</Badge>;
-    }
-    if (status === 'not_set' || status === 'missing') {
-      return <Badge variant="destructive">Not Set</Badge>;
-    }
-    return <Badge variant="secondary">No Key Needed</Badge>;
-  };
-
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center p-8">
-        <Loader2 className="h-8 w-8 animate-spin" />
-      </div>
-    );
-  }
 
   return (
-    <div className="space-y-6">
-      {/* Custom Provider Dialog */}
-      <div className="flex justify-end">
-        <Dialog>
-          <DialogTrigger asChild>
-            <Button variant="outline">
-              <Plus className="w-4 h-4 mr-2" />
-              Add Custom Provider
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Add Custom Provider</DialogTitle>
-              <DialogDescription>Add a custom OpenAI-compatible API endpoint</DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4 py-4">
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Provider Name</label>
-                <Input
-                  placeholder="my-provider"
-                  value={customProviderName}
-                  onChange={(e) => setCustomProviderName(e.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Base URL</label>
-                <Input
-                  placeholder="https://api.example.com/v1"
-                  value={customProviderUrl}
-                  onChange={(e) => setCustomProviderUrl(e.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium">API Key (optional)</label>
-                <Input
-                  type="password"
-                  placeholder="sk-..."
-                  value={customProviderKey}
-                  onChange={(e) => setCustomProviderKey(e.target.value)}
-                />
-              </div>
-            </div>
-            <DialogFooter>
-              <Button
-                onClick={() => addCustomProviderMutation.mutate({
-                  name: customProviderName,
-                  url: customProviderUrl,
-                  key: customProviderKey,
-                })}
-                disabled={!customProviderName || !customProviderUrl || addCustomProviderMutation.isPending}
-              >
-                {addCustomProviderMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Add Provider
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      </div>
+    <div className="h-full overflow-auto p-6">
+      <div className="max-w-4xl mx-auto">
+        {/* Header */}
+        <motion.div
+          className="mb-8"
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+        >
+          <h1 className="text-3xl font-bold">
+            <NeonText color="cyan">Settings</NeonText>
+          </h1>
+          <p className="text-[var(--text-muted)] mt-1">Configure your EnterpriseClaw instance</p>
+        </motion.div>
 
-      {/* GitHub Copilot OAuth */}
-      {providers.some(p => p.id === 'github-copilot') && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">GitHub Copilot</CardTitle>
-            <CardDescription>Authenticate with GitHub Copilot</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {copilotOAuth.polling && copilotOAuth.userCode ? (
-              <div className="space-y-4">
-                <div className="text-sm">Enter this code: <code className="bg-muted px-2 py-1 rounded">{copilotOAuth.userCode}</code></div>
-                <Button variant="outline" onClick={() => window.open(copilotOAuth.verificationUri, '_blank')}>
-                  <ExternalLink className="w-4 h-4 mr-2" />
-                  Open Verification Page
-                </Button>
-              </div>
-            ) : (
-              <Button onClick={startCopilotOAuth}>Start OAuth</Button>
-            )}
-          </CardContent>
-        </Card>
-      )}
+        {/* Control Center Grid */}
+        <Tabs defaultValue="providers" className="space-y-6">
+          <TabsList className="bg-[var(--surface-secondary)] border border-[var(--border-default)] p-1 rounded-xl flex flex-wrap">
+            <TabsTrigger
+              value="providers"
+              className="data-[state=active]:bg-[var(--neon-cyan)]/20 data-[state=active]:text-[var(--neon-cyan)]"
+            >
+              <Key className="w-4 h-4 mr-2" />
+              Providers
+            </TabsTrigger>
+            <TabsTrigger
+              value="models"
+              className="data-[state=active]:bg-[var(--neon-magenta)]/20 data-[state=active]:text-[var(--neon-magenta)]"
+            >
+              <Cpu className="w-4 h-4 mr-2" />
+              Models
+            </TabsTrigger>
+            <TabsTrigger
+              value="config"
+              className="data-[state=active]:bg-[var(--neon-amber)]/20 data-[state=active]:text-[var(--neon-amber)]"
+            >
+              <Settings2 className="w-4 h-4 mr-2" />
+              Config
+            </TabsTrigger>
+            <TabsTrigger
+              value="tools"
+              className="data-[state=active]:bg-[var(--neon-cyan)]/20 data-[state=active]:text-[var(--neon-cyan)]"
+            >
+              <Wrench className="w-4 h-4 mr-2" />
+              Tools
+            </TabsTrigger>
+            <TabsTrigger
+              value="security"
+              className="data-[state=active]:bg-[var(--neon-green)]/20 data-[state=active]:text-[var(--neon-green)]"
+            >
+              <Shield className="w-4 h-4 mr-2" />
+              Security
+            </TabsTrigger>
+            <TabsTrigger
+              value="network"
+              className="data-[state=active]:bg-[var(--neon-amber)]/20 data-[state=active]:text-[var(--neon-amber)]"
+            >
+              <Network className="w-4 h-4 mr-2" />
+              Network
+            </TabsTrigger>
+            <TabsTrigger
+              value="budget"
+              className="data-[state=active]:bg-[var(--neon-cyan)]/20 data-[state=active]:text-[var(--neon-cyan)]"
+            >
+              <DollarSign className="w-4 h-4 mr-2" />
+              Budget
+            </TabsTrigger>
+            <TabsTrigger
+              value="system"
+              className="data-[state=active]:bg-[var(--neon-green)]/20 data-[state=active]:text-[var(--neon-green)]"
+            >
+              <Info className="w-4 h-4 mr-2" />
+              System
+            </TabsTrigger>
+            <TabsTrigger
+              value="migration"
+              className="data-[state=active]:bg-[var(--neon-red)]/20 data-[state=active]:text-[var(--neon-red)]"
+            >
+              <ArrowRightLeft className="w-4 h-4 mr-2" />
+              Migration
+            </TabsTrigger>
+          </TabsList>
 
-      {/* Provider List - Using responsive grid like Alpine */}
-      <div className="space-y-4">
-        <h3 className="text-lg font-medium">AI Providers</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {providers.map((provider) => (
-            <Card key={provider.id} className={provider.auth_status === 'configured' ? 'border-green-500/30' : ''}>
-              <CardHeader className="pb-2">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-base">{provider.display_name}</CardTitle>
-                  {getAuthBadge(provider.auth_status, provider.health)}
+          <TabsContent value="providers" className="space-y-4">
+            <ProvidersPanel
+              providers={providers}
+              isLoading={isLoading}
+              onSaveKey={(id, key) => saveKeyMutation.mutate({ id, key })}
+              onRemoveKey={(id) => removeKeyMutation.mutate(id)}
+              onTest={async (id) => testProviderMutation.mutateAsync(id)}
+              onSaveUrl={(id, url) => saveUrlMutation.mutate({ id, url })}
+            />
+          </TabsContent>
+
+          <TabsContent value="security" className="space-y-4">
+            <SecurityPanel />
+          </TabsContent>
+
+          <TabsContent value="network" className="space-y-4">
+            <SpotlightCard glowColor="rgba(255, 184, 0, 0.1)">
+              <div className="p-6">
+                <div className="flex items-center gap-3 mb-6">
+                  <Network className="w-6 h-6 text-[var(--neon-amber)]" />
+                  <h3 className="text-lg font-semibold text-[var(--text-primary)]">OFP Network</h3>
                 </div>
-                <CardDescription className="text-xs">
-                  {provider.model_count !== undefined ? `${provider.model_count} model(s) available` : ''}
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-3 pt-2">
-                {/* Environment variable hint */}
-                {provider.api_key_env && provider.auth_status !== 'configured' && (
-                  <div className="text-xs text-muted-foreground">
-                    Env: <code className="bg-muted px-1 py-0.5 rounded text-[10px]">{provider.api_key_env}</code>
-                  </div>
-                )}
+                <NetworkPanel />
+              </div>
+            </SpotlightCard>
+          </TabsContent>
 
-                {/* Claude Code install hint */}
-                {provider.id === 'claude-code' && provider.auth_status !== 'configured' && (
-                  <div className="text-xs text-muted-foreground">
-                    Install: <code className="bg-muted px-1 py-0.5 rounded text-[10px]">npm install -g @anthropic-ai/claude-code</code>
-                  </div>
-                )}
+          <TabsContent value="models" className="space-y-4">
+            <ModelsPanel />
+          </TabsContent>
 
-                {/* API Key Input for unconfigured providers */}
-                {provider.auth_status !== 'configured' && provider.auth_status !== 'no_key' && provider.api_key_env && (
-                  <div className="flex gap-2">
-                    <Input
-                      type="password"
-                      placeholder={`Enter ${provider.api_key_env}`}
-                      value={keyInputs[provider.id] || ''}
-                      onChange={(e) =>
-                        setKeyInputs((prev) => ({
-                          ...prev,
-                          [provider.id]: e.target.value,
-                        }))
-                      }
-                      className="text-sm h-8"
-                    />
-                    <Button
-                      size="sm"
-                      onClick={() =>
-                        saveKeyMutation.mutate({
-                          id: provider.id,
-                          key: keyInputs[provider.id] || '',
-                        })
-                      }
-                      disabled={!keyInputs[provider.id] || saveKeyMutation.isPending}
-                      className="h-8"
-                    >
-                      {saveKeyMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Save'}
-                    </Button>
-                  </div>
-                )}
+          <TabsContent value="config" className="space-y-4">
+            <ConfigPanel />
+          </TabsContent>
 
-                {/* Environment hint for unconfigured */}
-                {provider.auth_status !== 'configured' && provider.api_key_env && (
-                  <div className="text-[10px] text-muted-foreground">
-                    Or set <code className="text-accent-foreground bg-accent/10 px-1 rounded">{provider.api_key_env}</code> in environment and restart
-                  </div>
-                )}
+          <TabsContent value="tools" className="space-y-4">
+            <ToolsPanel />
+          </TabsContent>
 
-                {/* No key needed message */}
-                {!provider.api_key_env || provider.key_required === false ? (
-                  <div className="text-xs text-green-600">
-                    No API key needed &mdash; runs locally or is free
-                  </div>
-                ) : null}
+          <TabsContent value="migration" className="space-y-4">
+            <MigrationPanel />
+          </TabsContent>
 
-                {/* Local Provider Base URL Editor */}
-                {provider.is_local && (
-                  <div className="pt-2 border-t">
-                    <div className="text-xs text-muted-foreground mb-1">Base URL</div>
-                    <div className="flex gap-2">
-                      <Input
-                        placeholder="http://localhost:..."
-                        value={urlInputs[provider.id] || ''}
-                        onChange={(e) => setUrlInputs((prev) => ({ ...prev, [provider.id]: e.target.value }))}
-                        className="text-xs h-8"
-                      />
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => saveUrlMutation.mutate({ id: provider.id, url: urlInputs[provider.id] })}
-                        disabled={saveUrlMutation.isPending}
-                        className="h-8"
-                      >
-                        {saveUrlMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Save'}
-                      </Button>
-                    </div>
-                  </div>
-                )}
+          <TabsContent value="budget" className="space-y-4">
+            <BudgetPanel />
+          </TabsContent>
 
-                {/* Actions for configured providers */}
-                {provider.auth_status === 'configured' && (
-                  <div className="flex gap-2 pt-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => testMutation.mutate(provider.id)}
-                      disabled={testMutation.isPending}
-                      className="h-8 text-xs"
-                    >
-                      {testMutation.isPending && <Loader2 className="mr-1 h-3 w-3 animate-spin" />}
-                      Test
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => removeKeyMutation.mutate(provider.id)}
-                      disabled={removeKeyMutation.isPending}
-                      className="h-8 text-xs text-destructive hover:text-destructive"
-                    >
-                      Remove Key
-                    </Button>
-                    {testMutation.data && (
-                      <Badge variant={testMutation.data.status === 'ok' ? 'default' : 'destructive'} className="text-xs">
-                        {testMutation.data.status === 'ok' ? `${testMutation.data.latency_ms}ms` : 'Failed'}
-                      </Badge>
-                    )}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+          <TabsContent value="system" className="space-y-4">
+            <SystemPanel />
+          </TabsContent>
+        </Tabs>
       </div>
     </div>
   );
 }
 
-// Models Tab
-function ModelsTab() {
-  const [search, setSearch] = useState('');
-  const [providerFilter, setProviderFilter] = useState('');
-  const [customModelId, setCustomModelId] = useState('');
-  const [customModelProvider, setCustomModelProvider] = useState('openrouter');
+// ===== Providers Panel =====
+function ProvidersPanel({
+  providers,
+  isLoading,
+  onSaveKey,
+  onRemoveKey,
+  onTest,
+  onSaveUrl,
+}: {
+  providers: Provider[];
+  isLoading: boolean;
+  onSaveKey: (id: string, key: string) => void;
+  onRemoveKey: (id: string) => void;
+  onTest: (id: string) => Promise<{ success: boolean; latency_ms?: number; error?: string }>;
+  onSaveUrl: (id: string, url: string) => void;
+}) {
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [copilotState, setCopilotState] = useState<{
+    status: 'idle' | 'polling' | 'success' | 'error';
+    userCode?: string;
+    verificationUri?: string;
+    pollId?: string;
+    message?: string;
+  }>({ status: 'idle' });
   const queryClient = useQueryClient();
 
-  const { data: models = [], isLoading } = useQuery<Model[]>({
-    queryKey: ['models'],
-    queryFn: async () => {
-      const res = await api.get<{ models: Model[] }>('/api/models');
-      return res.models || [];
-    },
-  });
+  const isCopilot = (p: Provider) => p.id === 'github-copilot' || p.id === 'copilot';
 
-  const addCustomModelMutation = useMutation({
-    mutationFn: async ({ id, provider }: { id: string; provider: string }) => {
-      return api.post('/api/models/custom', {
-        id,
-        provider,
-        context_window: 128000,
-        max_output_tokens: 8192,
+  const startCopilotOAuth = async () => {
+    try {
+      const res = await api.startCopilotOAuth();
+      setCopilotState({
+        status: 'polling',
+        userCode: res.user_code,
+        verificationUri: res.verification_uri,
+        pollId: res.poll_id,
       });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['models'] });
-      setCustomModelId('');
-    },
-  });
 
-  const deleteCustomModelMutation = useMutation({
-    mutationFn: async (modelId: string) => {
-      await api.del(`/api/models/custom/${encodeURIComponent(modelId)}`);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['models'] });
-    },
-  });
+      // Start polling
+      const interval = setInterval(async () => {
+        try {
+          const poll = await api.pollCopilotOAuth(res.poll_id);
+          if (poll.status === 'success' || poll.configured) {
+            clearInterval(interval);
+            setCopilotState({ status: 'success', message: poll.message || 'Connected!' });
+            queryClient.invalidateQueries({ queryKey: ['providers'] });
+          } else if (poll.status === 'error') {
+            clearInterval(interval);
+            setCopilotState({ status: 'error', message: poll.message || 'Failed' });
+          }
+        } catch (e) {
+          // Continue polling
+        }
+      }, 5000);
 
-  const filteredModels = models.filter((m) => {
-    if (providerFilter && m.provider !== providerFilter) return false;
-    if (search) {
-      const q = search.toLowerCase();
-      return (
-        m.id.toLowerCase().includes(q) ||
-        (m.display_name || '').toLowerCase().includes(q)
-      );
+      // Stop polling after 5 minutes
+      setTimeout(() => clearInterval(interval), 5 * 60 * 1000);
+    } catch (e) {
+      setCopilotState({ status: 'error', message: 'Failed to start OAuth' });
     }
-    return true;
-  });
-
-  const uniqueProviders = Array.from(
-    new Set(models.map((m) => m.provider))
-  ).sort();
-
-  const formatCost = (cost?: number) => {
-    if (!cost && cost !== 0) return '-';
-    return `$${cost.toFixed(4)}`;
   };
-
-  const formatContext = (ctx?: number) => {
-    if (!ctx) return '-';
-    if (ctx >= 1000000) return `${(ctx / 1000000).toFixed(1)}M`;
-    if (ctx >= 1000) return `${Math.round(ctx / 1000)}K`;
-    return String(ctx);
-  };
-
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center p-8">
-        <Loader2 className="h-8 w-8 animate-spin" />
-      </div>
-    );
-  }
 
   return (
-    <div className="space-y-6">
-      {/* Add Custom Model */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Add Custom Model</CardTitle>
-          <CardDescription>Add a custom model from an OpenAI-compatible provider</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex gap-2">
-            <Input
-              placeholder="model-id"
-              value={customModelId}
-              onChange={(e) => setCustomModelId(e.target.value)}
-              className="flex-1"
-            />
-            <select
-              value={customModelProvider}
-              onChange={(e) => setCustomModelProvider(e.target.value)}
-              className="rounded-md border px-3 py-2"
+    <>
+      <SpotlightCard glowColor="rgba(0, 255, 204, 0.1)">
+        <div className="p-6">
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-3">
+              <Key className="w-6 h-6 text-[var(--neon-cyan)]" />
+              <h3 className="text-lg font-semibold text-[var(--text-primary)]">AI Providers</h3>
+            </div>
+            <motion.button
+              onClick={() => setShowAddModal(true)}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[var(--neon-cyan)] text-[var(--void)] text-sm font-medium"
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
             >
-              {uniqueProviders.map((p) => (
-                <option key={p} value={p}>{p}</option>
-              ))}
-            </select>
-            <Button
-              onClick={() => addCustomModelMutation.mutate({ id: customModelId, provider: customModelProvider })}
-              disabled={!customModelId || addCustomModelMutation.isPending}
-            >
-              {addCustomModelMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Add
-            </Button>
+              <Plus className="w-4 h-4" />
+              Add Custom
+            </motion.button>
           </div>
-        </CardContent>
-      </Card>
 
-      {/* Filter */}
-      <div className="flex gap-4">
-        <Input
-          placeholder="Search models..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="max-w-sm"
-        />
-        <select
-          value={providerFilter}
-          onChange={(e) => setProviderFilter(e.target.value)}
-          className="rounded-md border px-3 py-2"
-        >
-          <option value="">All Providers</option>
-          {uniqueProviders.map((p) => (
-            <option key={p} value={p}>{p}</option>
-          ))}
-        </select>
-      </div>
-
-      {/* Models List */}
-      <div className="grid gap-4">
-        {filteredModels.map((model) => (
-          <Card key={model.id}>
-            <CardHeader className="pb-3">
+          {/* GitHub Copilot OAuth */}
+          {providers.some(isCopilot) && (
+            <div className="mb-6 p-4 rounded-xl bg-[var(--surface-tertiary)] border border-[var(--border-subtle)]">
               <div className="flex items-center justify-between">
                 <div>
-                  <CardTitle className="text-base">
-                    {model.display_name || model.id}
-                  </CardTitle>
-                  <CardDescription>{model.id}</CardDescription>
+                  <div className="font-medium text-[var(--text-primary)]">GitHub Copilot</div>
+                  <div className="text-xs text-[var(--text-muted)]">
+                    {copilotState.status === 'polling'
+                      ? 'Waiting for authorization...'
+                      : copilotState.status === 'success'
+                      ? 'Connected!'
+                      : 'Connect via OAuth'}
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <Badge variant="secondary">{model.provider}</Badge>
-                  {model.tier && <Badge>{model.tier}</Badge>}
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="text-destructive"
-                    onClick={() => deleteCustomModelMutation.mutate(model.id)}
-                    disabled={deleteCustomModelMutation.isPending}
+                {copilotState.status === 'idle' && (
+                  <motion.button
+                    onClick={startCopilotOAuth}
+                    className="px-4 py-2 rounded-lg bg-[var(--surface-secondary)] text-[var(--text-primary)] text-sm font-medium border border-[var(--border-default)]"
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
                   >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
+                    Connect
+                  </motion.button>
+                )}
+                {copilotState.status === 'polling' && (
+                  <div className="flex items-center gap-2">
+                    <Loader2 className="w-4 h-4 animate-spin text-[var(--neon-cyan)]" />
+                    <span className="text-sm text-[var(--text-muted)]">Polling...</span>
+                  </div>
+                )}
               </div>
-            </CardHeader>
-            <CardContent>
-              <div className="flex gap-6 text-sm">
-                <div>
-                  <span className="text-muted-foreground">Context: </span>
-                  {formatContext(model.context_window)}
+              {copilotState.status === 'polling' && copilotState.userCode && (
+                <div className="mt-3 p-3 rounded-lg bg-[var(--surface-secondary)]">
+                  <div className="text-sm text-[var(--text-muted)] mb-1">Enter this code at GitHub:</div>
+                  <div className="text-2xl font-mono font-bold text-[var(--neon-cyan)] tracking-wider">
+                    {copilotState.userCode}
+                  </div>
+                  <a
+                    href={copilotState.verificationUri}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-sm text-[var(--neon-cyan)] hover:underline mt-2 inline-block"
+                  >
+                    Open GitHub →
+                  </a>
                 </div>
-                <div>
-                  <span className="text-muted-foreground">Input: </span>
-                  {formatCost(model.pricing?.input)}
+              )}
+              {copilotState.message && copilotState.status !== 'polling' && (
+                <div
+                  className={cn(
+                    'mt-3 text-sm',
+                    copilotState.status === 'error' ? 'text-[var(--neon-red)]' : 'text-[var(--neon-green)]'
+                  )}
+                >
+                  {copilotState.message}
                 </div>
-                <div>
-                  <span className="text-muted-foreground">Output: </span>
-                  {formatCost(model.pricing?.output)}
-                </div>
+              )}
+            </div>
+          )}
+
+          {/* Provider List */}
+          <div className="space-y-3">
+            {isLoading ? (
+              <div className="flex items-center justify-center h-32">
+                <Loader2 className="w-6 h-6 text-[var(--neon-cyan)] animate-spin" />
               </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-    </div>
+            ) : (
+              providers
+                .filter((p) => !isCopilot(p) || p.auth_status !== 'not_configured')
+                .map((provider) => (
+                  <ProviderCard
+                    key={provider.id}
+                    provider={provider}
+                    onSaveKey={(key) => onSaveKey(provider.id, key)}
+                    onRemoveKey={() => onRemoveKey(provider.id)}
+                    onTest={() => onTest(provider.id)}
+                    onSaveUrl={provider.is_local ? (url) => onSaveUrl(provider.id, url) : undefined}
+                  />
+                ))
+            )}
+          </div>
+        </div>
+      </SpotlightCard>
+
+      {/* Add Custom Provider Modal */}
+      <AnimatePresence>
+        {showAddModal && (
+          <AddCustomProviderModal onClose={() => setShowAddModal(false)} />
+        )}
+      </AnimatePresence>
+    </>
   );
 }
 
-// Tools Tab
-function ToolsTab() {
-  const [search, setSearch] = useState('');
+// ===== Add Custom Provider Modal =====
+function AddCustomProviderModal({ onClose }: { onClose: () => void }) {
+  const [formData, setFormData] = useState({
+    name: '',
+    baseUrl: '',
+    apiKey: '',
+  });
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const queryClient = useQueryClient();
 
-  const { data: tools = [], isLoading } = useQuery<Tool[]>({
-    queryKey: ['tools'],
-    queryFn: async () => {
-      const res = await api.get<{ tools: Tool[] }>('/api/tools');
-      return res.tools || [];
-    },
+  const handleSubmit = async () => {
+    if (!formData.name || !formData.baseUrl) return;
+    setIsSubmitting(true);
+    try {
+      // Add provider via URL endpoint (which creates a custom provider)
+      await api.saveProviderUrl(formData.name, formData.baseUrl);
+      if (formData.apiKey) {
+        await api.saveProviderKey(formData.name, formData.apiKey);
+      }
+      queryClient.invalidateQueries({ queryKey: ['providers'] });
+      onClose();
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+      onClick={onClose}
+    >
+      <motion.div
+        initial={{ scale: 0.9, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.9, opacity: 0 }}
+        className="bg-[var(--surface-secondary)] rounded-xl border border-[var(--border-default)] p-6 w-full max-w-md"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-4">Add Custom Provider</h3>
+        <div className="space-y-3">
+          <div>
+            <label className="text-xs text-[var(--text-muted)] mb-1 block">Provider Name</label>
+            <input
+              type="text"
+              value={formData.name}
+              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              placeholder="e.g., my-custom-llm"
+              className="w-full bg-[var(--surface-tertiary)] border border-[var(--border-default)] rounded-lg px-3 py-2 text-[var(--text-primary)] text-sm"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-[var(--text-muted)] mb-1 block">Base URL</label>
+            <input
+              type="text"
+              value={formData.baseUrl}
+              onChange={(e) => setFormData({ ...formData, baseUrl: e.target.value })}
+              placeholder="http://localhost:11434/v1"
+              className="w-full bg-[var(--surface-tertiary)] border border-[var(--border-default)] rounded-lg px-3 py-2 text-[var(--text-primary)] text-sm"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-[var(--text-muted)] mb-1 block">API Key (optional)</label>
+            <input
+              type="password"
+              value={formData.apiKey}
+              onChange={(e) => setFormData({ ...formData, apiKey: e.target.value })}
+              placeholder="Enter API key if required"
+              className="w-full bg-[var(--surface-tertiary)] border border-[var(--border-default)] rounded-lg px-3 py-2 text-[var(--text-primary)] text-sm"
+            />
+          </div>
+        </div>
+        <div className="flex gap-2 mt-6">
+          <motion.button
+            onClick={onClose}
+            className="flex-1 px-4 py-2 rounded-lg bg-[var(--surface-tertiary)] text-[var(--text-primary)] text-sm font-medium"
+            whileTap={{ scale: 0.98 }}
+          >
+            Cancel
+          </motion.button>
+          <motion.button
+            onClick={handleSubmit}
+            disabled={!formData.name || !formData.baseUrl || isSubmitting}
+            className="flex-1 px-4 py-2 rounded-lg bg-[var(--neon-cyan)] text-[var(--void)] text-sm font-medium disabled:opacity-50"
+            whileTap={{ scale: 0.98 }}
+          >
+            {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Add Provider'}
+          </motion.button>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+// ===== Security Panel =====
+function SecurityPanel() {
+  const { data: security, isLoading } = useQuery({
+    queryKey: ['security'],
+    queryFn: () => api.getSecurityStatus(),
   });
 
-  const filteredTools = tools.filter((t) => {
-    if (!search) return true;
-    const q = search.toLowerCase();
-    return (
-      t.name.toLowerCase().includes(q) ||
-      (t.description || '').toLowerCase().includes(q)
-    );
-  });
+  const [verifyResult, setVerifyResult] = useState<{
+    valid: boolean;
+    entries_checked: number;
+    message?: string;
+  } | null>(null);
+  const [isVerifying, setIsVerifying] = useState(false);
+
+  const handleVerify = async () => {
+    setIsVerifying(true);
+    try {
+      const result = await api.verifyAuditChain();
+      setVerifyResult(result);
+    } finally {
+      setIsVerifying(false);
+    }
+  };
+
+  const formatConfigValue = (key: string, _value: boolean) => {
+    const labels: Record<string, string> = {
+      audit: 'Merkle Audit',
+      taint_tracking: 'Taint Tracking',
+      wasm_sandbox: 'WASM Sandbox',
+      gcra_rate_limit: 'GCRA Rate Limit',
+      ed25519_signing: 'Ed25519 Signing',
+      approval_workflow: 'Approval Workflow',
+      auto_approve_low_risk: 'Auto-approve Low Risk',
+      require_justification: 'Require Justification',
+    };
+    return labels[key] || key.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
+  };
+
+  const formatMonitoringValue = (_key: string, value: unknown) => {
+    if (typeof value === 'boolean') return value ? 'Active' : 'Inactive';
+    if (typeof value === 'number') return value.toString();
+    return String(value);
+  };
+
+  const coreFeatures = security?.features
+    ? Object.entries(security.features).filter(([k]) =>
+        ['audit', 'taint_tracking', 'wasm_sandbox', 'gcra_rate_limit', 'ed25519_signing'].includes(k)
+      )
+    : [];
+
+  const configurableFeatures = security?.configurable
+    ? Object.entries(security.configurable)
+    : [];
+
+  const monitoringFeatures = security?.monitoring
+    ? Object.entries(security.monitoring)
+    : [];
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center p-8">
-        <Loader2 className="h-8 w-8 animate-spin" />
-      </div>
+      <SpotlightCard glowColor="rgba(0, 255, 136, 0.1)">
+        <div className="flex items-center justify-center h-32">
+          <Loader2 className="w-6 h-6 text-[var(--neon-green)] animate-spin" />
+        </div>
+      </SpotlightCard>
     );
   }
 
   return (
     <div className="space-y-4">
-      <Input
-        placeholder="Search tools..."
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        className="max-w-sm"
-      />
+      <SpotlightCard glowColor="rgba(0, 255, 136, 0.1)">
+        <div className="p-6">
+          <div className="flex items-center gap-3 mb-6">
+            <Shield className="w-6 h-6 text-[var(--neon-green)]" />
+            <h3 className="text-lg font-semibold text-[var(--text-primary)]">Security Systems</h3>
+          </div>
 
-      <div className="grid gap-4">
-        {filteredTools.map((tool) => (
-          <Card key={tool.name}>
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-base">{tool.name}</CardTitle>
-                <Badge variant="secondary">{tool.category}</Badge>
+          {/* Core Features */}
+          {coreFeatures.length > 0 && (
+            <div className="space-y-3">
+              <h4 className="text-sm font-medium text-[var(--text-muted)] uppercase tracking-wider">
+                Core Security
+              </h4>
+              {coreFeatures.map(([key, value]) => (
+                <SecurityFeatureRow
+                  key={key}
+                  label={formatConfigValue(key, value)}
+                  enabled={value}
+                  description={getSecurityDescription(key)}
+                />
+              ))}
+            </div>
+          )}
+
+          {/* Configurable Features */}
+          {configurableFeatures.length > 0 && (
+            <div className="space-y-3 mt-6">
+              <h4 className="text-sm font-medium text-[var(--text-muted)] uppercase tracking-wider">
+                Configurable
+              </h4>
+              {configurableFeatures.map(([key, value]) => (
+                <SecurityFeatureRow
+                  key={key}
+                  label={formatConfigValue(key, value)}
+                  enabled={value}
+                  description={getSecurityDescription(key)}
+                />
+              ))}
+            </div>
+          )}
+
+          {/* Audit Chain Verification */}
+          <div className="mt-6 pt-6 border-t border-[var(--border-subtle)]">
+            <div className="flex items-center justify-between">
+              <div>
+                <h4 className="font-medium text-[var(--text-primary)]">Audit Chain Verification</h4>
+                <p className="text-xs text-[var(--text-muted)]">
+                  {security?.chain_valid
+                    ? 'Chain integrity verified'
+                    : 'Verify tamper-proof audit chain'}
+                </p>
               </div>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-muted-foreground">
-                {tool.description}
-              </p>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// Security Tab
-function SecurityTab() {
-  const { data: security, isLoading } = useQuery<SecurityData>({
-    queryKey: ['security'],
-    queryFn: async () => api.get('/api/security'),
-  });
-
-  const [verifying, setVerifying] = useState(false);
-  const [chainResult, setChainResult] = useState<{ valid: boolean; error?: string } | null>(null);
-
-  const verifyAuditChain = async () => {
-    setVerifying(true);
-    try {
-      const res = await api.get<{ valid: boolean; error?: string }>('/api/audit/verify');
-      setChainResult(res);
-    } catch (e) {
-      setChainResult({ valid: false, error: 'Verification failed' });
-    }
-    setVerifying(false);
-  };
-
-  const coreFeatures = [
-    {
-      name: 'Path Traversal Prevention',
-      key: 'path_traversal',
-      description: 'Blocks directory escape attacks (../) in all file operations.',
-      threat: 'Directory escape, privilege escalation via symlinks',
-    },
-    {
-      name: 'SSRF Protection',
-      key: 'ssrf_protection',
-      description: 'Blocks outbound requests to private IPs and cloud metadata endpoints.',
-      threat: 'Internal network reconnaissance, cloud credential theft',
-    },
-    {
-      name: 'Capability-Based Access Control',
-      key: 'capability_system',
-      description: 'Deny-by-default permission system for all agent operations.',
-      threat: 'Unauthorized resource access, sandbox escape',
-    },
-    {
-      name: 'Privilege Escalation Prevention',
-      key: 'privilege_escalation_prevention',
-      description: 'Child capabilities must be a subset of parent capabilities.',
-      threat: 'Capability escalation through agent spawning',
-    },
-    {
-      name: 'Subprocess Environment Isolation',
-      key: 'subprocess_isolation',
-      description: 'Child processes inherit only safe environment variables.',
-      threat: 'Secret exfiltration via child process environment',
-    },
-    {
-      name: 'Security Headers',
-      key: 'security_headers',
-      description: 'CSP, X-Frame-Options, and other security headers on all responses.',
-      threat: 'XSS, clickjacking, MIME sniffing',
-    },
-  ];
-
-  const isActive = (key: string) => {
-    if (!security?.core_protections) return true;
-    return security.core_protections[key] !== false;
-  };
-
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center p-8">
-        <Loader2 className="h-8 w-8 animate-spin" />
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-6">
-      {/* Core Security Features */}
-      <div>
-        <h3 className="text-lg font-medium mb-4">Core Security Features</h3>
-        <div className="grid gap-4">
-          {coreFeatures.map((feature) => (
-            <Card key={feature.key}>
-              <CardHeader className="pb-3">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-base">{feature.name}</CardTitle>
-                  <Badge variant={isActive(feature.key) ? 'default' : 'destructive'}>
-                    {isActive(feature.key) ? 'Active' : 'Inactive'}
-                  </Badge>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                <p className="text-sm">{feature.description}</p>
-                <p className="text-xs text-muted-foreground">Threat: {feature.threat}</p>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      </div>
-
-      {/* Audit Chain Verification */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Audit Chain Verification</CardTitle>
-          <CardDescription>Verify the integrity of the Merkle audit trail</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <Button onClick={verifyAuditChain} disabled={verifying}>
-            {verifying && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Verify Chain
-          </Button>
-          {chainResult && (
-            <div className={`flex items-center gap-2 ${chainResult.valid ? 'text-green-600' : 'text-red-600'}`}>
-              {chainResult.valid ? <Check className="h-5 w-5" /> : <X className="h-5 w-5" />}
-              <span>{chainResult.valid ? 'Chain is valid' : chainResult.error || 'Chain is invalid'}</span>
+              <motion.button
+                onClick={handleVerify}
+                disabled={isVerifying}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[var(--neon-green)]/10 text-[var(--neon-green)] text-sm font-medium border border-[var(--neon-green)]/20"
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+              >
+                {isVerifying ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Check className="w-4 h-4" />
+                )}
+                Verify
+              </motion.button>
             </div>
-          )}
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
 
-// Network Tab (Peers)
-function NetworkTab() {
-  const { data: peers = [], isLoading } = useQuery<Peer[]>({
-    queryKey: ['peers'],
-    queryFn: async () => {
-      const res = await api.get<{ peers: Peer[] }>('/api/peers');
-      return res.peers || [];
-    },
-    refetchInterval: 15000,
-  });
-
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center p-8">
-        <Loader2 className="h-8 w-8 animate-spin" />
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-6">
-      <div>
-        <h3 className="text-lg font-medium mb-4">Connected Peers</h3>
-        <div className="grid gap-4">
-          {peers.map((peer) => (
-            <Card key={peer.node_id}>
-              <CardHeader className="pb-3">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-base">{peer.node_name || peer.node_id.slice(0, 8)}</CardTitle>
-                  <Badge variant={peer.state === 'connected' ? 'default' : 'secondary'}>
-                    {peer.state}
-                  </Badge>
-                </div>
-                <CardDescription>{peer.address}</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="flex gap-6 text-sm">
-                  <div>
-                    <span className="text-muted-foreground">Agents: </span>
-                    {peer.agent_count}
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">Protocol: </span>
-                    v{peer.protocol_version}
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-          {peers.length === 0 && (
-            <div className="text-center py-8 text-muted-foreground">
-              No peers connected
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// Config Tab
-function ConfigTab() {
-  const queryClient = useQueryClient();
-  const [configSchema, setConfigSchema] = useState<Record<string, { fields: { key: string; label: string; type: string; description?: string; default?: unknown }[] }> | null>(null);
-  const [configValues, setConfigValues] = useState<Record<string, unknown>>({});
-  const [dirtyFields, setDirtyFields] = useState<Set<string>>(new Set());
-  const [savingFields, setSavingFields] = useState<Set<string>>(new Set());
-
-  useEffect(() => {
-    const loadConfig = async () => {
-      try {
-        const [schemaRes, valuesRes] = await Promise.all([
-          api.get<{ sections?: Record<string, { fields: { key: string; label: string; type: string; description?: string; default?: unknown }[] }> }>('/api/config/schema').catch(() => ({ sections: {} })),
-          api.get<Record<string, unknown>>('/api/config').catch(() => ({})),
-        ]);
-        setConfigSchema(schemaRes.sections || null);
-        setConfigValues(valuesRes || {});
-      } catch {
-        // silent
-      }
-    };
-    loadConfig();
-  }, []);
-
-  const markDirty = (section: string, field: string) => {
-    setDirtyFields(prev => new Set(prev).add(`${section}.${field}`));
-  };
-
-  const saveField = async (section: string, field: string, value: unknown) => {
-    const key = `${section}.${field}`;
-    setSavingFields(prev => new Set(prev).add(key));
-    try {
-      await api.post('/api/config/set', { path: key, value });
-      setDirtyFields(prev => {
-        const next = new Set(prev);
-        next.delete(key);
-        return next;
-      });
-      queryClient.invalidateQueries({ queryKey: ['config'] });
-    } catch (e) {
-      console.error('Failed to save config:', e);
-    }
-    setSavingFields(prev => {
-      const next = new Set(prev);
-      next.delete(key);
-      return next;
-    });
-  };
-
-  if (!configSchema) {
-    return (
-      <div className="flex items-center justify-center p-8">
-        <Loader2 className="h-8 w-8 animate-spin" />
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-6">
-      {Object.entries(configSchema).map(([sectionName, section]) => (
-        <Card key={sectionName}>
-          <CardHeader>
-            <CardTitle className="text-base capitalize">{sectionName}</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {section.fields.map((field) => {
-              const key = `${sectionName}.${field.key}`;
-              const value = configValues[key] ?? field.default ?? '';
-              const isDirty = dirtyFields.has(key);
-              const isSaving = savingFields.has(key);
-
-              return (
-                <div key={field.key} className="space-y-2">
-                  <label className="text-sm font-medium">{field.label}</label>
-                  {field.description && (
-                    <p className="text-xs text-muted-foreground">{field.description}</p>
+            {verifyResult && (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className={cn(
+                  'mt-4 p-4 rounded-lg border',
+                  verifyResult.valid
+                    ? 'bg-[var(--neon-green)]/10 border-[var(--neon-green)]/30'
+                    : 'bg-[var(--neon-red)]/10 border-[var(--neon-red)]/30'
+                )}
+              >
+                <div className="flex items-center gap-2">
+                  {verifyResult.valid ? (
+                    <Check className="w-5 h-5 text-[var(--neon-green)]" />
+                  ) : (
+                    <AlertCircle className="w-5 h-5 text-[var(--neon-red)]" />
                   )}
-                  <div className="flex gap-2">
-                    {field.type === 'boolean' ? (
-                      <select
-                        className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
-                        value={String(value)}
-                        onChange={(e) => {
-                          const newValue = e.target.value === 'true';
-                          setConfigValues(prev => ({ ...prev, [key]: newValue }));
-                          markDirty(sectionName, field.key);
-                          saveField(sectionName, field.key, newValue);
-                        }}
-                      >
-                        <option value="true">Enabled</option>
-                        <option value="false">Disabled</option>
-                      </select>
-                    ) : field.type === 'number' ? (
-                      <Input
-                        type="number"
-                        value={String(value)}
-                        onChange={(e) => {
-                          const newValue = parseFloat(e.target.value) || 0;
-                          setConfigValues(prev => ({ ...prev, [key]: newValue }));
-                          markDirty(sectionName, field.key);
-                        }}
-                        onBlur={() => saveField(sectionName, field.key, value)}
-                      />
-                    ) : (
-                      <Input
-                        type="text"
-                        value={String(value)}
-                        onChange={(e) => {
-                          setConfigValues(prev => ({ ...prev, [key]: e.target.value }));
-                          markDirty(sectionName, field.key);
-                        }}
-                        onBlur={() => saveField(sectionName, field.key, value)}
-                      />
+                  <span
+                    className={cn(
+                      'font-medium',
+                      verifyResult.valid ? 'text-[var(--neon-green)]' : 'text-[var(--neon-red)]'
                     )}
-                    {isDirty && !isSaving && <Badge variant="secondary">Modified</Badge>}
-                    {isSaving && <Loader2 className="h-4 w-4 animate-spin" />}
+                  >
+                    {verifyResult.valid ? 'Chain Valid' : 'Chain Invalid'}
+                  </span>
+                </div>
+                <div className="text-sm text-[var(--text-muted)] mt-1">
+                  Checked {verifyResult.entries_checked} entries
+                  {verifyResult.message && ` · ${verifyResult.message}`}
+                </div>
+              </motion.div>
+            )}
+          </div>
+        </div>
+      </SpotlightCard>
+
+      {/* Monitoring Stats */}
+      {monitoringFeatures.length > 0 && (
+        <SpotlightCard glowColor="rgba(0, 255, 204, 0.1)">
+          <div className="p-6">
+            <h4 className="text-sm font-medium text-[var(--text-muted)] uppercase tracking-wider mb-4">
+              Security Metrics
+            </h4>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              {monitoringFeatures.map(([key, value]) => (
+                <div key={key} className="p-3 rounded-lg bg-[var(--surface-tertiary)]">
+                  <div className="text-xs text-[var(--text-muted)]">{key.replace(/_/g, ' ')}</div>
+                  <div className="text-lg font-semibold text-[var(--text-primary)]">
+                    {formatMonitoringValue(key, value)}
                   </div>
                 </div>
-              );
-            })}
-          </CardContent>
-        </Card>
-      ))}
+              ))}
+            </div>
+          </div>
+        </SpotlightCard>
+      )}
     </div>
   );
 }
 
-// Budget Tab
-function BudgetTab() {
-  const [editMode, setEditMode] = useState(false);
-  const [editHourly, setEditHourly] = useState('');
-  const [editDaily, setEditDaily] = useState('');
-  const [editMonthly, setEditMonthly] = useState('');
-  const [editAlert, setEditAlert] = useState('');
-  const [saving, setSaving] = useState(false);
+function SecurityFeatureRow({
+  label,
+  enabled,
+  description,
+}: {
+  label: string;
+  enabled: boolean;
+  description?: string;
+}) {
+  return (
+    <motion.div
+      className="flex items-center justify-between p-4 rounded-xl bg-[var(--surface-tertiary)] border border-[var(--border-subtle)]"
+      whileHover={{ backgroundColor: 'var(--surface-secondary)' }}
+    >
+      <div>
+        <div className="font-medium text-[var(--text-primary)]">{label}</div>
+        {description && <div className="text-xs text-[var(--text-muted)]">{description}</div>}
+      </div>
+      <div
+        className={cn(
+          'px-2 py-1 rounded text-xs font-medium',
+          enabled
+            ? 'bg-[var(--neon-green)]/20 text-[var(--neon-green)]'
+            : 'bg-[var(--surface-elevated)] text-[var(--text-muted)]'
+        )}
+      >
+        {enabled ? 'Active' : 'Inactive'}
+      </div>
+    </motion.div>
+  );
+}
 
-  const { data: budget, isLoading, refetch } = useQuery<{
-    hourly_spend: number;
-    hourly_limit: number;
-    daily_spend: number;
-    daily_limit: number;
-    monthly_spend: number;
-    monthly_limit: number;
-    alert_threshold: number;
-    hourly_pct: number;
-    daily_pct: number;
-    monthly_pct: number;
-  }>({
-    queryKey: ['budget'],
-    queryFn: async () => api.get('/api/budget'),
-  });
-
-  const { data: agentRanking = [] } = useQuery<Array<{
-    agent_id: string;
-    name: string;
-    daily_cost_usd: number;
-    hourly_limit: number;
-    daily_limit: number;
-    monthly_limit: number;
-  }>>({
-    queryKey: ['budget', 'agents'],
-    queryFn: async () => {
-      const res = await api.get<{ agents: Array<{
-        agent_id: string;
-        name: string;
-        daily_cost_usd: number;
-        hourly_limit: number;
-        daily_limit: number;
-        monthly_limit: number;
-      }> }>('/api/budget/agents');
-      return res.agents || [];
-    },
-  });
-
-  const startEdit = () => {
-    if (!budget) return;
-    setEditHourly(String(budget.hourly_limit || 0));
-    setEditDaily(String(budget.daily_limit || 0));
-    setEditMonthly(String(budget.monthly_limit || 0));
-    setEditAlert(String(Math.round((budget.alert_threshold || 0.8) * 100)));
-    setEditMode(true);
+function getSecurityDescription(key: string): string {
+  const descriptions: Record<string, string> = {
+    audit: 'Tamper-proof audit logging',
+    taint_tracking: 'Data lineage tracking',
+    wasm_sandbox: 'Isolated code execution',
+    gcra_rate_limit: 'Advanced rate limiting',
+    ed25519_signing: 'Cryptographic signatures',
+    approval_workflow: 'Require approval for risky actions',
+    auto_approve_low_risk: 'Automatically approve low-risk actions',
+    require_justification: 'Require justification for approvals',
   };
+  return descriptions[key] || '';
+}
 
-  const saveBudget = async () => {
-    if (!budget) return;
-    setSaving(true);
+// ===== Network Panel =====
+function NetworkPanel() {
+  const { data: networkStatus, isLoading } = useQuery({
+    queryKey: ['network-status'],
+    queryFn: () => api.getNetworkStatus(),
+  });
+
+  const { data: peers, isLoading: peersLoading } = useQuery({
+    queryKey: ['peers'],
+    queryFn: () => api.listPeers(),
+    refetchInterval: 15000, // Poll every 15 seconds
+  });
+
+  const { data: a2aAgents } = useQuery({
+    queryKey: ['a2a-agents'],
+    queryFn: () => api.listA2AAgents(),
+  });
+
+  const [discoverUrl, setDiscoverUrl] = useState('');
+  const [discoverResult, setDiscoverResult] = useState<{ success: boolean; agent?: A2AAgent; error?: string } | null>(null);
+  const [isDiscovering, setIsDiscovering] = useState(false);
+
+  const handleDiscover = async () => {
+    if (!discoverUrl) return;
+    setIsDiscovering(true);
     try {
-      const body: Record<string, number> = {};
-      if (+editHourly !== budget.hourly_limit) body.max_hourly_usd = +editHourly;
-      if (+editDaily !== budget.daily_limit) body.max_daily_usd = +editDaily;
-      if (+editMonthly !== budget.monthly_limit) body.max_monthly_usd = +editMonthly;
-      const alertVal = (+editAlert) / 100;
-      if (Math.abs(alertVal - budget.alert_threshold) > 0.001) body.alert_threshold = alertVal;
-      await api.put('/api/budget', body);
-      setEditMode(false);
-      await refetch();
-    } catch (e) {
-      console.error('Failed to save budget:', e);
+      const result = await api.discoverA2A(discoverUrl);
+      setDiscoverResult(result);
+    } finally {
+      setIsDiscovering(false);
     }
-    setSaving(false);
   };
-
-  const pctColor = (pct: number) => {
-    if (pct >= 0.8) return 'bg-red-500';
-    if (pct >= 0.5) return 'bg-yellow-500';
-    return 'bg-green-500';
-  };
-
-  const fmtUsd = (v: number) => v > 0 ? `$${v.toFixed(4)}` : 'unlimited';
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center p-8">
-        <Loader2 className="h-8 w-8 animate-spin" />
+      <div className="flex items-center justify-center h-32">
+        <Loader2 className="w-6 h-6 text-[var(--neon-amber)] animate-spin" />
       </div>
     );
   }
 
   return (
     <div className="space-y-6">
-      <Card>
-        <CardHeader>
-          <div className="flex justify-between items-start">
-            <div>
-              <CardTitle>Budget & Spending Limits</CardTitle>
-              <CardDescription>Monitor and control spending across all agents</CardDescription>
-            </div>
-            <Button variant="outline" size="sm" onClick={editMode ? saveBudget : startEdit} disabled={saving}>
-              {editMode ? (saving ? 'Saving...' : 'Save') : 'Edit Limits'}
-            </Button>
+      {/* Network Status */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="p-4 rounded-xl bg-[var(--surface-tertiary)] border border-[var(--border-subtle)]">
+          <div className="text-xs text-[var(--text-muted)] uppercase tracking-wider mb-1">Status</div>
+          <div className={cn(
+            "text-lg font-semibold",
+            networkStatus?.enabled ? "text-[var(--neon-green)]" : "text-[var(--text-muted)]"
+          )}>
+            {networkStatus?.enabled ? "Enabled" : "Disabled"}
           </div>
-        </CardHeader>
-        <CardContent>
-          {/* Global budget meters */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-            <div className="p-4 bg-muted/50 rounded-lg">
-              <div className="text-sm text-muted-foreground mb-1">Hourly</div>
-              <div className="text-xl font-bold">${(budget?.hourly_spend || 0).toFixed(4)}</div>
-              <div className="text-xs text-muted-foreground">of {fmtUsd(budget?.hourly_limit || 0)}</div>
-              {(budget?.hourly_limit || 0) > 0 && (
-                <div className="h-1 bg-muted rounded-full mt-2 overflow-hidden">
-                  <div
-                    className={`h-full rounded-full ${pctColor(budget?.hourly_pct || 0)}`}
-                    style={{ width: `${Math.min((budget?.hourly_pct || 0) * 100, 100)}%` }}
-                  />
-                </div>
-              )}
-            </div>
-            <div className="p-4 bg-muted/50 rounded-lg">
-              <div className="text-sm text-muted-foreground mb-1">Daily</div>
-              <div className="text-xl font-bold">${(budget?.daily_spend || 0).toFixed(4)}</div>
-              <div className="text-xs text-muted-foreground">of {fmtUsd(budget?.daily_limit || 0)}</div>
-              {(budget?.daily_limit || 0) > 0 && (
-                <div className="h-1 bg-muted rounded-full mt-2 overflow-hidden">
-                  <div
-                    className={`h-full rounded-full ${pctColor(budget?.daily_pct || 0)}`}
-                    style={{ width: `${Math.min((budget?.daily_pct || 0) * 100, 100)}%` }}
-                  />
-                </div>
-              )}
-            </div>
-            <div className="p-4 bg-muted/50 rounded-lg">
-              <div className="text-sm text-muted-foreground mb-1">Monthly</div>
-              <div className="text-xl font-bold">${(budget?.monthly_spend || 0).toFixed(4)}</div>
-              <div className="text-xs text-muted-foreground">of {fmtUsd(budget?.monthly_limit || 0)}</div>
-              {(budget?.monthly_limit || 0) > 0 && (
-                <div className="h-1 bg-muted rounded-full mt-2 overflow-hidden">
-                  <div
-                    className={`h-full rounded-full ${pctColor(budget?.monthly_pct || 0)}`}
-                    style={{ width: `${Math.min((budget?.monthly_pct || 0) * 100, 100)}%` }}
-                  />
-                </div>
-              )}
-            </div>
+        </div>
+        <div className="p-4 rounded-xl bg-[var(--surface-tertiary)] border border-[var(--border-subtle)]">
+          <div className="text-xs text-[var(--text-muted)] uppercase tracking-wider mb-1">Connected Peers</div>
+          <div className="text-lg font-semibold text-[var(--neon-cyan)]">
+            {networkStatus?.connected_peers || 0}
+          </div>
+        </div>
+        <div className="p-4 rounded-xl bg-[var(--surface-tertiary)] border border-[var(--border-subtle)]">
+          <div className="text-xs text-[var(--text-muted)] uppercase tracking-wider mb-1">Total Peers</div>
+          <div className="text-lg font-semibold text-[var(--text-primary)]">
+            {networkStatus?.total_peers || 0}
+          </div>
+        </div>
+      </div>
+
+      {/* A2A Discovery */}
+      <div>
+        <h4 className="text-sm font-medium text-[var(--text-primary)] mb-3">A2A Agent Discovery</h4>
+        <div className="p-4 rounded-xl bg-[var(--surface-tertiary)] border border-[var(--border-subtle)]">
+          <div className="flex gap-2 mb-4">
+            <input
+              type="text"
+              value={discoverUrl}
+              onChange={(e) => setDiscoverUrl(e.target.value)}
+              placeholder="Enter A2A agent URL (e.g., http://localhost:8080)"
+              className="flex-1 bg-[var(--surface-secondary)] border border-[var(--border-default)] rounded-lg px-3 py-2 text-[var(--text-primary)] text-sm"
+            />
+            <motion.button
+              onClick={handleDiscover}
+              disabled={!discoverUrl || isDiscovering}
+              className="px-4 py-2 rounded-lg bg-[var(--neon-amber)] text-[var(--void)] text-sm font-medium disabled:opacity-50"
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+            >
+              {isDiscovering ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Discover'}
+            </motion.button>
           </div>
 
-          {(budget?.alert_threshold || 0) > 0 && !editMode && (
-            <div className="text-xs text-muted-foreground mb-4">
-              Alert threshold: <span className="font-medium">{((budget?.alert_threshold || 0) * 100).toFixed(0)}%</span> of any limit
-            </div>
+          {discoverResult && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className={cn(
+                'p-3 rounded-lg border',
+                discoverResult.success
+                  ? 'bg-[var(--neon-green)]/10 border-[var(--neon-green)]/30'
+                  : 'bg-[var(--neon-red)]/10 border-[var(--neon-red)]/30'
+              )}
+            >
+              {discoverResult.success && discoverResult.agent ? (
+                <div className="flex items-center gap-2">
+                  <Check className="w-4 h-4 text-[var(--neon-green)]" />
+                  <span className="text-sm text-[var(--text-primary)]">
+                    Found: {discoverResult.agent.name || discoverResult.agent.url}
+                  </span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <X className="w-4 h-4 text-[var(--neon-red)]" />
+                  <span className="text-sm text-[var(--neon-red)]">
+                    {discoverResult.error || 'Discovery failed'}
+                  </span>
+                </div>
+              )}
+            </motion.div>
           )}
+        </div>
+      </div>
 
-          {/* Edit limits form */}
-          {editMode && (
-            <div className="border rounded-lg p-4 mb-4 space-y-4">
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div>
-                  <label className="text-xs text-muted-foreground">Hourly Limit ($)</label>
-                  <Input type="number" step="0.1" min="0" value={editHourly} onChange={(e) => setEditHourly(e.target.value)} placeholder="0 = unlimited" />
+      {/* A2A Agents List */}
+      {a2aAgents?.agents && a2aAgents.agents.length > 0 && (
+        <div>
+          <h4 className="text-sm font-medium text-[var(--text-primary)] mb-3">Known A2A Agents</h4>
+          <div className="space-y-2">
+            {a2aAgents.agents.map((agent) => (
+              <motion.div
+                key={agent.url}
+                initial={{ opacity: 0, x: -10 }}
+                animate={{ opacity: 1, x: 0 }}
+                className="flex items-center justify-between p-3 rounded-lg bg-[var(--surface-tertiary)] border border-[var(--border-subtle)]"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-2 h-2 rounded-full bg-[var(--neon-cyan)]" />
+                  <div>
+                    <div className="font-medium text-[var(--text-primary)]">{agent.name}</div>
+                    <div className="text-xs text-[var(--text-muted)]">{agent.url}</div>
+                  </div>
                 </div>
-                <div>
-                  <label className="text-xs text-muted-foreground">Daily Limit ($)</label>
-                  <Input type="number" step="1" min="0" value={editDaily} onChange={(e) => setEditDaily(e.target.value)} placeholder="0 = unlimited" />
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Peers List */}
+      <div>
+        <h4 className="text-sm font-medium text-[var(--text-primary)] mb-3">Connected Peers</h4>
+        {peersLoading ? (
+          <div className="flex items-center justify-center h-24">
+            <Loader2 className="w-5 h-5 text-[var(--neon-amber)] animate-spin" />
+          </div>
+        ) : peers && peers.length > 0 ? (
+          <div className="space-y-2">
+            {peers.map((peer) => (
+              <motion.div
+                key={peer.id}
+                initial={{ opacity: 0, x: -10 }}
+                animate={{ opacity: 1, x: 0 }}
+                className="flex items-center justify-between p-3 rounded-lg bg-[var(--surface-tertiary)] border border-[var(--border-subtle)]"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-2 h-2 rounded-full bg-[var(--neon-green)]" />
+                  <div>
+                    <div className="font-medium text-[var(--text-primary)]">{peer.name || peer.id.slice(0, 8)}</div>
+                    <div className="text-xs text-[var(--text-muted)]">{peer.address}</div>
+                  </div>
                 </div>
-                <div>
-                  <label className="text-xs text-muted-foreground">Monthly Limit ($)</label>
-                  <Input type="number" step="1" min="0" value={editMonthly} onChange={(e) => setEditMonthly(e.target.value)} placeholder="0 = unlimited" />
+                <div className="text-right">
+                  <div className="text-sm text-[var(--text-primary)]">{peer.agent_count || 0} agents</div>
+                  <div className="text-xs text-[var(--text-muted)]">
+                    {peer.last_seen ? new Date(peer.last_seen).toLocaleString() : 'Unknown'}
+                  </div>
                 </div>
-                <div>
-                  <label className="text-xs text-muted-foreground">Alert (%)</label>
-                  <Input type="number" step="5" min="0" max="100" value={editAlert} onChange={(e) => setEditAlert(e.target.value)} placeholder="80" />
-                </div>
-              </div>
-              <div className="text-xs text-muted-foreground">Set to 0 for unlimited. Changes apply immediately (in-memory, not persisted to config.toml).</div>
-              <Button variant="outline" size="sm" onClick={() => setEditMode(false)}>Cancel</Button>
+              </motion.div>
+            ))}
+          </div>
+        ) : (
+          <div className="text-center py-8 text-[var(--text-muted)] bg-[var(--surface-tertiary)] rounded-xl border border-[var(--border-subtle)] border-dashed">
+            No peers connected
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ===== Models Panel =====
+function ModelsPanel() {
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [selectedProvider, setSelectedProvider] = useState<string>('all');
+  const [selectedTier, setSelectedTier] = useState<string>('all');
+  const queryClient = useQueryClient();
+
+  const { data: modelsData, isLoading } = useQuery({
+    queryKey: ['models'],
+    queryFn: () => api.listModels(),
+  });
+
+  const models = modelsData?.models || [];
+
+  const deleteMutation = useMutation<unknown, Error, string>({
+    mutationFn: (id: string) => api.deleteCustomModel(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['models'] }),
+  });
+
+  // Get unique providers and tiers for filters
+  const providers = Array.from(new Set(models.map(m => m.provider) || [])).sort();
+  const tiers = Array.from(new Set(models.map(m => m.tier).filter(Boolean) || [])).sort();
+
+  const filteredModels = models.filter(m => {
+    const matchesSearch =
+      m.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      m.display_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      m.provider.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesProvider = selectedProvider === 'all' || m.provider === selectedProvider;
+    const matchesTier = selectedTier === 'all' || m.tier === selectedTier;
+    return matchesSearch && matchesProvider && matchesTier;
+  }) || [];
+
+  const getTierColor = (tier?: string) => {
+    switch (tier) {
+      case 'frontier': return 'var(--neon-magenta)';
+      case 'smart': return 'var(--neon-cyan)';
+      case 'balanced': return 'var(--neon-green)';
+      case 'fast': return 'var(--neon-amber)';
+      default: return 'var(--text-muted)';
+    }
+  };
+
+  return (
+    <>
+      <SpotlightCard glowColor="rgba(255, 0, 136, 0.1)">
+        <div className="p-6">
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-3">
+              <Cpu className="w-6 h-6 text-[var(--neon-magenta)]" />
+              <h3 className="text-lg font-semibold text-[var(--text-primary)]">Model Directory</h3>
             </div>
-          )}
+            <motion.button
+              onClick={() => setShowAddModal(true)}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[var(--neon-magenta)] text-[var(--void)] text-sm font-medium"
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+            >
+              <Plus className="w-4 h-4" />
+              Add Custom
+            </motion.button>
+          </div>
 
-          {/* Per-agent cost ranking */}
-          <h4 className="text-sm font-medium mt-6 mb-3">Top Spenders (Today)</h4>
-          {agentRanking.length > 0 ? (
-            <div className="border rounded-lg overflow-hidden">
-              <table className="w-full text-sm">
-                <thead className="bg-muted/50">
-                  <tr>
-                    <th className="text-left p-3 font-medium">Agent</th>
-                    <th className="text-left p-3 font-medium">Today</th>
-                    <th className="text-left p-3 font-medium text-muted-foreground">Hourly Limit</th>
-                    <th className="text-left p-3 font-medium text-muted-foreground">Daily Limit</th>
-                    <th className="text-left p-3 font-medium text-muted-foreground">Monthly Limit</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {agentRanking.map((a) => (
-                    <tr key={a.agent_id}>
-                      <td className="p-3 font-medium">{a.name}</td>
-                      <td className="p-3">${(a.daily_cost_usd || 0).toFixed(4)}</td>
-                      <td className="p-3 text-muted-foreground">{fmtUsd(a.hourly_limit)}</td>
-                      <td className="p-3 text-muted-foreground">{fmtUsd(a.daily_limit)}</td>
-                      <td className="p-3 text-muted-foreground">{fmtUsd(a.monthly_limit)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+          {/* Filters */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)]" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search models..."
+                className="w-full bg-[var(--surface-tertiary)] border border-[var(--border-default)] rounded-lg pl-10 pr-4 py-2 text-[var(--text-primary)] text-sm"
+              />
+            </div>
+            <select
+              value={selectedProvider}
+              onChange={(e) => setSelectedProvider(e.target.value)}
+              className="bg-[var(--surface-tertiary)] border border-[var(--border-default)] rounded-lg px-3 py-2 text-[var(--text-primary)] text-sm"
+            >
+              <option value="all">All Providers</option>
+              {providers.map((p) => (
+                <option key={p} value={p}>{p}</option>
+              ))}
+            </select>
+            <select
+              value={selectedTier}
+              onChange={(e) => setSelectedTier(e.target.value)}
+              className="bg-[var(--surface-tertiary)] border border-[var(--border-default)] rounded-lg px-3 py-2 text-[var(--text-primary)] text-sm"
+            >
+              <option value="all">All Tiers</option>
+              {tiers.map((t) => (
+                <option key={t} value={t}>{t}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Models List */}
+          {isLoading ? (
+            <div className="flex items-center justify-center h-32">
+              <Loader2 className="w-6 h-6 text-[var(--neon-magenta)] animate-spin" />
             </div>
           ) : (
-            <div className="text-sm text-muted-foreground text-center py-8">No spending recorded today.</div>
+            <div className="space-y-2 max-h-[400px] overflow-y-auto">
+              {filteredModels.map((model) => (
+                <motion.div
+                  key={model.id}
+                  initial={{ opacity: 0, y: 5 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className={cn(
+                    "flex items-center justify-between p-3 rounded-lg border transition-colors",
+                    model.available
+                      ? "bg-[var(--surface-tertiary)] border-[var(--border-subtle)] hover:border-[var(--border-default)]"
+                      : "bg-[var(--surface-tertiary)]/50 border-[var(--border-subtle)]/50 opacity-60"
+                  )}
+                >
+                  <div className="flex items-center gap-3">
+                    <div
+                      className="w-2 h-2 rounded-full"
+                      style={{ backgroundColor: getTierColor(model.tier) }}
+                    />
+                    <div>
+                      <div className="font-medium text-[var(--text-primary)]">
+                        {model.display_name || model.id}
+                        {!model.available && (
+                          <span className="ml-2 text-xs text-[var(--text-muted)]">(unavailable)</span>
+                        )}
+                      </div>
+                      <div className="text-xs text-[var(--text-muted)]">
+                        {model.provider} · {model.context_window?.toLocaleString()} context
+                        {model.supports_vision && ' · Vision'}
+                        {model.supports_tools && ' · Tools'}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    {/* Cost Display */}
+                    {(model.input_cost_per_m !== undefined || model.output_cost_per_m !== undefined) && (
+                      <div className="text-right text-xs text-[var(--text-muted)]">
+                        {model.input_cost_per_m !== undefined && (
+                          <div>${model.input_cost_per_m.toFixed(2)}/1M in</div>
+                        )}
+                        {model.output_cost_per_m !== undefined && (
+                          <div>${model.output_cost_per_m.toFixed(2)}/1M out</div>
+                        )}
+                      </div>
+                    )}
+                    {model.tier && (
+                      <span
+                        className="px-2 py-0.5 rounded text-xs font-medium"
+                        style={{
+                          backgroundColor: `${getTierColor(model.tier)}20`,
+                          color: getTierColor(model.tier),
+                        }}
+                      >
+                        {model.tier}
+                      </span>
+                    )}
+                    <motion.button
+                      onClick={() => deleteMutation.mutate(model.id)}
+                      disabled={deleteMutation.isPending}
+                      className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--neon-red)] hover:bg-[var(--neon-red)]/10 transition-colors"
+                      whileTap={{ scale: 0.95 }}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </motion.button>
+                  </div>
+                </motion.div>
+              ))}
+            </div>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </SpotlightCard>
+
+      {/* Add Custom Model Modal */}
+      <AnimatePresence>
+        {showAddModal && (
+          <AddCustomModelModal onClose={() => setShowAddModal(false)} />
+        )}
+      </AnimatePresence>
+    </>
+  );
+}
+
+// ===== Add Custom Model Modal =====
+function AddCustomModelModal({ onClose }: { onClose: () => void }) {
+  const [formData, setFormData] = useState({
+    id: '',
+    provider: 'openrouter',
+    context_window: 128000,
+    max_output_tokens: 8192,
+  });
+  const queryClient = useQueryClient();
+
+  const addMutation = useMutation({
+    mutationFn: () => api.addCustomModel(formData),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['models'] });
+      onClose();
+    },
+  });
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+      onClick={onClose}
+    >
+      <motion.div
+        initial={{ scale: 0.9, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.9, opacity: 0 }}
+        className="bg-[var(--surface-secondary)] rounded-xl border border-[var(--border-default)] p-6 w-full max-w-md"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-4">Add Custom Model</h3>
+        <div className="space-y-3">
+          <div>
+            <label className="text-xs text-[var(--text-muted)] mb-1 block">Model ID</label>
+            <input
+              type="text"
+              value={formData.id}
+              onChange={(e) => setFormData({ ...formData, id: e.target.value })}
+              placeholder="e.g., gpt-4-custom"
+              className="w-full bg-[var(--surface-tertiary)] border border-[var(--border-default)] rounded-lg px-3 py-2 text-[var(--text-primary)] text-sm"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-[var(--text-muted)] mb-1 block">Provider</label>
+            <input
+              type="text"
+              value={formData.provider}
+              onChange={(e) => setFormData({ ...formData, provider: e.target.value })}
+              placeholder="openrouter"
+              className="w-full bg-[var(--surface-tertiary)] border border-[var(--border-default)] rounded-lg px-3 py-2 text-[var(--text-primary)] text-sm"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs text-[var(--text-muted)] mb-1 block">Context Window</label>
+              <input
+                type="number"
+                value={formData.context_window}
+                onChange={(e) => setFormData({ ...formData, context_window: parseInt(e.target.value) })}
+                placeholder="128000"
+                className="w-full bg-[var(--surface-tertiary)] border border-[var(--border-default)] rounded-lg px-3 py-2 text-[var(--text-primary)] text-sm"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-[var(--text-muted)] mb-1 block">Max Output</label>
+              <input
+                type="number"
+                value={formData.max_output_tokens}
+                onChange={(e) => setFormData({ ...formData, max_output_tokens: parseInt(e.target.value) })}
+                placeholder="8192"
+                className="w-full bg-[var(--surface-tertiary)] border border-[var(--border-default)] rounded-lg px-3 py-2 text-[var(--text-primary)] text-sm"
+              />
+            </div>
+          </div>
+        </div>
+        <div className="flex gap-2 mt-4">
+          <motion.button
+            onClick={onClose}
+            className="flex-1 px-4 py-2 rounded-lg bg-[var(--surface-tertiary)] text-[var(--text-primary)] text-sm font-medium"
+            whileTap={{ scale: 0.98 }}
+          >
+            Cancel
+          </motion.button>
+          <motion.button
+            onClick={() => addMutation.mutate()}
+            disabled={!formData.id || !formData.provider || addMutation.isPending}
+            className="flex-1 px-4 py-2 rounded-lg bg-[var(--neon-magenta)] text-[var(--void)] text-sm font-medium disabled:opacity-50"
+            whileTap={{ scale: 0.98 }}
+          >
+            {addMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Add Model'}
+          </motion.button>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+// ===== Config Panel =====
+function ConfigPanel() {
+  const { data: config, isLoading } = useQuery({
+    queryKey: ['config'],
+    queryFn: () => api.getConfig(),
+  });
+
+  const { data: schema, isLoading: schemaLoading } = useQuery({
+    queryKey: ['config-schema'],
+    queryFn: () => api.getConfigSchema(),
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: (data: Record<string, unknown>) => api.updateConfig(data),
+  });
+
+  if (isLoading || schemaLoading) {
+    return (
+      <SpotlightCard glowColor="rgba(255, 184, 0, 0.1)">
+        <div className="flex items-center justify-center h-32">
+          <Loader2 className="w-6 h-6 text-[var(--neon-amber)] animate-spin" />
+        </div>
+      </SpotlightCard>
+    );
+  }
+
+  return (
+    <SpotlightCard glowColor="rgba(255, 184, 0, 0.1)">
+      <div className="p-6">
+        <div className="flex items-center gap-3 mb-6">
+          <Settings2 className="w-6 h-6 text-[var(--neon-amber)]" />
+          <h3 className="text-lg font-semibold text-[var(--text-primary)]">Runtime Configuration</h3>
+        </div>
+
+        <div className="space-y-4">
+          {schema?.schema && Object.entries(schema.schema).map(([key, field]) => (
+            <ConfigField
+              key={key}
+              name={key}
+              field={field as { type: string; description: string; default?: unknown; enum?: unknown[] }}
+              value={(config as Record<string, unknown> | undefined)?.[key]}
+              onChange={(value) => updateMutation.mutate({ [key]: value })}
+            />
+          ))}
+        </div>
+      </div>
+    </SpotlightCard>
+  );
+}
+
+// ===== Config Field Component =====
+function ConfigField({
+  name,
+  field,
+  value,
+  onChange,
+}: {
+  name: string;
+  field: { type: string; description: string; default?: unknown; enum?: unknown[] };
+  value: unknown;
+  onChange: (value: unknown) => void;
+}) {
+  const [localValue, setLocalValue] = useState(value);
+
+  useEffect(() => {
+    setLocalValue(value);
+  }, [value]);
+
+  const handleSave = () => {
+    onChange(localValue);
+  };
+
+  return (
+    <div className="p-4 rounded-lg bg-[var(--surface-tertiary)] border border-[var(--border-subtle)]">
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex-1">
+          <div className="font-medium text-[var(--text-primary)]">{name}</div>
+          <div className="text-xs text-[var(--text-muted)] mt-0.5">{field.description}</div>
+        </div>
+        <div className="flex items-center gap-2">
+          {field.type === 'boolean' && (
+            <motion.button
+              onClick={() => {
+                setLocalValue(!localValue);
+                onChange(!localValue);
+              }}
+              className={cn(
+                'w-12 h-6 rounded-full relative transition-colors',
+                localValue ? 'bg-[var(--neon-green)]' : 'bg-[var(--surface-elevated)]'
+              )}
+              whileTap={{ scale: 0.95 }}
+            >
+              <motion.div
+                className="absolute top-1 w-4 h-4 rounded-full bg-[var(--void)] shadow-lg"
+                animate={{ left: localValue ? '28px' : '4px' }}
+                transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+              />
+            </motion.button>
+          )}
+          {field.type === 'string' && field.enum && (
+            <select
+              value={String(localValue || field.default || '')}
+              onChange={(e) => {
+                setLocalValue(e.target.value);
+                onChange(e.target.value);
+              }}
+              className="bg-[var(--surface-secondary)] border border-[var(--border-default)] rounded-lg px-3 py-1.5 text-[var(--text-primary)] text-sm"
+            >
+              {field.enum.map((option) => (
+                <option key={String(option)} value={String(option)}>
+                  {String(option)}
+                </option>
+              ))}
+            </select>
+          )}
+          {field.type === 'string' && !field.enum && (
+            <input
+              type="text"
+              value={String(localValue || '')}
+              onChange={(e) => setLocalValue(e.target.value)}
+              onBlur={handleSave}
+              className="bg-[var(--surface-secondary)] border border-[var(--border-default)] rounded-lg px-3 py-1.5 text-[var(--text-primary)] text-sm w-48"
+            />
+          )}
+          {field.type === 'number' && (
+            <input
+              type="number"
+              value={Number(localValue || field.default || 0)}
+              onChange={(e) => setLocalValue(Number(e.target.value))}
+              onBlur={handleSave}
+              className="bg-[var(--surface-secondary)] border border-[var(--border-default)] rounded-lg px-3 py-1.5 text-[var(--text-primary)] text-sm w-24"
+            />
+          )}
+        </div>
+      </div>
     </div>
   );
 }
 
-// System Info Tab
-function SystemTab() {
-  const { data: sysInfo, isLoading } = useQuery<{
-    version?: string;
-    platform?: string;
-    uptime_seconds?: number;
-    agent_count?: number;
-    default_provider?: string;
-    default_model?: string;
-  }>({
-    queryKey: ['status'],
-    queryFn: async () => api.get('/api/status'),
+// ===== Tools Panel =====
+function ToolsPanel() {
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState<string>('all');
+
+  const { data: tools, isLoading } = useQuery({
+    queryKey: ['tools'],
+    queryFn: () => api.listTools(),
   });
 
-  const formatUptime = (seconds?: number) => {
-    if (!seconds) return '-';
+  // 确保 tools 是数组，防止 API 返回异常数据
+  const toolsArray = Array.isArray(tools) ? tools : [];
+
+  const categories = ['all', ...Array.from(new Set(toolsArray.map(t => t.category).filter(Boolean) || []))];
+
+  const filteredTools = toolsArray.filter(tool => {
+    const matchesSearch = tool.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                         tool.description?.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesCategory = selectedCategory === 'all' || tool.category === selectedCategory;
+    return matchesSearch && matchesCategory;
+  }) || [];
+
+  return (
+    <SpotlightCard glowColor="rgba(0, 255, 136, 0.1)">
+      <div className="p-6">
+        <div className="flex items-center gap-3 mb-6">
+          <Wrench className="w-6 h-6 text-[var(--neon-cyan)]" />
+          <h3 className="text-lg font-semibold text-[var(--text-primary)]">Tool Directory</h3>
+        </div>
+
+        {/* Search and Filter */}
+        <div className="flex flex-col sm:flex-row gap-3 mb-4">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)]" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search tools..."
+              className="w-full bg-[var(--surface-tertiary)] border border-[var(--border-default)] rounded-lg pl-10 pr-4 py-2 text-[var(--text-primary)] text-sm"
+            />
+          </div>
+          <select
+            value={selectedCategory}
+            onChange={(e) => setSelectedCategory(e.target.value)}
+            className="bg-[var(--surface-tertiary)] border border-[var(--border-default)] rounded-lg px-3 py-2 text-[var(--text-primary)] text-sm"
+          >
+            {categories.map(cat => (
+              <option key={cat} value={cat}>
+                {cat === 'all' ? 'All Categories' : cat}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Tools Grid */}
+        {isLoading ? (
+          <div className="flex items-center justify-center h-32">
+            <Loader2 className="w-6 h-6 text-[var(--neon-cyan)] animate-spin" />
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[400px] overflow-y-auto">
+            {filteredTools.map((tool, index) => (
+              <motion.div
+                key={tool.name}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: index * 0.05 }}
+                className="p-4 rounded-lg bg-[var(--surface-tertiary)] border border-[var(--border-subtle)] hover:border-[var(--border-default)] transition-colors"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <div className="font-medium text-[var(--text-primary)]">{tool.name}</div>
+                    {tool.category && (
+                      <span className="text-xs text-[var(--neon-cyan)]">{tool.category}</span>
+                    )}
+                  </div>
+                </div>
+                {tool.description && (
+                  <p className="text-sm text-[var(--text-muted)] mt-2 line-clamp-2">{tool.description}</p>
+                )}
+              </motion.div>
+            ))}
+          </div>
+        )}
+      </div>
+    </SpotlightCard>
+  );
+}
+
+// ===== Budget Panel =====
+function BudgetPanel() {
+  const { data: budget, isLoading } = useQuery({
+    queryKey: ['budget'],
+    queryFn: () => api.getBudget(),
+  });
+
+  const { data: agentBudgets, isLoading: agentsLoading } = useQuery({
+    queryKey: ['budget-agents'],
+    queryFn: () => api.getBudgetAgents(),
+  });
+
+  const queryClient = useQueryClient();
+
+  const updateMutation = useMutation({
+    mutationFn: (data: { hourly_limit?: number; daily_limit?: number; monthly_limit?: number; alert_threshold?: number }) =>
+      api.updateBudget(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['budget'] });
+    },
+  });
+
+  const [isEditing, setIsEditing] = useState(false);
+  const [editValues, setEditValues] = useState({
+    hourly_limit: 0,
+    daily_limit: 0,
+    monthly_limit: 0,
+    alert_threshold: 80,
+  });
+
+  useEffect(() => {
+    if (budget) {
+      setEditValues({
+        hourly_limit: budget.hourly_limit,
+        daily_limit: budget.daily_limit,
+        monthly_limit: budget.monthly_limit,
+        alert_threshold: budget.alert_threshold || 80,
+      });
+    }
+  }, [budget]);
+
+  const handleSave = () => {
+    updateMutation.mutate(editValues);
+    setIsEditing(false);
+  };
+
+  const formatCurrency = (val: number) => `$${val.toFixed(4)}`;
+
+  const getProgressColor = (spend: number, limit: number) => {
+    const pct = (spend / limit) * 100;
+    if (pct >= 100) return 'var(--neon-red)';
+    if (pct >= (budget?.alert_threshold || 80)) return 'var(--neon-amber)';
+    return 'var(--neon-green)';
+  };
+
+  if (isLoading) {
+    return (
+      <SpotlightCard glowColor="rgba(0, 255, 204, 0.1)">
+        <div className="flex items-center justify-center h-32">
+          <Loader2 className="w-6 h-6 text-[var(--neon-cyan)] animate-spin" />
+        </div>
+      </SpotlightCard>
+    );
+  }
+
+  if (!budget) return null;
+
+  return (
+    <div className="space-y-4">
+      <SpotlightCard glowColor="rgba(0, 255, 204, 0.1)">
+        <div className="p-6">
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-3">
+              <DollarSign className="w-6 h-6 text-[var(--neon-cyan)]" />
+              <h3 className="text-lg font-semibold text-[var(--text-primary)]">Budget Overview</h3>
+            </div>
+            <motion.button
+              onClick={() => setIsEditing(!isEditing)}
+              className="px-4 py-2 rounded-lg bg-[var(--surface-tertiary)] text-[var(--text-primary)] text-sm font-medium border border-[var(--border-default)]"
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+            >
+              {isEditing ? 'Cancel' : 'Edit Limits'}
+            </motion.button>
+          </div>
+
+          {isEditing ? (
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {[
+                  { key: 'hourly_limit', label: 'Hourly Limit' },
+                  { key: 'daily_limit', label: 'Daily Limit' },
+                  { key: 'monthly_limit', label: 'Monthly Limit' },
+                  { key: 'alert_threshold', label: 'Alert Threshold (%)' },
+                ].map(({ key, label }) => (
+                  <div key={key}>
+                    <label className="text-xs text-[var(--text-muted)] mb-1 block">{label}</label>
+                    <input
+                      type="number"
+                      value={editValues[key as keyof typeof editValues]}
+                      onChange={(e) =>
+                        setEditValues({
+                          ...editValues,
+                          [key]: parseFloat(e.target.value) || 0,
+                        })
+                      }
+                      className="w-full bg-[var(--surface-tertiary)] border border-[var(--border-default)] rounded-lg px-3 py-2 text-[var(--text-primary)] text-sm"
+                    />
+                  </div>
+                ))}
+              </div>
+              <motion.button
+                onClick={handleSave}
+                disabled={updateMutation.isPending}
+                className="w-full px-4 py-2 rounded-lg bg-[var(--neon-cyan)] text-[var(--void)] text-sm font-medium disabled:opacity-50"
+                whileTap={{ scale: 0.98 }}
+              >
+                {updateMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Save Changes'}
+              </motion.button>
+            </div>
+          ) : (
+            <div className="space-y-6">
+              {/* Hourly */}
+              <BudgetProgress
+                label="Hourly"
+                spend={budget.hourly_spend}
+                limit={budget.hourly_limit}
+                color={getProgressColor(budget.hourly_spend, budget.hourly_limit)}
+              />
+              {/* Daily */}
+              <BudgetProgress
+                label="Daily"
+                spend={budget.daily_spend}
+                limit={budget.daily_limit}
+                color={getProgressColor(budget.daily_spend, budget.daily_limit)}
+              />
+              {/* Monthly */}
+              <BudgetProgress
+                label="Monthly"
+                spend={budget.monthly_spend}
+                limit={budget.monthly_limit}
+                color={getProgressColor(budget.monthly_spend, budget.monthly_limit)}
+              />
+            </div>
+          )}
+        </div>
+      </SpotlightCard>
+
+      {/* Agent Budgets */}
+      <SpotlightCard glowColor="rgba(255, 0, 136, 0.1)">
+        <div className="p-6">
+          <h4 className="text-sm font-medium text-[var(--text-muted)] uppercase tracking-wider mb-4">
+            Per-Agent Spending
+          </h4>
+          {agentsLoading ? (
+            <div className="flex items-center justify-center h-24">
+              <Loader2 className="w-5 h-5 text-[var(--neon-magenta)] animate-spin" />
+            </div>
+          ) : agentBudgets && agentBudgets.length > 0 ? (
+            <div className="space-y-2 max-h-[300px] overflow-y-auto">
+              {agentBudgets
+                .sort((a, b) => b.spend - a.spend)
+                .map((agent) => (
+                  <motion.div
+                    key={agent.agent_id}
+                    initial={{ opacity: 0, x: -10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    className="flex items-center justify-between p-3 rounded-lg bg-[var(--surface-tertiary)] border border-[var(--border-subtle)]"
+                  >
+                    <div>
+                      <div className="font-medium text-[var(--text-primary)]">
+                        {agent.agent_name || agent.agent_id.slice(0, 8)}
+                      </div>
+                      <div className="text-xs text-[var(--text-muted)]">
+                        {agent.calls} calls · {agent.tokens.toLocaleString()} tokens
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="font-medium text-[var(--text-primary)]">${agent.spend.toFixed(4)}</div>
+                    </div>
+                  </motion.div>
+                ))}
+            </div>
+          ) : (
+            <div className="text-center py-8 text-[var(--text-muted)]">No spending data yet</div>
+          )}
+        </div>
+      </SpotlightCard>
+    </div>
+  );
+}
+
+function BudgetProgress({
+  label,
+  spend,
+  limit,
+  color,
+}: {
+  label: string;
+  spend: number;
+  limit: number;
+  color: string;
+}) {
+  const pct = Math.min((spend / limit) * 100, 100);
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-sm font-medium text-[var(--text-primary)]">{label}</span>
+        <span className="text-sm text-[var(--text-muted)]">
+          ${spend.toFixed(4)} / ${limit.toFixed(2)}
+        </span>
+      </div>
+      <div className="h-2 bg-[var(--surface-tertiary)] rounded-full overflow-hidden">
+        <motion.div
+          className="h-full rounded-full"
+          style={{ backgroundColor: color }}
+          initial={{ width: 0 }}
+          animate={{ width: `${pct}%` }}
+          transition={{ duration: 0.5 }}
+        />
+      </div>
+      <div className="text-xs text-[var(--text-muted)] mt-1">{pct.toFixed(1)}% used</div>
+    </div>
+  );
+}
+
+// ===== System Panel =====
+function SystemPanel() {
+  const { data: version, isLoading: versionLoading } = useQuery({
+    queryKey: ['version'],
+    queryFn: () => api.getVersion(),
+  });
+
+  const { data: status, isLoading: statusLoading } = useQuery({
+    queryKey: ['system-status'],
+    queryFn: () => api.getSystemStatus(),
+  });
+
+  const { data: agents } = useQuery({
+    queryKey: ['agents'],
+    queryFn: () => api.listAgents(),
+  });
+
+  const formatUptime = (seconds: number) => {
     const days = Math.floor(seconds / 86400);
     const hours = Math.floor((seconds % 86400) / 3600);
     const mins = Math.floor((seconds % 3600) / 60);
@@ -1208,371 +1935,390 @@ function SystemTab() {
     return `${mins}m`;
   };
 
-  if (isLoading) {
+  if (versionLoading || statusLoading) {
     return (
-      <div className="flex items-center justify-center p-8">
-        <Loader2 className="h-8 w-8 animate-spin" />
-      </div>
+      <SpotlightCard glowColor="rgba(0, 255, 136, 0.1)">
+        <div className="flex items-center justify-center h-32">
+          <Loader2 className="w-6 h-6 text-[var(--neon-green)] animate-spin" />
+        </div>
+      </SpotlightCard>
     );
   }
 
   return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <Card>
-          <CardContent className="pt-6 text-center">
-            <div className="text-2xl font-bold">{sysInfo?.version || '-'}</div>
-            <div className="text-sm text-muted-foreground">Version</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6 text-center">
-            <div className="text-2xl font-bold">{sysInfo?.platform || '-'}</div>
-            <div className="text-sm text-muted-foreground">Platform</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6 text-center">
-            <div className="text-2xl font-bold">{formatUptime(sysInfo?.uptime_seconds)}</div>
-            <div className="text-sm text-muted-foreground">Uptime</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6 text-center">
-            <div className="text-2xl font-bold">{sysInfo?.agent_count || 0}</div>
-            <div className="text-sm text-muted-foreground">Agents</div>
-          </CardContent>
-        </Card>
-      </div>
+    <div className="space-y-4">
+      <SpotlightCard glowColor="rgba(0, 255, 136, 0.1)">
+        <div className="p-6">
+          <div className="flex items-center gap-3 mb-6">
+            <Info className="w-6 h-6 text-[var(--neon-green)]" />
+            <h3 className="text-lg font-semibold text-[var(--text-primary)]">System Information</h3>
+          </div>
 
-      {sysInfo?.default_provider && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Default Model</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-sm">{sysInfo.default_provider} : {sysInfo.default_model}</div>
-          </CardContent>
-        </Card>
-      )}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {/* Version */}
+            <SystemInfoItem label="Version" value={version?.version || 'Unknown'} />
+            <SystemInfoItem label="Platform" value={version?.platform || 'Unknown'} />
+            <SystemInfoItem label="Architecture" value={version?.arch || 'Unknown'} />
+            <SystemInfoItem
+              label="Build Time"
+              value={version?.build_time ? new Date(version.build_time).toLocaleString() : 'Unknown'}
+            />
+            {version?.git_commit && (
+              <SystemInfoItem
+                label="Git Commit"
+                value={version.git_commit.slice(0, 8)}
+                valueClass="font-mono"
+              />
+            )}
+
+            <div className="col-span-1 sm:col-span-2 border-t border-[var(--border-subtle)] my-2" />
+
+            {/* Status */}
+            {status && (
+              <>
+                <SystemInfoItem
+                  label="Uptime"
+                  value={formatUptime(status.uptime_seconds)}
+                  icon={<RefreshCw className="w-4 h-4 text-[var(--neon-cyan)]" />}
+                />
+                <SystemInfoItem
+                  label="Agents"
+                  value={`${status.agent_count} (${agents?.length || 0} loaded)`}
+                  icon={<Cpu className="w-4 h-4 text-[var(--neon-magenta)]" />}
+                />
+                {status.default_provider && (
+                  <SystemInfoItem label="Default Provider" value={status.default_provider} />
+                )}
+                {status.default_model && (
+                  <SystemInfoItem label="Default Model" value={status.default_model} />
+                )}
+              </>
+            )}
+          </div>
+        </div>
+      </SpotlightCard>
     </div>
   );
 }
 
-// Migration Tab
-function MigrationTab() {
-  const [migStep, setMigStep] = useState<'intro' | 'manual' | 'preview' | 'result' | 'not_found'>('intro');
-  const [sourcePath, setSourcePath] = useState('');
-  const [targetPath, setTargetPath] = useState('');
-  const [detecting, setDetecting] = useState(false);
-  const [scanning, setScanning] = useState(false);
-  const [migrating, setMigrating] = useState(false);
-  const [scanResult, setScanResult] = useState<{ path: string; agents?: string[]; channels?: string[]; skills?: string[] } | null>(null);
-  const [migResult, setMigResult] = useState<{ status: string; dry_run?: boolean; error?: string } | null>(null);
-
-  const autoDetect = async () => {
-    setDetecting(true);
-    try {
-      const data = await api.get<{ detected?: boolean; scan?: { path: string; agents?: string[]; channels?: string[]; skills?: string[] }; path?: string }>('/api/migrate/detect');
-      if (data.detected && data.scan) {
-        setSourcePath(data.path || '');
-        setScanResult(data.scan);
-        setMigStep('preview');
-      } else {
-        setMigStep('not_found');
-      }
-    } catch {
-      setMigStep('not_found');
-    }
-    setDetecting(false);
-  };
-
-  const scanPath = async () => {
-    if (!sourcePath) return;
-    setScanning(true);
-    try {
-      const data = await api.post<{ error?: string; path: string; agents?: string[]; channels?: string[]; skills?: string[] }>('/api/migrate/scan', { path: sourcePath });
-      if (data.error) {
-        setScanning(false);
-        return;
-      }
-      setScanResult(data);
-      setMigStep('preview');
-    } catch {
-      // silent
-    }
-    setScanning(false);
-  };
-
-  const runMigration = async (dryRun: boolean) => {
-    setMigrating(true);
-    try {
-      const data = await api.post<{ status: string; dry_run?: boolean; error?: string }>('/api/migrate', {
-        source: 'openclaw',
-        source_dir: sourcePath || (scanResult ? scanResult.path : ''),
-        target_dir: targetPath,
-        dry_run: dryRun,
-      });
-      setMigResult(data);
-      setMigStep('result');
-    } catch (e) {
-      setMigResult({ status: 'failed', error: (e as Error).message });
-      setMigStep('result');
-    }
-    setMigrating(false);
-  };
-
-  if (migStep === 'intro') {
-    return (
-      <Card className="border-l-4 border-l-primary">
-        <CardHeader>
-          <CardTitle>Migrate from OpenClaw</CardTitle>
-          <CardDescription>
-            Seamlessly transfer your agents, memory, workspace files, and channel configurations from OpenClaw to OpenFang.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <ul className="text-sm text-muted-foreground space-y-1 list-disc list-inside">
-            <li>Converts agent.yaml to agent.toml with proper capabilities</li>
-            <li>Maps tools (read_file → file_read, execute_command → shell_exec, etc.)</li>
-            <li>Merges channel configs into config.toml</li>
-            <li>Copies workspace files and memory data</li>
-          </ul>
-          <div className="flex gap-2 pt-4">
-            <Button onClick={autoDetect} disabled={detecting}>
-              {detecting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {detecting ? 'Scanning...' : 'Auto-Detect OpenClaw'}
-            </Button>
-            <Button variant="outline" onClick={() => setMigStep('manual')}>Enter Path Manually</Button>
-          </div>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  if (migStep === 'manual') {
-    return (
-      <Card className="border-l-4 border-l-primary">
-        <CardHeader>
-          <CardTitle>Specify OpenClaw Path</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <label className="text-sm font-medium">OpenClaw Home Directory</label>
-            <Input
-              value={sourcePath}
-              onChange={(e) => setSourcePath(e.target.value)}
-              placeholder="~/.openclaw"
-              className="font-mono text-xs"
-            />
-          </div>
-          <div className="space-y-2">
-            <label className="text-sm font-medium">OpenFang Target Directory</label>
-            <Input
-              value={targetPath}
-              onChange={(e) => setTargetPath(e.target.value)}
-              placeholder="~/.openfang (default)"
-              className="font-mono text-xs"
-            />
-          </div>
-          <div className="flex gap-2 pt-4">
-            <Button onClick={scanPath} disabled={!sourcePath || scanning}>
-              {scanning && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {scanning ? 'Scanning...' : 'Scan Directory'}
-            </Button>
-            <Button variant="outline" onClick={() => setMigStep('intro')}>Back</Button>
-          </div>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  if (migStep === 'preview' && scanResult) {
-    return (
-      <div className="space-y-4">
-        <Card className="border-l-4 border-l-green-500">
-          <CardHeader>
-            <div className="flex justify-between items-center">
-              <CardTitle>OpenClaw Workspace Found</CardTitle>
-              <Badge>Ready to Migrate</Badge>
-            </div>
-            <CardDescription className="font-mono text-xs">{scanResult.path}</CardDescription>
-          </CardHeader>
-        </Card>
-
-        <div className="grid grid-cols-3 gap-4">
-          <Card>
-            <CardContent className="pt-6 text-center">
-              <div className="text-2xl font-bold">{scanResult.agents?.length || 0}</div>
-              <div className="text-sm text-muted-foreground">Agents</div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-6 text-center">
-              <div className="text-2xl font-bold">{scanResult.channels?.length || 0}</div>
-              <div className="text-sm text-muted-foreground">Channels</div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-6 text-center">
-              <div className="text-2xl font-bold">{scanResult.skills?.length || 0}</div>
-              <div className="text-sm text-muted-foreground">Skills</div>
-            </CardContent>
-          </Card>
-        </div>
-
-        <div className="flex gap-2">
-          <Button onClick={() => runMigration(false)} disabled={migrating}>
-            {migrating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            {migrating ? 'Migrating...' : 'Migrate Now'}
-          </Button>
-          <Button variant="outline" onClick={() => runMigration(true)} disabled={migrating}>Dry Run</Button>
-          <Button variant="ghost" onClick={() => { setMigStep('intro'); setScanResult(null); }}>Start Over</Button>
-        </div>
-      </div>
-    );
-  }
-
-  if (migStep === 'result' && migResult) {
-    return (
-      <div className="space-y-4">
-        <Card className={`border-l-4 ${migResult.status === 'completed' ? 'border-l-green-500' : 'border-l-red-500'}`}>
-          <CardHeader>
-            <div className="flex justify-between items-center">
-              <CardTitle>{migResult.dry_run ? 'Dry Run Complete' : 'Migration Complete!'}</CardTitle>
-              <Badge className={migResult.status === 'completed' ? 'bg-green-500' : 'bg-red-500'}>
-                {migResult.status === 'completed' ? 'SUCCESS' : 'FAILED'}
-              </Badge>
-            </div>
-            {migResult.error && (
-              <CardDescription className="text-red-500">{migResult.error}</CardDescription>
-            )}
-          </CardHeader>
-        </Card>
-
-        <div className="flex gap-2">
-          {migResult.dry_run && (
-            <Button onClick={() => runMigration(false)} disabled={migrating}>
-              {migrating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Run Migration for Real
-            </Button>
-          )}
-          <Button variant="outline" onClick={() => { setMigStep('intro'); setMigResult(null); setScanResult(null); }}>
-            Start New Migration
-          </Button>
-        </div>
-      </div>
-    );
-  }
-
-  if (migStep === 'not_found') {
-    return (
-      <Card className="border-l-4 border-l-yellow-500">
-        <CardHeader>
-          <CardTitle>OpenClaw Not Found</CardTitle>
-          <CardDescription>Could not auto-detect an OpenClaw installation.</CardDescription>
-        </CardHeader>
-        <CardContent className="flex gap-2">
-          <Button onClick={() => setMigStep('manual')}>Enter Path Manually</Button>
-          <Button variant="outline" onClick={() => setMigStep('intro')}>Back</Button>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  return null;
-}
-
-// Main Settings Page
-export function Settings() {
+function SystemInfoItem({
+  label,
+  value,
+  icon,
+  valueClass,
+}: {
+  label: string;
+  value: string;
+  icon?: React.ReactNode;
+  valueClass?: string;
+}) {
   return (
-    <div className="flex-1 overflow-auto p-6">
-      <div className="max-w-6xl mx-auto">
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold">Settings</h1>
-          <p className="text-muted-foreground">
-            Configure OpenFang providers, models, tools, security, and network settings.
-          </p>
-        </div>
-
-      <Tabs defaultValue="providers">
-        <TabsList className="mb-4">
-          <TabsTrigger value="providers">
-            <Key className="w-4 h-4 mr-2" />
-            Providers
-          </TabsTrigger>
-          <TabsTrigger value="models">
-            <Database className="w-4 h-4 mr-2" />
-            Models
-          </TabsTrigger>
-          <TabsTrigger value="config">
-            <Database className="w-4 h-4 mr-2" />
-            Config
-          </TabsTrigger>
-          <TabsTrigger value="tools">
-            <Wrench className="w-4 h-4 mr-2" />
-            Tools
-          </TabsTrigger>
-          <TabsTrigger value="security">
-            <Shield className="w-4 h-4 mr-2" />
-            Security
-          </TabsTrigger>
-          <TabsTrigger value="network">
-            <Network className="w-4 h-4 mr-2" />
-            Network
-          </TabsTrigger>
-          <TabsTrigger value="budget">
-            <DollarSign className="w-4 h-4 mr-2" />
-            Budget
-          </TabsTrigger>
-          <TabsTrigger value="system">
-            <Info className="w-4 h-4 mr-2" />
-            System
-          </TabsTrigger>
-          <TabsTrigger value="migration">
-            <Database className="w-4 h-4 mr-2" />
-            Migration
-          </TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="providers">
-          <ProvidersTab />
-        </TabsContent>
-
-        <TabsContent value="models">
-          <ModelsTab />
-        </TabsContent>
-
-        <TabsContent value="config">
-          <ConfigTab />
-        </TabsContent>
-
-        <TabsContent value="tools">
-          <ToolsTab />
-        </TabsContent>
-
-        <TabsContent value="security">
-          <SecurityTab />
-        </TabsContent>
-
-        <TabsContent value="network">
-          <NetworkTab />
-        </TabsContent>
-
-        <TabsContent value="budget">
-          <BudgetTab />
-        </TabsContent>
-
-        <TabsContent value="system">
-          <SystemTab />
-        </TabsContent>
-
-        <TabsContent value="migration">
-          <MigrationTab />
-        </TabsContent>
-      </Tabs>
+    <div className="p-3 rounded-lg bg-[var(--surface-tertiary)]">
+      <div className="text-xs text-[var(--text-muted)] mb-1">{label}</div>
+      <div className={cn('font-medium text-[var(--text-primary)] flex items-center gap-2', valueClass)}>
+        {icon}
+        {value}
       </div>
     </div>
+  );
+}
+
+// ===== Migration Panel =====
+function MigrationPanel() {
+  const [step, setStep] = useState<'intro' | 'manual' | 'preview' | 'result' | 'not_found'>('intro');
+  const [scanPath, setScanPath] = useState('');
+  const [scanResult, setScanResult] = useState<{ path: string; agents: number; channels: number; skills: number; sessions: number; workflows: number; total_size_mb: number } | null>(null);
+  const [migrationResult, setMigrationResult] = useState<{ success: boolean; migrated: { agents: number; workflows: number; skills: number }; errors: string[] } | null>(null);
+  const [isDryRun, setIsDryRun] = useState(true);
+  const [includeSessions, setIncludeSessions] = useState(false);
+  const [detectError, setDetectError] = useState<string | null>(null);
+
+  const detectMutation = useMutation({
+    mutationFn: () => api.detectMigration(),
+    onSuccess: (data) => {
+      if (data.detected && data.source) {
+        setScanPath(data.source);
+        handleScan(data.source);
+      } else {
+        setStep('not_found');
+        setDetectError(data.reason || 'Could not detect OpenClaw installation');
+      }
+    },
+    onError: () => {
+      setStep('not_found');
+      setDetectError('Auto-detection failed');
+    },
+  });
+
+  const scanMutation = useMutation({
+    mutationFn: (path: string) => api.scanMigrationPath(path),
+    onSuccess: (data) => {
+      // 确保数据包含所有必要字段
+      const enrichedData = {
+        path: scanPath || '/.openclaw',
+        agents: data.agents || 0,
+        channels: (data as { channels?: number }).channels || 0,
+        skills: data.skills || 0,
+        sessions: data.sessions || 0,
+        workflows: data.workflows || 0,
+        total_size_mb: data.total_size_mb || 0,
+      };
+      setScanResult(enrichedData);
+      setStep('preview');
+    },
+    onError: () => {
+      setStep('not_found');
+      setDetectError('Scan failed - invalid path');
+    },
+  });
+
+  const migrateMutation = useMutation({
+    mutationFn: () => {
+      if (!scanResult) throw new Error('No scan result');
+      return api.runMigration({
+        path: scanResult.path,
+        dry_run: isDryRun,
+        include_sessions: includeSessions,
+      });
+    },
+    onSuccess: (data) => {
+      setMigrationResult(data);
+      setStep('result');
+    },
+  });
+
+  const handleScan = (path: string) => {
+    if (!path) return;
+    setScanPath(path);
+    scanMutation.mutate(path);
+  };
+
+  const handleMigrate = () => {
+    migrateMutation.mutate();
+  };
+
+  const reset = () => {
+    setStep('intro');
+    setScanResult(null);
+    setMigrationResult(null);
+    setScanPath('');
+    setDetectError(null);
+  };
+
+  return (
+    <SpotlightCard glowColor="rgba(255, 0, 68, 0.1)">
+      <div className="p-6">
+        <div className="flex items-center gap-3 mb-6">
+          <ArrowRightLeft className="w-6 h-6 text-[var(--neon-red)]" />
+          <h3 className="text-lg font-semibold text-[var(--text-primary)]">OpenClaw Migration</h3>
+        </div>
+
+        {step === 'intro' && (
+          <div className="space-y-4">
+            <p className="text-[var(--text-muted)]">
+              Migrate your data from OpenClaw to OpenFang. This will transfer agents, workflows, skills, and sessions.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <motion.button
+                onClick={() => detectMutation.mutate()}
+                disabled={detectMutation.isPending}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[var(--neon-red)] text-[var(--void)] text-sm font-medium disabled:opacity-50"
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+              >
+                {detectMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+                Auto-detect OpenClaw
+              </motion.button>
+              <motion.button
+                onClick={() => setStep('manual')}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[var(--surface-tertiary)] text-[var(--text-primary)] text-sm font-medium border border-[var(--border-default)]"
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+              >
+                <Database className="w-4 h-4" />
+                Manual Path
+              </motion.button>
+            </div>
+          </div>
+        )}
+
+        {step === 'manual' && (
+          <div className="space-y-4">
+            <p className="text-[var(--text-muted)]">
+              Enter the path to your OpenClaw data directory:
+            </p>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={scanPath}
+                onChange={(e) => setScanPath(e.target.value)}
+                placeholder="e.g., ~/.openclaw or C:\\Users\\name\\.openclaw"
+                className="flex-1 bg-[var(--surface-tertiary)] border border-[var(--border-default)] rounded-lg px-3 py-2 text-[var(--text-primary)] text-sm"
+              />
+              <motion.button
+                onClick={() => handleScan(scanPath)}
+                disabled={!scanPath || scanMutation.isPending}
+                className="px-4 py-2 rounded-lg bg-[var(--neon-cyan)] text-[var(--void)] text-sm font-medium disabled:opacity-50"
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+              >
+                {scanMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Scan'}
+              </motion.button>
+            </div>
+            <motion.button
+              onClick={() => setStep('intro')}
+              className="w-full px-4 py-2 rounded-lg bg-[var(--surface-tertiary)] text-[var(--text-primary)] text-sm font-medium"
+              whileTap={{ scale: 0.98 }}
+            >
+              Back
+            </motion.button>
+          </div>
+        )}
+
+        {step === 'not_found' && (
+          <div className="space-y-4">
+            <div className="p-4 rounded-lg bg-[var(--neon-amber)]/10 border border-[var(--neon-amber)]/30">
+              <div className="flex items-center gap-2 mb-2">
+                <AlertCircle className="w-5 h-5 text-[var(--neon-amber)]" />
+                <span className="font-medium text-[var(--neon-amber)]">OpenClaw Not Found</span>
+              </div>
+              <p className="text-sm text-[var(--text-muted)]">
+                {detectError || 'Could not detect an OpenClaw installation.'}
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <motion.button
+                onClick={() => setStep('manual')}
+                className="flex-1 px-4 py-2 rounded-lg bg-[var(--neon-cyan)] text-[var(--void)] text-sm font-medium"
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+              >
+                Enter Path Manually
+              </motion.button>
+              <motion.button
+                onClick={reset}
+                className="flex-1 px-4 py-2 rounded-lg bg-[var(--surface-tertiary)] text-[var(--text-primary)] text-sm font-medium"
+                whileTap={{ scale: 0.98 }}
+              >
+                Try Again
+              </motion.button>
+            </div>
+          </div>
+        )}
+
+        {step === 'preview' && scanResult && (
+          <div className="space-y-4">
+            <div className="text-sm text-[var(--text-muted)] mb-2">
+              Path: <code className="text-[var(--neon-cyan)]">{scanResult.path}</code>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="p-3 rounded-lg bg-[var(--surface-tertiary)] border border-[var(--border-subtle)] text-center">
+                <div className="text-2xl font-bold text-[var(--neon-cyan)]">{scanResult.agents}</div>
+                <div className="text-xs text-[var(--text-muted)]">Agents</div>
+              </div>
+              <div className="p-3 rounded-lg bg-[var(--surface-tertiary)] border border-[var(--border-subtle)] text-center">
+                <div className="text-2xl font-bold text-[var(--neon-green)]">{scanResult.workflows}</div>
+                <div className="text-xs text-[var(--text-muted)]">Workflows</div>
+              </div>
+              <div className="p-3 rounded-lg bg-[var(--surface-tertiary)] border border-[var(--border-subtle)] text-center">
+                <div className="text-2xl font-bold text-[var(--neon-amber)]">{scanResult.skills}</div>
+                <div className="text-xs text-[var(--text-muted)]">Skills</div>
+              </div>
+              <div className="p-3 rounded-lg bg-[var(--surface-tertiary)] border border-[var(--border-subtle)] text-center">
+                <div className="text-2xl font-bold text-[var(--neon-magenta)]">{scanResult.total_size_mb.toFixed(1)}</div>
+                <div className="text-xs text-[var(--text-muted)]">MB</div>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={isDryRun}
+                  onChange={(e) => setIsDryRun(e.target.checked)}
+                  className="rounded border-[var(--border-default)]"
+                />
+                <span className="text-sm text-[var(--text-muted)]">Dry run (preview only, no changes)</span>
+              </label>
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={includeSessions}
+                  onChange={(e) => setIncludeSessions(e.target.checked)}
+                  className="rounded border-[var(--border-default)]"
+                />
+                <span className="text-sm text-[var(--text-muted)]">Include session history ({scanResult.sessions} sessions)</span>
+              </label>
+            </div>
+
+            <div className="flex gap-2">
+              <motion.button
+                onClick={() => setStep('manual')}
+                className="flex-1 px-4 py-2 rounded-lg bg-[var(--surface-tertiary)] text-[var(--text-primary)] text-sm font-medium"
+                whileTap={{ scale: 0.98 }}
+              >
+                Back
+              </motion.button>
+              <motion.button
+                onClick={handleMigrate}
+                disabled={migrateMutation.isPending}
+                className="flex-1 px-4 py-2 rounded-lg bg-[var(--neon-red)] text-[var(--void)] text-sm font-medium disabled:opacity-50"
+                whileTap={{ scale: 0.98 }}
+              >
+                {migrateMutation.isPending ? (
+                  <Loader2 className="w-4 h-4 animate-spin mx-auto" />
+                ) : isDryRun ? (
+                  'Preview Migration'
+                ) : (
+                  'Start Migration'
+                )}
+              </motion.button>
+            </div>
+          </div>
+        )}
+
+        {step === 'result' && migrationResult && (
+          <div className="space-y-4">
+            <div className={cn(
+              "p-4 rounded-lg border",
+              migrationResult.success
+                ? "bg-[var(--neon-green)]/10 border-[var(--neon-green)]/30"
+                : "bg-[var(--neon-red)]/10 border-[var(--neon-red)]/30"
+            )}>
+              <div className="flex items-center gap-2 mb-2">
+                {migrationResult.success ? (
+                  <Check className="w-5 h-5 text-[var(--neon-green)]" />
+                ) : (
+                  <AlertCircle className="w-5 h-5 text-[var(--neon-red)]" />
+                )}
+                <span className={cn(
+                  "font-medium",
+                  migrationResult.success ? "text-[var(--neon-green)]" : "text-[var(--neon-red)]"
+                )}>
+                  {migrationResult.success ? (isDryRun ? 'Preview Complete' : 'Migration Successful') : 'Migration Failed'}
+                </span>
+              </div>
+              <div className="text-sm text-[var(--text-muted)]">
+                {migrationResult.migrated.agents} agents, {migrationResult.migrated.workflows} workflows, {migrationResult.migrated.skills} skills
+                {isDryRun && ' (preview only)'}
+              </div>
+              {migrationResult.errors.length > 0 && (
+                <div className="mt-2 text-sm text-[var(--neon-red)]">
+                  Errors: {migrationResult.errors.join(', ')}
+                </div>
+              )}
+            </div>
+            <motion.button
+              onClick={reset}
+              className="w-full px-4 py-2 rounded-lg bg-[var(--surface-tertiary)] text-[var(--text-primary)] text-sm font-medium"
+              whileTap={{ scale: 0.98 }}
+            >
+              {isDryRun ? 'Run Real Migration' : 'Start Over'}
+            </motion.button>
+          </div>
+        )}
+      </div>
+    </SpotlightCard>
   );
 }
 

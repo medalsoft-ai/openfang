@@ -1,19 +1,16 @@
-// OpenFang Logs Page — Real-time log viewer (SSE streaming + polling fallback) + Audit Trail tab
-// 100% Alpine.js feature parity
+// Logs - System Console Style
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Card, CardContent } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { motion, AnimatePresence } from 'framer-motion';
 import { api } from '@/api/client';
-import type { Agent } from '@/api/types';
-import { Loader2, Search, Pause, Play, Download, Trash2, RefreshCw, Shield, CheckCircle, XCircle } from 'lucide-react';
-import { Switch } from '@/components/ui/switch';
+import { NeonText } from '@/components/motion/NeonText';
+import { cyberColors } from '@/lib/animations';
+import {
+  Terminal, Loader2, Search, Pause, Play, Download, Trash2,
+  RefreshCw, Shield, CheckCircle, XCircle, AlertTriangle
+} from 'lucide-react';
+import { cn } from '@/lib/utils';
 
-// Types matching Alpine implementation
 interface AuditEntry {
   seq: number;
   timestamp: string;
@@ -29,15 +26,10 @@ interface AuditResponse {
   tip_hash?: string;
 }
 
-interface VerifyResponse {
-  valid: boolean;
-  entries?: number;
-}
-
 type ConnectionStatus = 'live' | 'paused' | 'polling' | 'disconnected';
+type LogLevel = 'info' | 'warn' | 'error';
 
-// Helper functions (matching Alpine)
-function classifyLevel(action: string): 'info' | 'warn' | 'error' {
+function classifyLevel(action: string): LogLevel {
   if (!action) return 'info';
   const a = action.toLowerCase();
   if (a.includes('error') || a.includes('fail') || a.includes('crash')) return 'error';
@@ -67,70 +59,84 @@ function friendlyAction(action: string): string {
   return map[action] || action.replace(/([A-Z])/g, ' $1').trim();
 }
 
-function getLevelBadgeClass(level: string): string {
+function getLevelColor(level: LogLevel): string {
   switch (level) {
-    case 'error':
-      return 'bg-red-100 text-red-800 border-red-300';
-    case 'warn':
-      return 'bg-yellow-100 text-yellow-800 border-yellow-300';
-    case 'info':
-    default:
-      return 'bg-blue-100 text-blue-800 border-blue-300';
+    case 'error': return 'var(--neon-magenta)';
+    case 'warn': return 'var(--neon-amber)';
+    default: return 'var(--neon-cyan)';
   }
 }
 
-function getConnectionBadgeClass(status: ConnectionStatus): string {
-  switch (status) {
-    case 'live':
-      return 'bg-green-100 text-green-800 border-green-300';
-    case 'paused':
-      return 'bg-yellow-100 text-yellow-800 border-yellow-300';
-    case 'polling':
-      return 'bg-blue-100 text-blue-800 border-blue-300';
-    case 'disconnected':
-    default:
-      return 'bg-gray-100 text-gray-800 border-gray-300';
+// Console log line
+function LogLine({ entry, style }: { entry: AuditEntry; style: 'compact' | 'verbose' }) {
+  const level = classifyLevel(entry.action);
+  const color = getLevelColor(level);
+
+  const time = new Date(entry.timestamp).toLocaleTimeString('en-US', {
+    hour12: false,
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  });
+
+  if (style === 'compact') {
+    return (
+      <div className="flex items-center gap-3 py-0.5 font-mono text-xs hover:bg-[var(--surface-secondary)] px-2 rounded">
+        <span className="text-[var(--text-muted)] shrink-0">{time}</span>
+        <span
+          className="uppercase text-[10px] px-1.5 py-0.5 rounded shrink-0"
+          style={{ color, backgroundColor: `${color}15` }}
+        >
+          {level}
+        </span>
+        <span className="text-[var(--text-muted)] shrink-0">[{entry.action}]</span>
+        <span className="text-[var(--text-secondary)] truncate">{entry.detail}</span>
+      </div>
+    );
   }
+
+  return (
+    <div className="py-2 px-3 border-b border-[var(--border-subtle)] hover:bg-[var(--surface-secondary)]"
+    >
+      <div className="flex items-center gap-2 mb-1"
+      >
+        <span className="text-[var(--text-muted)] text-xs font-mono">{time}</span>
+        <span
+          className="uppercase text-[10px] px-1.5 py-0.5 rounded"
+          style={{ color, backgroundColor: `${color}15` }}
+        >
+          {friendlyAction(entry.action)}
+        </span>
+      </div>
+      <div className="text-sm text-[var(--text-secondary)] pl-[72px]"
+      >
+        {entry.detail}
+      </div>
+      {entry.outcome && (
+        <div className="text-xs text-[var(--text-muted)] pl-[72px] mt-0.5"
+        >
+          → {entry.outcome}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function Logs() {
   const logContainerRef = useRef<HTMLDivElement>(null);
-
-  // Tab state
   const [activeTab, setActiveTab] = useState<'live' | 'audit'>('live');
-
-  // Live logs state
   const [entries, setEntries] = useState<AuditEntry[]>([]);
-  const [levelFilter, setLevelFilter] = useState<string>('all');
-  const [textFilter, setTextFilter] = useState<string>('');
-  const [autoRefresh, setAutoRefresh] = useState<boolean>(true);
-  const [hovering, setHovering] = useState<boolean>(false);
-  const [streamPaused, setStreamPaused] = useState<boolean>(false);
-  const [streamConnected, setStreamConnected] = useState<boolean>(false);
+  const [levelFilter, setLevelFilter] = useState<LogLevel | 'all'>('all');
+  const [textFilter, setTextFilter] = useState('');
+  const [autoScroll, setAutoScroll] = useState(true);
+  const [streamPaused, setStreamPaused] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('disconnected');
-
-  // Audit state
-  const [filterAction, setFilterAction] = useState<string>('all');
   const [chainValid, setChainValid] = useState<boolean | null>(null);
-  const [tipHash, setTipHash] = useState<string>('');
-
-  // SSE ref
   const eventSourceRef = useRef<EventSource | null>(null);
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Fetch agents for name resolution
-  const { data: agents = [] } = useQuery<Agent[]>({
-    queryKey: ['agents'],
-    queryFn: () => api.listAgents(),
-  });
-
-  // Fetch audit entries for audit tab
-  const {
-    data: auditData,
-    isLoading: auditLoading,
-    error: auditError,
-    refetch: refetchAudit
-  } = useQuery<AuditResponse>({
+  // Fetch audit entries
+  const { data: auditData, isLoading: auditLoading, refetch: refetchAudit } = useQuery<AuditResponse>({
     queryKey: ['audit-entries'],
     queryFn: async () => {
       const res = await api.get<AuditResponse>('/api/audit/recent?n=200');
@@ -139,43 +145,33 @@ export function Logs() {
     enabled: activeTab === 'audit',
   });
 
-  // Fetch logs for polling fallback
+  // Polling fallback
   const fetchLogs = useCallback(async () => {
     try {
       const data = await api.get<AuditResponse>('/api/audit/recent?n=200');
       setEntries(data.entries || []);
-      if (autoRefresh && !hovering && logContainerRef.current) {
-        logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
-      }
     } catch (e) {
-      // Silent fail for polling
+      // Silent fail
     }
-  }, [autoRefresh, hovering]);
+  }, []);
 
-  // Start polling fallback
   const startPolling = useCallback(() => {
-    setStreamConnected(false);
     setConnectionStatus('polling');
     fetchLogs();
-    if (pollTimerRef.current) {
-      clearInterval(pollTimerRef.current);
-    }
+    if (pollTimerRef.current) clearInterval(pollTimerRef.current);
     pollTimerRef.current = setInterval(() => {
-      if (autoRefresh && !hovering && activeTab === 'live' && !streamPaused) {
+      if (!streamPaused && activeTab === 'live') {
         fetchLogs();
       }
     }, 2000);
-  }, [fetchLogs, autoRefresh, hovering, activeTab, streamPaused]);
+  }, [fetchLogs, streamPaused, activeTab]);
 
-  // Start SSE streaming
+  // SSE streaming
   const startStreaming = useCallback(() => {
-    // Close existing connection
     if (eventSourceRef.current) {
       eventSourceRef.current.close();
-      eventSourceRef.current = null;
     }
 
-    // Build URL with token
     let url = '/api/logs/stream';
     const token = localStorage.getItem('openfang_token');
     if (token) {
@@ -185,14 +181,11 @@ export function Logs() {
     try {
       eventSourceRef.current = new EventSource(url);
     } catch (e) {
-      // EventSource not supported or blocked; fall back to polling
-      setConnectionStatus('polling');
       startPolling();
       return;
     }
 
     eventSourceRef.current.onopen = () => {
-      setStreamConnected(true);
       setConnectionStatus(streamPaused ? 'paused' : 'live');
     };
 
@@ -200,62 +193,46 @@ export function Logs() {
       if (streamPaused) return;
       try {
         const entry: AuditEntry = JSON.parse(event.data);
-        // Avoid duplicate entries by checking seq
         setEntries((prev) => {
-          if (prev.some((e) => e.seq === entry.seq)) {
-            return prev;
-          }
+          if (prev.some((e) => e.seq === entry.seq)) return prev;
           const newEntries = [...prev, entry];
-          // Cap at 500 entries (remove oldest)
           if (newEntries.length > 500) {
             return newEntries.slice(newEntries.length - 500);
           }
           return newEntries;
         });
-        // Auto-scroll to bottom
-        if (autoRefresh && !hovering && logContainerRef.current) {
-          requestAnimationFrame(() => {
-            if (logContainerRef.current) {
-              logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
-            }
-          });
-        }
       } catch (e) {
-        // Ignore parse errors
+        // Ignore
       }
     };
 
     eventSourceRef.current.onerror = () => {
-      setStreamConnected(false);
+      setConnectionStatus('disconnected');
       if (eventSourceRef.current) {
         eventSourceRef.current.close();
         eventSourceRef.current = null;
       }
-      // Fall back to polling
       startPolling();
     };
-  }, [streamPaused, autoRefresh, hovering, startPolling]);
+  }, [streamPaused, startPolling]);
 
-  // Cleanup on unmount
+  // Cleanup
   useEffect(() => {
     return () => {
       if (eventSourceRef.current) {
         eventSourceRef.current.close();
-        eventSourceRef.current = null;
       }
       if (pollTimerRef.current) {
         clearInterval(pollTimerRef.current);
-        pollTimerRef.current = null;
       }
     };
   }, []);
 
-  // Start streaming when live tab is active
+  // Start/stop streaming based on tab
   useEffect(() => {
     if (activeTab === 'live') {
       startStreaming();
     } else {
-      // Close SSE when not on live tab
       if (eventSourceRef.current) {
         eventSourceRef.current.close();
         eventSourceRef.current = null;
@@ -267,373 +244,268 @@ export function Logs() {
     }
   }, [activeTab, startStreaming]);
 
-  // Update connection status when paused changes
+  // Auto-scroll
   useEffect(() => {
-    if (streamConnected) {
-      setConnectionStatus(streamPaused ? 'paused' : 'live');
+    if (autoScroll && logContainerRef.current && activeTab === 'live') {
+      logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
     }
-  }, [streamPaused, streamConnected]);
+  }, [entries, autoScroll, activeTab]);
 
-  // Filtered entries for live logs
   const filteredEntries = useMemo(() => {
-    const levelF = levelFilter;
-    const textF = textFilter.toLowerCase();
     return entries.filter((e) => {
       const entryLevel = classifyLevel(e.action);
-      if (levelF && entryLevel !== levelF) return false;
-      if (textF) {
-        const haystack = ((e.action || '') + ' ' + (e.detail || '') + ' ' + (e.agent_id || '')).toLowerCase();
-        if (!haystack.includes(textF)) return false;
+      if (levelFilter !== 'all' && entryLevel !== levelFilter) return false;
+      if (textFilter) {
+        const q = textFilter.toLowerCase();
+        const haystack = `${e.action} ${e.detail} ${e.agent_id}`.toLowerCase();
+        if (!haystack.includes(q)) return false;
       }
       return true;
     });
   }, [entries, levelFilter, textFilter]);
 
-  // Audit entries
-  const auditEntries = useMemo(() => {
-    return auditData?.entries || [];
-  }, [auditData]);
+  const clearLogs = () => setEntries([]);
 
-  // Filtered audit entries
-  const filteredAuditEntries = useMemo(() => {
-    if (filterAction === 'all') return auditEntries;
-    return auditEntries.filter((e) => e.action === filterAction);
-  }, [auditEntries, filterAction]);
-
-  // Get agent name from ID
-  const getAgentName = useCallback((agentId?: string) => {
-    if (!agentId) return '-';
-    const agent = agents.find((a: Agent) => a.id === agentId);
-    return agent ? agent.name : agentId.substring(0, 8) + '...';
-  }, [agents]);
-
-  // Toggle pause
-  const togglePause = useCallback(() => {
-    setStreamPaused((prev) => {
-      const newPaused = !prev;
-      if (!newPaused && logContainerRef.current) {
-        requestAnimationFrame(() => {
-          if (logContainerRef.current) {
-            logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
-          }
-        });
-      }
-      return newPaused;
-    });
-  }, []);
-
-  // Clear logs
-  const clearLogs = useCallback(() => {
-    setEntries([]);
-  }, []);
-
-  // Export logs
-  const exportLogs = useCallback(() => {
-    const lines = filteredEntries.map((e) => {
-      return new Date(e.timestamp).toISOString() + ' [' + e.action + '] ' + (e.detail || '');
-    });
+  const exportLogs = () => {
+    const lines = filteredEntries.map((e) =>
+      `${new Date(e.timestamp).toISOString()} [${e.action}] ${e.detail || ''}`
+    );
     const blob = new Blob([lines.join('\n')], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'openfang-logs-' + new Date().toISOString().slice(0, 10) + '.txt';
+    a.download = `openfang-logs-${new Date().toISOString().slice(0, 10)}.txt`;
     a.click();
     URL.revokeObjectURL(url);
-  }, [filteredEntries]);
+  };
 
-  // Verify chain
   const verifyChain = useCallback(async () => {
     try {
-      const data = await api.get<VerifyResponse>('/api/audit/verify');
-      setChainValid(data.valid === true);
-      if (data.valid) {
-        // Show success toast would go here
-      }
+      const data = await api.get<{ valid: boolean }>('/api/audit/verify');
+      setChainValid(data.valid);
     } catch (e) {
       setChainValid(false);
     }
   }, []);
 
-  // Load audit data when switching to audit tab
-  useEffect(() => {
-    if (activeTab === 'audit' && !auditData && !auditLoading) {
-      refetchAudit();
-    }
-  }, [activeTab, auditData, auditLoading, refetchAudit]);
-
-  // Update tip hash when audit data loads
-  useEffect(() => {
-    if (auditData?.tip_hash) {
-      setTipHash(auditData.tip_hash);
-    }
-  }, [auditData]);
-
-  // Connection label
-  const connectionLabel = useMemo(() => {
-    switch (connectionStatus) {
-      case 'live':
-        return 'Live';
-      case 'paused':
-        return 'Paused';
-      case 'polling':
-        return 'Polling';
-      case 'disconnected':
-      default:
-        return 'Disconnected';
-    }
-  }, [connectionStatus]);
-
   return (
-    <div className="flex-1 overflow-auto p-6">
-      <div className="max-w-6xl mx-auto space-y-6">
+    <div className="h-full flex flex-col p-6"
+    >
+      <div className="max-w-7xl mx-auto w-full flex-1 flex flex-col"
+      >
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold">Logs</h1>
+        <motion.div
+          className="flex items-center justify-between mb-6"
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+        >
+          <div>
+            <h1 className="text-3xl font-bold"
+            >
+              <NeonText color="cyan">Logs</NeonText>
+            </h1>
+            <p className="text-[var(--text-muted)] mt-1"
+            >
+              System console and audit trail
+            </p>
+          </div>
 
-          {/* Live tab controls */}
-          {activeTab === 'live' && (
-            <div className="flex items-center gap-2">
-              {/* Connection status indicator */}
-              <Badge variant="outline" className={getConnectionBadgeClass(connectionStatus)}>
-                <span className={`w-1.5 h-1.5 rounded-full mr-1.5 ${
-                  connectionStatus === 'live' ? 'bg-green-500 animate-pulse' :
-                  connectionStatus === 'paused' ? 'bg-yellow-500' :
-                  connectionStatus === 'polling' ? 'bg-blue-500' : 'bg-gray-500'
-                }`} />
-                {connectionLabel}
-              </Badge>
-
-              <Select value={levelFilter} onValueChange={setLevelFilter}>
-                <SelectTrigger className="w-[100px]">
-                  <SelectValue placeholder="All" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All</SelectItem>
-                  <SelectItem value="info">INFO</SelectItem>
-                  <SelectItem value="warn">WARN</SelectItem>
-                  <SelectItem value="error">ERROR</SelectItem>
-                </SelectContent>
-              </Select>
-
-              <div className="relative">
-                <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
-                <Input
-                  placeholder="Search..."
-                  value={textFilter}
-                  onChange={(e) => setTextFilter(e.target.value)}
-                  className="w-[180px] pl-7 h-9"
+          <div className="flex items-center gap-2"
+          >
+            {/* Connection status */}
+            {activeTab === 'live' && (
+              <div
+                className="flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-mono uppercase"
+                style={{
+                  backgroundColor: connectionStatus === 'live' ? 'rgba(0, 255, 136, 0.1)' :
+                                   connectionStatus === 'paused' ? 'rgba(255, 184, 0, 0.1)' :
+                                   'rgba(107, 114, 128, 0.1)',
+                  borderColor: connectionStatus === 'live' ? 'rgba(0, 255, 136, 0.3)' :
+                              connectionStatus === 'paused' ? 'rgba(255, 184, 0, 0.3)' :
+                              'rgba(107, 114, 128, 0.3)',
+                  color: connectionStatus === 'live' ? 'var(--neon-green)' :
+                        connectionStatus === 'paused' ? 'var(--neon-amber)' :
+                        'var(--chart-gray)'
+                }}
+              >
+                <span className={cn(
+                  'w-1.5 h-1.5 rounded-full',
+                  connectionStatus === 'live' && 'animate-pulse'
+                )}
+                style={{
+                  backgroundColor: connectionStatus === 'live' ? 'var(--neon-green)' :
+                                  connectionStatus === 'paused' ? 'var(--neon-amber)' :
+                                  'var(--chart-gray)'
+                }}
                 />
+                {connectionStatus}
               </div>
-
-              <Button variant="ghost" size="sm" onClick={togglePause}>
-                {streamPaused ? <Play className="h-4 w-4 mr-1" /> : <Pause className="h-4 w-4 mr-1" />}
-                {streamPaused ? 'Resume' : 'Pause'}
-              </Button>
-
-              <Button variant="ghost" size="sm" onClick={clearLogs}>
-                <Trash2 className="h-4 w-4 mr-1" />
-                Clear
-              </Button>
-
-              <Button variant="ghost" size="sm" onClick={exportLogs}>
-                <Download className="h-4 w-4 mr-1" />
-                Export
-              </Button>
-
-              <div className="flex items-center gap-2 ml-2">
-                <Switch
-                  checked={autoRefresh}
-                  onCheckedChange={setAutoRefresh}
-                  id="auto-scroll"
-                />
-                <label htmlFor="auto-scroll" className="text-xs text-muted-foreground cursor-pointer">
-                  {autoRefresh ? 'Auto-scroll' : 'Scroll locked'}
-                </label>
-              </div>
-            </div>
-          )}
-
-          {/* Audit tab controls */}
-          {activeTab === 'audit' && (
-            <div className="flex items-center gap-2">
-              <Button variant="ghost" size="sm" onClick={verifyChain}>
-                <Shield className="h-4 w-4 mr-1" />
-                Verify Chain
-              </Button>
-              {chainValid !== null && (
-                <Badge className={chainValid === true ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}>
-                  {chainValid === true ? (
-                    <><CheckCircle className="h-3 w-3 mr-1" /> VALID</>
-                  ) : (
-                    <><XCircle className="h-3 w-3 mr-1" /> BROKEN</>
-                  )}
-                </Badge>
-              )}
-            </div>
-          )}
-        </div>
+            )}
+          </div>
+        </motion.div>
 
         {/* Tabs */}
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'live' | 'audit')}>
-          <TabsList>
-            <TabsTrigger value="live">Live</TabsTrigger>
-            <TabsTrigger value="audit">Audit Trail</TabsTrigger>
-          </TabsList>
+        <motion.div
+          className="flex gap-1 mb-4 bg-[var(--surface-secondary)] rounded-xl p-1 w-fit"
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+        >
+          <button
+            onClick={() => setActiveTab('live')}
+            className={cn(
+              'px-4 py-2 rounded-lg text-sm font-medium transition-colors',
+              activeTab === 'live'
+                ? 'bg-[var(--neon-cyan)]/20 text-[var(--neon-cyan)]'
+                : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
+            )}
+          >
+            <Terminal className="w-4 h-4 inline mr-2" />
+            Live Console
+          </button>
+          <button
+            onClick={() => setActiveTab('audit')}
+            className={cn(
+              'px-4 py-2 rounded-lg text-sm font-medium transition-colors',
+              activeTab === 'audit'
+                ? 'bg-[var(--neon-green)]/20 text-[var(--neon-green)]'
+                : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
+            )}
+          >
+            <Shield className="w-4 h-4 inline mr-2" />
+            Audit Trail
+          </button>
+        </motion.div>
 
-          {/* Live logs tab */}
-          <TabsContent value="live" className="mt-4">
-            <Card>
-              <CardContent className="p-0">
-                <div
-                  ref={logContainerRef}
-                  className="font-mono text-sm max-h-[70vh] overflow-y-auto p-4"
-                  onMouseEnter={() => setHovering(true)}
-                  onMouseLeave={() => setHovering(false)}
-                >
-                  {filteredEntries.map((entry) => {
-                    const level = classifyLevel(entry.action);
-                    return (
-                      <div key={entry.seq} className="flex gap-2 py-1 hover:bg-muted/50 rounded px-1">
-                        <span className="text-muted-foreground whitespace-nowrap">
-                          {new Date(entry.timestamp).toLocaleTimeString()}
-                        </span>
-                        <Badge className={`text-xs ${getLevelBadgeClass(level)}`}>
-                          {level.toUpperCase()}
-                        </Badge>
-                        <span className="text-muted-foreground text-xs">[{entry.action}]</span>
-                        <span className="text-xs">{entry.detail}</span>
-                      </div>
-                    );
-                  })}
+        {/* Toolbar */}
+        <motion.div
+          className="flex flex-wrap items-center gap-3 mb-4 p-3 rounded-xl bg-[var(--text-primary)]/[0.02] border border-[var(--border-subtle)]"
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+        >
+          {/* Level filter */}
+          <select
+            value={levelFilter}
+            onChange={(e) => setLevelFilter(e.target.value as LogLevel | 'all')}
+            className="bg-[var(--surface-secondary)] border border-[var(--border-default)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)]"
+          >
+            <option value="all" className="bg-[var(--surface-primary)]">All Levels</option>
+            <option value="info" className="bg-[var(--surface-primary)]" style={{ color: 'var(--neon-cyan)' }}>INFO</option>
+            <option value="warn" className="bg-[var(--surface-primary)]" style={{ color: 'var(--neon-amber)' }}>WARN</option>
+            <option value="error" className="bg-[var(--surface-primary)]" style={{ color: 'var(--neon-magenta)' }}>ERROR</option>
+          </select>
 
-                  {filteredEntries.length === 0 && (
-                    <div className="text-center py-8">
-                      <h4 className="text-sm font-medium">No log entries yet</h4>
-                      <p className="text-xs text-muted-foreground mt-1">Activity will appear here as agents run.</p>
-                    </div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
+          {/* Search */}
+          <div className="relative flex-1 max-w-xs"
+          >
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)]" />
+            <input
+              type="text"
+              value={textFilter}
+              onChange={(e) => setTextFilter(e.target.value)}
+              placeholder="Filter..."
+              className="w-full bg-[var(--surface-secondary)] border border-[var(--border-default)] rounded-lg pl-9 pr-4 py-2 text-sm text-[var(--text-primary)] placeholder-[var(--text-primary)]/30"
+            />
+          </div>
 
-          {/* Audit trail tab */}
-          <TabsContent value="audit" className="mt-4 space-y-4">
-            {/* Info card */}
-            <Card className="border-l-4 border-l-primary">
-              <CardContent className="p-4">
-                <div className="font-bold text-sm mb-1">Tamper-Evident Audit Trail</div>
-                <div className="text-sm text-muted-foreground leading-relaxed">
-                  Every agent action is logged with a cryptographic hash chain. Use "Verify Chain" to confirm no entries have been altered or deleted.
-                </div>
-              </CardContent>
-            </Card>
+          {/* Spacer */}
+          <div className="flex-1" />
 
-            {/* Loading state */}
-            {auditLoading && (
-              <div className="flex items-center justify-center py-8">
-                <Loader2 className="h-6 w-6 animate-spin mr-2" />
-                <span>Loading audit log...</span>
+          {/* Actions */}
+          {activeTab === 'live' && (
+            <>
+              <button
+                onClick={() => setStreamPaused(!streamPaused)}
+                className="p-2 rounded-lg bg-[var(--surface-secondary)] text-[var(--text-secondary)] hover:bg-[var(--surface-tertiary)]"
+                title={streamPaused ? 'Resume' : 'Pause'}
+              >
+                {streamPaused ? <Play className="w-4 h-4" /> : <Pause className="w-4 h-4" />}
+              </button>
+              <button
+                onClick={clearLogs}
+                className="p-2 rounded-lg bg-[var(--surface-secondary)] text-[var(--text-secondary)] hover:bg-[var(--surface-tertiary)]"
+                title="Clear"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            </>
+          )}
+          {activeTab === 'audit' && (
+            <button
+              onClick={verifyChain}
+              className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[var(--surface-secondary)] text-[var(--text-secondary)] hover:bg-[var(--surface-tertiary)] text-sm"
+            >
+              <Shield className="w-4 h-4" />
+              Verify Chain
+              {chainValid !== null && (
+                chainValid ? (
+                  <CheckCircle className="w-4 h-4 text-[var(--neon-green)]" />
+                ) : (
+                  <XCircle className="w-4 h-4 text-[var(--neon-magenta)]" />
+                )
+              )}
+            </button>
+          )}
+          <button
+            onClick={exportLogs}
+            className="p-2 rounded-lg bg-[var(--surface-secondary)] text-[var(--text-secondary)] hover:bg-[var(--surface-tertiary)]"
+            title="Export"
+          >
+            <Download className="w-4 h-4" />
+          </button>
+        </motion.div>
+
+        {/* Log Console */}
+        <motion.div
+          className="flex-1 rounded-xl border border-[var(--border-default)] bg-[var(--void)]/50 overflow-hidden flex flex-col"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+        >
+          {/* Console header */}
+          <div className="flex items-center gap-2 px-4 py-2 border-b border-[var(--border-default)] bg-[var(--text-primary)]/[0.02]">
+            <div className="flex gap-1.5">
+              <div className="w-3 h-3 rounded-full bg-[var(--neon-magenta)]/50" />
+              <div className="w-3 h-3 rounded-full bg-[var(--neon-amber)]/50" />
+              <div className="w-3 h-3 rounded-full bg-[var(--neon-green)]/50" />
+            </div>
+            <span className="text-xs text-[var(--text-muted)] font-mono ml-2">
+              {activeTab === 'live' ? 'system.log' : 'audit.log'}
+            </span>
+            <span className="text-xs text-[var(--text-muted)] font-mono ml-auto">
+              {filteredEntries.length} entries
+            </span>
+          </div>
+
+          {/* Log content */}
+          <div
+            ref={logContainerRef}
+            className="flex-1 overflow-y-auto p-2 font-mono"
+            onMouseEnter={() => setAutoScroll(false)}
+            onMouseLeave={() => setAutoScroll(true)}
+          >
+            {activeTab === 'audit' && auditLoading ? (
+              <div className="flex items-center justify-center h-32"
+              >
+                <Loader2 className="w-6 h-6 text-[var(--neon-green)] animate-spin" />
+              </div>
+            ) : filteredEntries.length === 0 ? (
+              <div className="text-center py-12 text-[var(--text-muted)]"
+              >
+                <Terminal className="w-8 h-8 mx-auto mb-3 opacity-50" />
+                <p className="text-sm">No log entries</p>
+              </div>
+            ) : (
+              <div className="space-y-0.5">
+                {filteredEntries.map((entry) => (
+                  <LogLine
+                    key={entry.seq}
+                    entry={entry}
+                    style={activeTab === 'live' ? 'compact' : 'verbose'}
+                  />
+                ))}
               </div>
             )}
-
-            {/* Error state */}
-            {auditError && !auditLoading && (
-              <div className="text-center py-8">
-                <XCircle className="h-8 w-8 mx-auto text-red-500 mb-2" />
-                <p className="text-sm text-muted-foreground">
-                  {auditError instanceof Error ? auditError.message : 'Could not load audit log.'}
-                </p>
-                <Button variant="ghost" size="sm" onClick={() => refetchAudit()} className="mt-2">
-                  <RefreshCw className="h-4 w-4 mr-1" />
-                  Retry
-                </Button>
-              </div>
-            )}
-
-            {/* Content */}
-            {!auditLoading && !auditError && (
-              <>
-                {/* Filters */}
-                <div className="flex gap-2 items-center">
-                  <Select value={filterAction} onValueChange={setFilterAction}>
-                    <SelectTrigger className="w-[180px]">
-                      <SelectValue placeholder="All Actions" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Actions</SelectItem>
-                      <SelectItem value="AgentSpawn">Agent Created</SelectItem>
-                      <SelectItem value="AgentKill">Agent Stopped</SelectItem>
-                      <SelectItem value="AgentMessage">Message</SelectItem>
-                      <SelectItem value="ToolInvoke">Tool Used</SelectItem>
-                      <SelectItem value="NetworkAccess">Network Access</SelectItem>
-                      <SelectItem value="ShellExec">Shell Command</SelectItem>
-                      <SelectItem value="FileAccess">File Access</SelectItem>
-                      <SelectItem value="MemoryAccess">Memory Access</SelectItem>
-                      <SelectItem value="AuthAttempt">Login Attempt</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <span className="text-sm text-muted-foreground">
-                    {filteredAuditEntries.length} of {auditEntries.length} entries
-                  </span>
-                  {tipHash && (
-                    <span className="text-xs text-muted-foreground">
-                      tip: {tipHash.substring(0, 16)}...
-                    </span>
-                  )}
-                </div>
-
-                {/* Table */}
-                {filteredAuditEntries.length > 0 && (
-                  <div className="border rounded-md overflow-hidden">
-                    <table className="w-full text-sm">
-                      <thead className="bg-muted">
-                        <tr>
-                          <th className="text-left p-2 font-medium">#</th>
-                          <th className="text-left p-2 font-medium">Timestamp</th>
-                          <th className="text-left p-2 font-medium">Agent</th>
-                          <th className="text-left p-2 font-medium">Action</th>
-                          <th className="text-left p-2 font-medium">Detail</th>
-                          <th className="text-left p-2 font-medium">Outcome</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {filteredAuditEntries.map((e) => (
-                          <tr key={e.seq} className="border-t hover:bg-muted/50">
-                            <td className="p-2">{e.seq}</td>
-                            <td className="p-2 text-xs whitespace-nowrap">
-                              {new Date(e.timestamp).toLocaleString()}
-                            </td>
-                            <td className="p-2 truncate max-w-[120px]" title={e.agent_id}>
-                              {getAgentName(e.agent_id)}
-                            </td>
-                            <td className="p-2">
-                              <Badge className="bg-blue-100 text-blue-800 text-xs">
-                                {friendlyAction(e.action)}
-                              </Badge>
-                            </td>
-                            <td className="p-2 truncate max-w-[200px]" title={e.detail}>
-                              {e.detail}
-                            </td>
-                            <td className="p-2">{e.outcome}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-
-                {/* Empty state */}
-                {auditEntries.length === 0 && (
-                  <div className="text-center py-8">
-                    <h4 className="text-sm font-medium">No audit entries yet</h4>
-                    <p className="text-xs text-muted-foreground mt-1">Activity will appear here as agents operate.</p>
-                  </div>
-                )}
-              </>
-            )}
-          </TabsContent>
-        </Tabs>
+          </div>
+        </motion.div>
       </div>
     </div>
   );
