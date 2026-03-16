@@ -34,6 +34,7 @@ BUILD_LOG.md
 
 # OS
 .DS_Store
+._*
 Thumbs.db
 
 # IDE & tools
@@ -43,10 +44,12 @@ Thumbs.db
 *.swp
 *.swo
 *~
-
 #claude code
 .omc
 
-#web ui 
+#web ui
 **/node_modules/
 crates/openfang-webui/dist
+
+# Other
+.serena/
