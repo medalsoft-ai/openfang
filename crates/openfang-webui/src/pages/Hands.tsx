@@ -1366,7 +1366,7 @@ export function Hands() {
         <motion.div className="flex items-center justify-between mb-8" initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}>
           <div>
             <h1 className="text-3xl font-bold">
-              <NeonText color="cyan">Hands</NeonText>
+              <NeonText color="cyan">SOP</NeonText>
             </h1>
             <p className="text-[var(--text-muted)] mt-1">
               {hands.length} available • {activeInstances.length} active
@@ -1421,7 +1421,7 @@ export function Hands() {
             ) : error ? (
               <motion.div className="error-state" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
                 <span className="error-icon">!</span>
-                <p>{(error as Error).message || 'Could not load hands.'}</p>
+                <p>{(error as Error).message || 'Could not load SOPs.'}</p>
                 <button className="btn btn-ghost btn-sm" onClick={() => refetch()}>Retry</button>
               </motion.div>
             ) : hands.length === 0 ? (
@@ -1462,7 +1462,7 @@ export function Hands() {
                   <HandIcon className="w-10 h-10 text-[var(--text-muted)]" />
                 </div>
                 <h4>No active SOPs</h4>
-                <p className="hint">Activate a hand from the Available tab to get started. Each hand spawns a dedicated agent.</p>
+                <p className="hint">Activate a SOP from the Available tab to get started. Each SOP spawns a dedicated agent.</p>
                 <button className="btn btn-primary mt-4" onClick={() => setActiveTab('available')}>Browse SOPs</button>
               </motion.div>
             ) : (
