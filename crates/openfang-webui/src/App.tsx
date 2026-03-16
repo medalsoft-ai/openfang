@@ -29,15 +29,7 @@ function App() {
   // Initialize theme on mount
   useTheme()
 
-  // Load saved API key on mount
-  useEffect(() => {
-    const savedKey = localStorage.getItem('openfang-api-key')
-    if (savedKey) {
-      api.setAuthToken(savedKey)
-    }
-  }, [])
-
-  // Listen for 401 errors from API client
+  // Load saved API key and check auth on mount
   useEffect(() => {
     const handleAuthError = () => {
       setShowAuthPrompt(true)
@@ -46,8 +38,14 @@ function App() {
     // Set up auth error callback
     setAuthErrorCallback(handleAuthError)
 
-    // Also check if we need auth on load (use non-public endpoint like Alpine)
-    const checkAuth = async () => {
+    // Load saved key first, then check auth
+    const initAuth = async () => {
+      const savedKey = localStorage.getItem('openfang-api-key')
+      if (savedKey) {
+        api.setAuthToken(savedKey)
+      }
+
+      // Check if we need auth (use non-public endpoint)
       try {
         await api.listTools()
       } catch (err: unknown) {
@@ -60,7 +58,7 @@ function App() {
         }
       }
     }
-    checkAuth()
+    initAuth()
 
     return () => setAuthErrorCallback(null)
   }, [])

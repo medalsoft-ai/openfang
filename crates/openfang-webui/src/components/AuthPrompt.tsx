@@ -39,9 +39,9 @@ export function AuthPrompt({ isOpen, onClose, onAuth }: AuthPromptProps) {
     setError('');
 
     try {
-      // Test the key with a health check
+      // Test the key with an authenticated endpoint
       api.setAuthToken(apiKey.trim());
-      await api.health();
+      await api.listTools();
 
       // Save to localStorage
       localStorage.setItem('openfang-api-key', apiKey.trim());
