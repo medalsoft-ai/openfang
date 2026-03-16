@@ -21,21 +21,19 @@ export async function getApiPort(): Promise<number> {
     return tauriPort
   }
 
-  // If not in Tauri, use default 4200
-  if (!isTauri()) {
-    return 4200
-  }
-
+  // Try to get port from Tauri command (will fail silently if not in Tauri)
   try {
-    // Call Tauri command to get the actual port
     const port = await invoke<number>('get_port')
     tauriPort = port
-    console.log('[Tauri] API server port:', port)
+    console.log('[Tauri] Got port from command:', port)
     return port
-  } catch (err) {
-    console.warn('[Tauri] Failed to get port, falling back to 4200:', err)
-    return 4200
+  } catch {
+    // Not in Tauri or command failed, use default
   }
+
+  // Fallback to default port 4200
+  console.log('[Tauri] Using default port 4200')
+  return 4200
 }
 
 /**
@@ -44,8 +42,9 @@ export async function getApiPort(): Promise<number> {
  * In browser dev: uses Vite proxy (relative URL)
  */
 export async function getApiBaseUrl(): Promise<string> {
-  if (isTauri()) {
-    const port = await getApiPort()
+  const port = await getApiPort()
+  // Always use full URL in production/Tauri
+  if (port !== 4200 || isTauri()) {
     return `http://127.0.0.1:${port}`
   }
   // In dev mode with Vite proxy, use relative URL
@@ -56,14 +55,9 @@ export async function getApiBaseUrl(): Promise<string> {
  * Get WebSocket base URL
  */
 export async function getWsBaseUrl(): Promise<string> {
-  if (isTauri()) {
-    const port = await getApiPort()
-    return `ws://127.0.0.1:${port}`
-  }
-  // In dev mode, always connect to OpenFang backend on port 4200
-  // window.location.host would give Vite's port (5173) which is wrong
+  const port = await getApiPort()
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-  return `${protocol}//127.0.0.1:4200`
+  return `${protocol}//127.0.0.1:${port}`
 }
 
 /**

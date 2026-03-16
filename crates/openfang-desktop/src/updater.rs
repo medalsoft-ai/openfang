@@ -32,7 +32,7 @@ pub fn spawn_startup_check(app_handle: tauri::AppHandle) {
                 let _ = app_handle
                     .notification()
                     .builder()
-                    .title("Empower Updating...")
+                    .title("EnterpriseClaw Updating...")
                     .body(format!("Installing v{version}. App will restart shortly."))
                     .show();
                 // Small delay so notification is visible

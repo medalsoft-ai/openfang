@@ -14,7 +14,7 @@ use openfang_kernel::OpenFangKernel;
 use openfang_types::event::{EventPayload, LifecycleEvent, SystemEvent};
 use std::sync::Arc;
 use std::time::Instant;
-use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri::Manager;
 use tauri_plugin_notification::NotificationExt;
 use tracing::{info, warn};
 
@@ -106,17 +106,13 @@ pub fn run() {
             // HTTP服务器仍然启动（提供API）
             info!("OpenFang API server running on port {port}");
 
-            // WebviewWindowBuilder使用默认URL，Tauri自动处理开发和生产模式
-            // - 开发模式：自动使用tauri.conf.json中的devUrl (localhost:5173)
-            // - 生产模式：自动使用frontendDist (../openfang-webui/dist)
-            let _window = WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
-                .title("Empower")
-                .inner_size(1280.0, 800.0)
-                .min_inner_size(800.0, 600.0)
-                .center()
-                .visible(true)
-                .devtools(true)
-                .build()?;
+            // 窗口已在tauri.conf.json中定义，获取已存在的窗口
+            // 确保窗口可见并居中显示
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.center();
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
 
             // Set up system tray (desktop only)
             #[cfg(desktop)]
