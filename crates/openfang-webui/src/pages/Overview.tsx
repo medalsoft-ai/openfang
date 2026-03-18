@@ -1,9 +1,10 @@
 // Overview Dashboard - Bento Grid Style with Cyber-Neon Theme
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import { api } from '@/api/client';
 import { useNavigate } from 'react-router';
+import { useAuthQuery } from '@/hooks/useAuthQuery';
 import { SpotlightCard } from '@/components/motion/SpotlightCard';
 import { NeonText } from '@/components/motion/NeonText';
 import { AnimatedList } from '@/components/motion/AnimatedList';
@@ -299,8 +300,8 @@ export function Overview() {
     localStorage.getItem('of-checklist-dismissed') === 'true'
   );
 
-  // All data queries (unchanged)
-  const { data: health } = useQuery<HealthStatus>({
+  // All data queries - wait for authReady before fetching (handled by useAuthQuery)
+  const { data: health } = useAuthQuery<HealthStatus>({
     queryKey: ['health'],
     queryFn: async () => {
       try {
@@ -312,13 +313,13 @@ export function Overview() {
     refetchInterval: 30000,
   });
 
-  const { data: status } = useQuery<SystemStatus>({
+  const { data: status } = useAuthQuery<SystemStatus>({
     queryKey: ['status'],
     queryFn: () => api.get<SystemStatus>('/api/status'),
     refetchInterval: 30000,
   });
 
-  const { data: usage } = useQuery<UsageSummary>({
+  const { data: usage } = useAuthQuery<UsageSummary>({
     queryKey: ['usage-summary'],
     queryFn: async () => {
       const data = await api.get<{ agents: { total_tokens?: number; tool_calls?: number; cost_usd?: number }[] }>('/api/usage');
@@ -336,7 +337,7 @@ export function Overview() {
     refetchInterval: 30000,
   });
 
-  const { data: providers = [] } = useQuery<Provider[]>({
+  const { data: providers = [] } = useAuthQuery<Provider[]>({
     queryKey: ['overview-providers'],
     queryFn: async () => {
       const res = await api.get<{ providers: Provider[] }>('/api/providers');
@@ -345,7 +346,7 @@ export function Overview() {
     refetchInterval: 30000,
   });
 
-  const { data: channels = [] } = useQuery<Channel[]>({
+  const { data: channels = [] } = useAuthQuery<Channel[]>({
     queryKey: ['overview-channels'],
     queryFn: async () => {
       const res = await api.get<{ channels: Channel[] }>('/api/channels');
@@ -354,7 +355,7 @@ export function Overview() {
     refetchInterval: 30000,
   });
 
-  const { data: mcpServers = [] } = useQuery<McpServer[]>({
+  const { data: mcpServers = [] } = useAuthQuery<McpServer[]>({
     queryKey: ['overview-mcp'],
     queryFn: async () => {
       try {
@@ -367,7 +368,7 @@ export function Overview() {
     refetchInterval: 30000,
   });
 
-  const { data: skillCount = 0 } = useQuery<number>({
+  const { data: skillCount = 0 } = useAuthQuery<number>({
     queryKey: ['overview-skills'],
     queryFn: async () => {
       try {
@@ -380,13 +381,13 @@ export function Overview() {
     refetchInterval: 60000,
   });
 
-  const { data: agents = [] } = useQuery<Array<{ id: string }>>({
+  const { data: agents = [] } = useAuthQuery<Array<{ id: string }>>({
     queryKey: ['overview-agents-count'],
     queryFn: async () => api.listAgents(),
     refetchInterval: 30000,
   });
 
-  const { data: auditEntries = [] } = useQuery<AuditEntry[]>({
+  const { data: auditEntries = [] } = useAuthQuery<AuditEntry[]>({
     queryKey: ['audit-recent'],
     queryFn: async () => {
       try {

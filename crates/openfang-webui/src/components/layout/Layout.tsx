@@ -21,10 +21,10 @@ import {
 import { cn } from '@/lib/utils'
 import { pageTransition } from '@/lib/animations'
 import { useTheme } from '@/hooks'
-import { useQuery } from '@tanstack/react-query'
 import { api } from '@/api/client'
 import type { Agent } from '@/api/types'
 import { useCallback, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 
 // Agent icon mapping based on profile/archetype
 function getAgentIcon(agent: Agent) {
@@ -247,12 +247,12 @@ export function Layout() {
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null)
 
   // Fetch agents list
-  const { data: agents = [], isLoading } = useQuery({
+  const { data: agentsData, isLoading } = useQuery({
     queryKey: ['agents'],
-    queryFn: api.listAgents,
-    refetchInterval: 5000, // Refresh every 5 seconds
+    queryFn: () => api.listAgents(),
+    refetchInterval: 5000,
   })
-
+  const agents = agentsData ?? []
 
   // Handle agent click - navigate to chat-v2 with agent
   const handleAgentClick = useCallback((agent: Agent) => {

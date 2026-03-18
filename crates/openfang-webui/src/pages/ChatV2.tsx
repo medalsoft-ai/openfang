@@ -1,28 +1,24 @@
-// ChatV2 - OpenFang UI Evolution Style with Session Memory
+// ChatV2 - Redesigned with improved message bubbles and input
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { useSearchParams, useNavigate } from 'react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import { api, wsManager } from '@/api/client';
 import type { Agent, Session, Message, ToolCall } from '@/api/types';
-import { MessageContent } from '@/components/chat/MessageContent';
 import { useLocalStorage } from '@/hooks/useLocalStorage';
 import { cn } from '@/lib/utils';
 import {
   Send, Bot, User, Plus, MessageSquare,
   Loader2, Sparkles, Clock, MoreHorizontal,
   ChevronDown, Paperclip, X, Brain,
-  Command, Settings, ArrowRight
+  Command, Settings, ArrowRight, Copy, Check
 } from 'lucide-react';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { toaster } from '@/lib/toast';
+import ReactMarkdown from 'react-markdown';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import remarkGfm from 'remark-gfm';
 
 interface ExtendedMessage extends Message {
   isStreaming?: boolean;
@@ -30,21 +26,6 @@ interface ExtendedMessage extends Message {
   outputTokens?: number;
   cost?: number;
   tools?: ToolCall[];
-}
-
-// Agent icon mapping based on profile/archetype
-function getAgentIcon(agent: Agent) {
-  const archetype = agent.identity?.archetype?.toLowerCase() || '';
-  const profile = agent.profile?.toLowerCase() || '';
-  const name = agent.name?.toLowerCase() || '';
-
-  if (archetype.includes('code') || profile.includes('code') || name.includes('code')) return 'code';
-  if (archetype.includes('brain') || profile.includes('brain') || name.includes('brain')) return 'brain';
-  if (archetype.includes('terminal') || profile.includes('terminal') || name.includes('term')) return 'terminal';
-  if (archetype.includes('spark') || profile.includes('spark')) return 'sparkles';
-  if (archetype.includes('zap') || profile.includes('zap') || name.includes('fast')) return 'zap';
-
-  return 'bot';
 }
 
 // Agent gradient colors based on identity
@@ -167,7 +148,233 @@ function WelcomeScreen({
   );
 }
 
-// Message bubble component - Soft UI style
+// Code block component with copy functionality
+function CodeBlock({ code, language }: { code: string; language?: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    await navigator.clipboard.writeText(code);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className="relative group my-3 rounded-xl overflow-hidden bg-[#1e1e1e] border border-[var(--soft-divider)]">
+      <div className="flex items-center justify-between px-4 py-2 bg-[#2d2d2d] border-b border-[var(--soft-divider)]">
+        <span className="text-xs text-[var(--soft-text-muted)] font-mono">
+          {language || 'text'}
+        </span>
+        <button
+          onClick={handleCopy}
+          className="flex items-center gap-1.5 px-2 py-1 rounded-md text-xs text-[var(--soft-text-muted)] hover:text-[var(--soft-text-primary)] hover:bg-[var(--soft-surface-hover)] transition-colors"
+        >
+          {copied ? (
+            <>
+              <Check className="w-3.5 h-3.5 text-green-500" />
+              <span className="text-green-500">Copied!</span>
+            </>
+          ) : (
+            <>
+              <Copy className="w-3.5 h-3.5" />
+              <span>Copy</span>
+            </>
+          )}
+        </button>
+      </div>
+      <SyntaxHighlighter
+        language={language || 'text'}
+        style={vscDarkPlus}
+        customStyle={{
+          margin: 0,
+          padding: '1rem',
+          background: 'transparent',
+          fontSize: '0.875rem',
+          lineHeight: '1.6',
+        }}
+      >
+        {code}
+      </SyntaxHighlighter>
+    </div>
+  );
+}
+
+// Markdown content renderer
+function MarkdownRenderer({ content }: { content: string }) {
+  return (
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm]}
+      components={{
+        code({ className, children, ...props }) {
+          const match = /language-(\w+)/.exec(className || '');
+          const code = String(children).replace(/\n$/, '');
+
+          if (match) {
+            return <CodeBlock code={code} language={match[1]} />;
+          }
+
+          return (
+            <code
+              className="px-1.5 py-0.5 rounded-md bg-[var(--soft-surface)] text-[var(--soft-text-primary)] text-sm font-mono"
+              {...props}
+            >
+              {children}
+            </code>
+          );
+        },
+        p({ children }) {
+          return <p className="mb-3 last:mb-0 leading-relaxed">{children}</p>;
+        },
+        ul({ children }) {
+          return <ul className="mb-3 last:mb-0 pl-5 space-y-1 list-disc">{children}</ul>;
+        },
+        ol({ children }) {
+          return <ol className="mb-3 last:mb-0 pl-5 space-y-1 list-decimal">{children}</ol>;
+        },
+        li({ children }) {
+          return <li className="leading-relaxed">{children}</li>;
+        },
+        h1({ children }) {
+          return <h1 className="text-xl font-semibold mb-3 mt-4 first:mt-0">{children}</h1>;
+        },
+        h2({ children }) {
+          return <h2 className="text-lg font-semibold mb-2 mt-3 first:mt-0">{children}</h2>;
+        },
+        h3({ children }) {
+          return <h3 className="text-base font-semibold mb-2 mt-3 first:mt-0">{children}</h3>;
+        },
+        blockquote({ children }) {
+          return (
+            <blockquote className="border-l-4 border-[var(--soft-blue)] pl-4 py-1 my-3 bg-[var(--soft-surface)]/50 rounded-r-lg">
+              {children}
+            </blockquote>
+          );
+        },
+        table({ children }) {
+          return (
+            <div className="overflow-x-auto my-3">
+              <table className="w-full border-collapse text-sm">
+                {children}
+              </table>
+            </div>
+          );
+        },
+        thead({ children }) {
+          return <thead className="bg-[var(--soft-surface)]">{children}</thead>;
+        },
+        th({ children }) {
+          return (
+            <th className="px-3 py-2 text-left text-xs font-semibold text-[var(--soft-text-secondary)] border border-[var(--soft-divider)]">
+              {children}
+            </th>
+          );
+        },
+        td({ children }) {
+          return (
+            <td className="px-3 py-2 text-sm border border-[var(--soft-divider)]">
+              {children}
+            </td>
+          );
+        },
+        a({ href, children }) {
+          return (
+            <a
+              href={href}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[var(--soft-blue)] hover:underline"
+            >
+              {children}
+            </a>
+          );
+        },
+      }}
+    >
+      {content}
+    </ReactMarkdown>
+  );
+}
+
+// Tool call card component
+function ToolCallCard({ tool }: { tool: ToolCall }) {
+  const [expanded, setExpanded] = useState(false);
+
+  // Determine status from tool fields
+  const getStatus = () => {
+    if (tool.is_error) return 'error';
+    if (tool.running) return 'running';
+    if (tool.result !== undefined) return 'completed';
+    return 'pending';
+  };
+
+  const status = getStatus();
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 5 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="mt-2 rounded-xl border border-[var(--soft-divider)] bg-[var(--soft-surface)]/30 overflow-hidden"
+    >
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="w-full flex items-center justify-between px-3 py-2 hover:bg-[var(--soft-surface)] transition-colors"
+      >
+        <div className="flex items-center gap-2">
+          <div className="w-5 h-5 rounded-md bg-[var(--soft-blue)]/10 flex items-center justify-center">
+            <Sparkles className="w-3 h-3 text-[var(--soft-blue)]" />
+          </div>
+          <span className="text-sm font-medium text-[var(--soft-text-primary)]">
+            {tool.name}
+          </span>
+          <span className={cn(
+            "text-xs px-1.5 py-0.5 rounded-full",
+            status === 'completed' && "bg-green-500/10 text-green-500",
+            status === 'running' && "bg-[var(--soft-blue)]/10 text-[var(--soft-blue)]",
+            status === 'error' && "bg-red-500/10 text-red-500",
+            status === 'pending' && "bg-[var(--soft-surface)] text-[var(--soft-text-muted)]"
+          )}>
+            {status}
+          </span>
+        </div>
+        <ChevronDown className={cn(
+          "w-4 h-4 text-[var(--soft-text-muted)] transition-transform",
+          expanded && "rotate-180"
+        )} />
+      </button>
+
+      <AnimatePresence>
+        {expanded && (
+          <motion.div
+            initial={{ height: 0 }}
+            animate={{ height: 'auto' }}
+            exit={{ height: 0 }}
+            className="overflow-hidden"
+          >
+            <div className="px-3 pb-3 space-y-2">
+              {tool.input !== undefined && tool.input !== null && (
+                <div>
+                  <div className="text-xs text-[var(--soft-text-muted)] mb-1">Input</div>
+                  <pre className="text-xs bg-[var(--soft-bg)] rounded-lg p-2 overflow-x-auto font-mono">
+                    {JSON.stringify(tool.input, null, 2)}
+                  </pre>
+                </div>
+              )}
+              {tool.result && (
+                <div>
+                  <div className="text-xs text-[var(--soft-text-muted)] mb-1">Result</div>
+                  <pre className="text-xs bg-[var(--soft-bg)] rounded-lg p-2 overflow-x-auto font-mono">
+                    {typeof tool.result === 'string' ? tool.result : JSON.stringify(tool.result, null, 2)}
+                  </pre>
+                </div>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
+  );
+}
+
+// Improved message bubble component
 function MessageBubble({
   message,
   isUser,
@@ -178,25 +385,30 @@ function MessageBubble({
   agent?: Agent;
 }) {
   const gradient = agent ? getAgentGradient(agent) : 'from-[var(--soft-blue)] to-blue-600';
+  const content = message.content || '';
+
+  // Check if content looks like code (contains triple backticks)
+  const hasCodeBlock = content.includes('```');
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 10 }}
+      initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.2 }}
       className={cn(
-        'flex gap-3 px-4 py-3',
+        'flex gap-4 px-4 py-4',
         isUser ? 'flex-row-reverse' : 'flex-row'
       )}
     >
       {/* Avatar */}
       <div className="flex-shrink-0">
         {isUser ? (
-          <div className="w-8 h-8 rounded-xl bg-[var(--soft-surface)] flex items-center justify-center">
+          <div className="w-8 h-8 rounded-xl bg-[var(--soft-surface)] flex items-center justify-center border border-[var(--soft-divider)]">
             <User className="w-4 h-4 text-[var(--soft-text-secondary)]" />
           </div>
         ) : (
           <div className={cn(
-            'w-8 h-8 rounded-xl flex items-center justify-center bg-gradient-to-br',
+            'w-8 h-8 rounded-xl flex items-center justify-center bg-gradient-to-br shadow-md',
             gradient
           )}>
             <Bot className="w-4 h-4 text-white" />
@@ -206,34 +418,73 @@ function MessageBubble({
 
       {/* Message Content */}
       <div className={cn(
-        'flex-1 max-w-[85%]',
-        isUser ? 'text-right' : 'text-left'
+        'flex-1 min-w-0',
+        isUser ? 'flex flex-col items-end' : ''
       )}>
+        {/* Bubble */}
         <div
           className={cn(
-            'inline-block px-4 py-2.5 rounded-2xl text-sm leading-relaxed',
-            isUser
-              ? 'bg-[var(--soft-blue)] text-white rounded-br-md'
-              : 'bg-[var(--soft-surface)] text-[var(--soft-text-primary)] rounded-bl-md'
+            'relative max-w-[85%]',
+            isUser ? 'ml-auto' : 'mr-auto'
           )}
         >
-          {message.isStreaming && !message.content ? (
-            <div className="flex items-center gap-2 py-1">
-              <div className="w-1.5 h-1.5 rounded-full bg-current animate-bounce" style={{ animationDelay: '0ms' }} />
-              <div className="w-1.5 h-1.5 rounded-full bg-current animate-bounce" style={{ animationDelay: '150ms' }} />
-              <div className="w-1.5 h-1.5 rounded-full bg-current animate-bounce" style={{ animationDelay: '300ms' }} />
+          {/* User Message - Simple bubble */}
+          {isUser ? (
+            <div className="bg-[var(--soft-blue)] text-white px-5 py-3 rounded-2xl rounded-tr-sm shadow-sm">
+              <div className="text-sm leading-relaxed whitespace-pre-wrap">{content}</div>
             </div>
           ) : (
-            <MessageContent message={message} />
+            /* Assistant Message - Rich content */
+            <div className="text-[var(--soft-text-primary)]">
+              {message.isStreaming && !content ? (
+                <div className="flex items-center gap-2 py-3 px-1">
+                  <div className="w-2 h-2 rounded-full bg-[var(--soft-blue)] animate-bounce" style={{ animationDelay: '0ms' }} />
+                  <div className="w-2 h-2 rounded-full bg-[var(--soft-blue)] animate-bounce" style={{ animationDelay: '150ms' }} />
+                  <div className="w-2 h-2 rounded-full bg-[var(--soft-blue)] animate-bounce" style={{ animationDelay: '300ms' }} />
+                </div>
+              ) : (
+                <div className="prose prose-sm max-w-none">
+                  <MarkdownRenderer content={content} />
+                </div>
+              )}
+
+              {/* Tool calls */}
+              {message.tools && message.tools.length > 0 && (
+                <div className="mt-3 space-y-2">
+                  {message.tools.map((tool, idx) => (
+                    <ToolCallCard key={idx} tool={tool} />
+                  ))}
+                </div>
+              )}
+
+              {/* Streaming cursor */}
+              {message.isStreaming && content && (
+                <motion.span
+                  animate={{ opacity: [1, 0] }}
+                  transition={{ duration: 0.5, repeat: Infinity }}
+                  className="inline-block w-2 h-4 bg-[var(--soft-blue)] ml-1 align-middle rounded-sm"
+                />
+              )}
+            </div>
           )}
         </div>
 
         {/* Meta info */}
-        <div className="mt-1 flex items-center gap-2 text-[11px] text-[var(--soft-text-muted)]">
+        <div className={cn(
+          "mt-2 flex items-center gap-3 text-[11px] text-[var(--soft-text-muted)]",
+          isUser && "justify-end"
+        )}>
           <span>{new Date(message.ts || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-          {message.inputTokens && message.outputTokens && (
-            <span className="text-[var(--soft-text-tertiary)]">
-              · {message.inputTokens + message.outputTokens} tokens
+          {message.inputTokens !== undefined && message.outputTokens !== undefined && (
+            <span className="flex items-center gap-1">
+              <span>·</span>
+              <span>{message.inputTokens + message.outputTokens} tokens</span>
+            </span>
+          )}
+          {message.cost !== undefined && (
+            <span className="flex items-center gap-1">
+              <span>·</span>
+              <span>${message.cost.toFixed(4)}</span>
             </span>
           )}
         </div>
@@ -379,7 +630,6 @@ export function ChatV2() {
   const [messages, setMessages] = useState<ExtendedMessage[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [currentSession, setCurrentSession] = useState<Session | null>(null);
-  const [showSessionPanel, setShowSessionPanel] = useState(false);
 
   // Fetch agents
   const { data: agents = [], isLoading: isLoadingAgents } = useQuery({
@@ -410,7 +660,7 @@ export function ChatV2() {
     enabled: !!selectedAgentId,
   });
 
-  // Update messages when session data changes - only when data actually changes
+  // Update messages when session data changes
   const prevSessionMessagesRef = useRef<ExtendedMessage[]>([]);
   useEffect(() => {
     const hasChanged = sessionMessages.length !== prevSessionMessagesRef.current.length ||
@@ -426,18 +676,16 @@ export function ChatV2() {
     }
   }, [sessionMessages]);
 
-  // Auto-select first session or use most recent - use ref to prevent loop
+  // Auto-select first session
   const hasAutoSelectedSession = useRef(false);
   useEffect(() => {
     if (sessions.length > 0 && !hasAutoSelectedSession.current) {
       hasAutoSelectedSession.current = true;
-      // Sort by updated_at desc and pick most recent
       const sorted = [...sessions].sort((a, b) =>
         new Date(b.updated_at || b.created_at).getTime() - new Date(a.updated_at || a.created_at).getTime()
       );
       setCurrentSession(sorted[0]);
     }
-    // Reset when sessions array changes significantly (e.g., agent switch)
     return () => {
       if (sessions.length === 0) {
         hasAutoSelectedSession.current = false;
@@ -445,7 +693,7 @@ export function ChatV2() {
     };
   }, [sessions]);
 
-  // Scroll to bottom when message count changes (not on every message content change)
+  // Scroll to bottom
   const prevMessageCountRef = useRef(0);
   useEffect(() => {
     if (messages.length !== prevMessageCountRef.current) {
@@ -454,13 +702,12 @@ export function ChatV2() {
     }
   }, [messages.length]);
 
-  // Update URL when agent changes - only when agentId actually changes
+  // Update URL when agent changes
   const prevAgentIdRef = useRef<string | null>(null);
   useEffect(() => {
     if (selectedAgentId && selectedAgentId !== prevAgentIdRef.current) {
       prevAgentIdRef.current = selectedAgentId;
       setLastSelectedAgentId(selectedAgentId);
-      // Only update URL if agent param is different
       const currentAgentInUrl = searchParams.get('agent');
       if (currentAgentInUrl !== selectedAgentId) {
         const newParams = new URLSearchParams(searchParams);
@@ -524,7 +771,12 @@ export function ChatV2() {
     const content = input.trim();
     setInput('');
 
-    // Add user message immediately
+    // Reset textarea height
+    if (inputRef.current) {
+      inputRef.current.style.height = 'auto';
+    }
+
+    // Add user message
     const userMessage: ExtendedMessage = {
       id: `temp-${Date.now()}`,
       role: 'user',
@@ -536,7 +788,6 @@ export function ChatV2() {
     setIsStreaming(true);
 
     try {
-      // Connect WebSocket for streaming
       wsManager.connect(
         selectedAgentId,
         (data) => {
@@ -590,10 +841,7 @@ export function ChatV2() {
         }
       );
 
-      // Wait for WebSocket connection
       await wsManager.waitForConnection(5000);
-
-      // Send the message
       await sendMessageMutation.mutateAsync(content);
 
     } catch (error) {
@@ -613,8 +861,9 @@ export function ChatV2() {
   // Handle input change with auto-resize
   const handleInputChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setInput(e.target.value);
+    // Auto-resize textarea
     e.target.style.height = 'auto';
-    e.target.style.height = `${Math.min(e.target.scrollHeight, 120)}px`;
+    e.target.style.height = `${Math.min(e.target.scrollHeight, 160)}px`;
   }, []);
 
   // If no agent selected, show agent selector
@@ -703,7 +952,7 @@ export function ChatV2() {
 
           {/* Agent Avatar */}
           <div className={cn(
-            'w-9 h-9 rounded-xl flex items-center justify-center bg-gradient-to-br',
+            'w-9 h-9 rounded-xl flex items-center justify-center bg-gradient-to-br shadow-sm',
             getAgentGradient(selectedAgent)
           )}>
             <Bot className="w-5 h-5 text-white" />
@@ -774,65 +1023,108 @@ export function ChatV2() {
         )}
       </div>
 
-      {/* Input Area */}
+      {/* Input Area - Redesigned */}
       <div className="p-4 border-t border-[var(--soft-divider)] bg-[var(--soft-bg)]">
         <div className="max-w-3xl mx-auto">
-          {/* Input Container */}
-          <div className="relative bg-[var(--soft-surface)] rounded-2xl border border-[var(--soft-divider)] focus-within:border-[var(--soft-blue)] focus-within:ring-2 focus-within:ring-[var(--soft-blue)]/20 transition-all">
-            {/* Textarea */}
-            <textarea
-              ref={inputRef}
-              value={input}
-              onChange={handleInputChange}
-              onKeyDown={handleKeyDown}
-              placeholder={`Message ${selectedAgent.name}...`}
-              disabled={isStreaming}
-              rows={1}
-              className="w-full bg-transparent px-4 py-3.5 pr-12 text-[var(--soft-text-primary)] placeholder-[var(--soft-text-muted)] resize-none outline-none min-h-[52px] max-h-[120px]"
-            />
-
-            {/* Send Button */}
-            <motion.button
-              onClick={handleSend}
-              disabled={!input.trim() || isStreaming}
+          {/* Input Container - Clean floating design */}
+          <div className="relative group">
+            <div
               className={cn(
-                'absolute right-2 bottom-2 p-2 rounded-xl transition-colors',
-                input.trim() && !isStreaming
-                  ? 'bg-[var(--soft-blue)] text-white hover:bg-[var(--soft-blue-dark)]'
-                  : 'bg-[var(--soft-surface-hover)] text-[var(--soft-text-muted)]'
+                "relative flex flex-col rounded-2xl border bg-[var(--soft-main)] shadow-sm transition-shadow duration-200",
+                "focus-within:shadow-md",
+                input.trim()
+                  ? "border-[var(--soft-blue)]/50"
+                  : "border-[var(--soft-divider)]"
               )}
-              whileTap={input.trim() && !isStreaming ? { scale: 0.95 } : {}}
             >
-              {isStreaming ? (
-                <Loader2 className="w-5 h-5 animate-spin" />
-              ) : (
-                <Send className="w-5 h-5" />
-              )}
-            </motion.button>
+              {/* Textarea Container */}
+              <div className="relative flex-1 min-h-[56px] max-h-[200px]">
+                <textarea
+                  ref={inputRef}
+                  value={input}
+                  onChange={handleInputChange}
+                  onKeyDown={handleKeyDown}
+                  placeholder={`Message ${selectedAgent.name}...`}
+                  disabled={isStreaming}
+                  rows={1}
+                  className={cn(
+                    "w-full min-h-[56px] max-h-[200px] bg-transparent resize-none",
+                    "text-[var(--soft-text-primary)] placeholder-[var(--soft-text-muted)]",
+                    "focus:outline-none focus:ring-0 focus:border-transparent",
+                    "border-none outline-none",
+                    "py-4 px-4 pr-14 leading-relaxed text-[15px]"
+                  )}
+                  style={{
+                    overflow: 'auto',
+                    scrollbarWidth: 'thin',
+                  }}
+                />
+              </div>
+
+              {/* Bottom Toolbar */}
+              <div className="flex items-center justify-between px-3 py-2 border-t border-[var(--soft-divider)]/50">
+                {/* Left: Action buttons */}
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    disabled={isStreaming}
+                    className="p-2 rounded-lg text-[var(--soft-text-muted)] hover:text-[var(--soft-text-secondary)] hover:bg-[var(--soft-surface)] transition-colors disabled:opacity-40"
+                    title="Attach file"
+                  >
+                    <Paperclip className="w-[18px] h-[18px]" />
+                  </button>
+                </div>
+
+                {/* Right: Send button */}
+                <div className="flex items-center gap-2">
+                  {/* Keyboard hint - subtle */}
+                  <span className="hidden sm:flex items-center gap-1 text-[11px] text-[var(--soft-text-tertiary)]">
+                    <kbd className="px-1.5 py-0.5 rounded bg-[var(--soft-surface)] font-sans text-[10px]">↵</kbd>
+                    <span>to send</span>
+                  </span>
+
+                  {/* Send Button */}
+                  <motion.button
+                    onClick={handleSend}
+                    disabled={!input.trim() || isStreaming}
+                    className={cn(
+                      'flex items-center justify-center w-9 h-9 rounded-xl transition-all duration-200',
+                      input.trim() && !isStreaming
+                        ? 'bg-[var(--soft-blue)] text-white hover:bg-[var(--soft-blue-dark)] shadow-sm'
+                        : 'bg-[var(--soft-surface)] text-[var(--soft-text-muted)]'
+                    )}
+                    whileTap={input.trim() && !isStreaming ? { scale: 0.92 } : {}}
+                  >
+                    {isStreaming ? (
+                      <Loader2 className="w-[18px] h-[18px] animate-spin" />
+                    ) : (
+                      <Send className="w-[18px] h-[18px]" />
+                    )}
+                  </motion.button>
+                </div>
+              </div>
+            </div>
           </div>
 
-          {/* Footer hint */}
-          <div className="flex items-center justify-between mt-2 px-1">
-            <div className="flex items-center gap-3 text-[11px] text-[var(--soft-text-muted)]">
-              <span className="flex items-center gap-1">
-                <Command className="w-3 h-3" />
-                + Enter to send
-              </span>
-              <span>Shift + Enter for new line</span>
-            </div>
-
-            {isStreaming && (
+          {/* Footer */}
+          <div className="flex items-center justify-center mt-2">
+            {isStreaming ? (
               <motion.button
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
+                initial={{ opacity: 0, y: 5 }}
+                animate={{ opacity: 1, y: 0 }}
                 onClick={() => {
                   wsManager.disconnect();
                   setIsStreaming(false);
                 }}
-                className="text-xs text-[var(--soft-text-muted)] hover:text-[var(--neon-magenta)] transition-colors"
+                className="flex items-center gap-1.5 text-xs text-[var(--soft-text-muted)] hover:text-red-500 transition-colors px-3 py-1.5 rounded-full hover:bg-red-500/5"
               >
+                <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
                 Stop generating
               </motion.button>
+            ) : (
+              <span className="text-[11px] text-[var(--soft-text-tertiary)]">
+                AI-generated content may be inaccurate
+              </span>
             )}
           </div>
         </div>

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useEffect } from 'react'
 import { Routes, Route, Navigate } from 'react-router'
 import { useTheme } from '@/hooks'
 import { Layout } from '@/components/layout/Layout'
@@ -22,81 +22,19 @@ import { Wizard } from '@/pages/Wizard'
 import { Analytics } from '@/pages/Analytics'
 import { Settings } from '@/pages/Settings'
 import { AuthPrompt } from '@/components/AuthPrompt'
-import { api, setAuthErrorCallback } from '@/api/client'
+import { useAuthStore, setupAuthErrorHandler } from '@/store/authStore'
 
 function App() {
-  const [showAuthPrompt, setShowAuthPrompt] = useState(false)
-  const [authMode, setAuthMode] = useState<'apikey' | 'session'>('apikey')
+  const { authReady, showAuthPrompt, setShowAuthPrompt, handleAuth, initAuth } = useAuthStore()
 
   // Initialize theme on mount
   useTheme()
 
-  // Load saved API key and check auth on mount
+  // Initialize auth on mount
   useEffect(() => {
-    const handleAuthError = () => {
-      setShowAuthPrompt(true)
-    }
-
-    // Set up auth error callback
-    setAuthErrorCallback(handleAuthError)
-
-    // Check auth mode and status
-    const initAuth = async () => {
-      try {
-        // First check server auth mode
-        const authInfo = await api.checkAuth()
-
-        if (authInfo.mode === 'session') {
-          setAuthMode('session')
-          // Session mode - check if already authenticated
-          if (!authInfo.authenticated) {
-            setShowAuthPrompt(true)
-          }
-          return
-        }
-
-        // API key mode
-        setAuthMode('apikey')
-        const savedKey = localStorage.getItem('openfang-api-key')
-        if (savedKey) {
-          api.setAuthToken(savedKey)
-        }
-
-        // Check if we need auth (use non-public endpoint)
-        try {
-          await api.listTools()
-        } catch (err: unknown) {
-          const error = err as { response?: { status: number }; message?: string }
-          if (error.response?.status === 401 ||
-              error.message?.includes('Not authorized') ||
-              error.message?.includes('Missing Authorization') ||
-              error.message?.includes('Unauthorized')) {
-            setShowAuthPrompt(true)
-          }
-        }
-      } catch (e) {
-        // Fall back to API key mode if check fails
-        const savedKey = localStorage.getItem('openfang-api-key')
-        if (savedKey) {
-          api.setAuthToken(savedKey)
-        }
-      }
-    }
+    setupAuthErrorHandler()
     initAuth()
-
-    return () => setAuthErrorCallback(null)
-  }, [])
-
-  const handleAuth = useCallback((key: string) => {
-    if (authMode === 'apikey' && key) {
-      api.setAuthToken(key)
-    }
-    setShowAuthPrompt(false)
-  }, [authMode])
-
-  const handleClose = useCallback(() => {
-    setShowAuthPrompt(false)
-  }, [])
+  }, [initAuth])
 
   return (
     <>
@@ -127,7 +65,7 @@ function App() {
 
       <AuthPrompt
         isOpen={showAuthPrompt}
-        onClose={handleClose}
+        onClose={() => setShowAuthPrompt(false)}
         onAuth={handleAuth}
       />
     </>

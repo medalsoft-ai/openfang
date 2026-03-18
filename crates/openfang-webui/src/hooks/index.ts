@@ -7,6 +7,7 @@ export { useLocalStorage } from './useLocalStorage';
 export { useDebounce, useDebouncedCallback } from './useDebounce';
 export { useMediaQuery, useIsMobile, useIsTablet, useIsDesktop, useIsDarkMode, usePrefersReducedMotion } from './useMediaQuery';
 export { useKeyboard, useKeyCombo, useEscapeKey, useEnterKey, useCtrlKey } from './useKeyboard';
+export { useAuthQuery, useAuthQueryClient } from './useAuthQuery';
 export {
   useGsapTimeline,
   useGsapScrollTrigger,

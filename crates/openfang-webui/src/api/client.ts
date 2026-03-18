@@ -18,17 +18,42 @@ export function setAuthErrorCallback(callback: (() => void) | null) {
   authErrorCallback = callback;
 }
 
+// Auth readiness promise - all API calls wait for this (except during init)
+let authCheckResolve: (() => void) | null = null;
+let authCheckPromise: Promise<void> | null = null;
+let isAuthCheckComplete = false;
+let bypassAuthWait = false; // Set to true during initAuth
+
+export function setAuthCheckPromise(promise: Promise<void>) {
+  authCheckPromise = promise;
+  isAuthCheckComplete = false;
+}
+
+export function resolveAuthCheck() {
+  authCheckResolve?.();
+  authCheckPromise = null;
+  isAuthCheckComplete = true;
+}
+
+export function isAuthReady(): boolean {
+  return isAuthCheckComplete;
+}
+
+export function setBypassAuthWait(bypass: boolean) {
+  bypassAuthWait = bypass;
+}
+
 class APIClient {
-  private client: AxiosInstance | null = null;
-  private authToken: string = '';
-  private baseUrl: string = '';
-  private initialized: boolean = false;
+  protected client: AxiosInstance | null = null;
+  protected authToken: string = '';
+  protected baseUrl: string = '';
+  protected initialized: boolean = false;
 
   constructor() {
     // Defer initialization until first use to allow async port detection
   }
 
-  private async init() {
+  protected async init() {
     if (this.initialized) return;
 
     // Get base URL (empty for Vite proxy, full URL for Tauri)
@@ -79,7 +104,12 @@ class APIClient {
   }
 
   // Generic request methods
-  private async ensureClient(): Promise<AxiosInstance> {
+  protected async ensureClient(): Promise<AxiosInstance> {
+    // Wait for auth check to complete before making any request (unless bypassed during init)
+    if (authCheckPromise && !bypassAuthWait) {
+      await authCheckPromise;
+    }
+
     if (!this.initialized) {
       await this.init();
     }
@@ -1106,7 +1136,15 @@ class ExtendedAPIClient extends APIClient {
   // ===== Auth Operations =====
 
   async checkAuth(): Promise<AuthCheckResponse> {
-    return this.get('/api/auth/check');
+    // Bypass auth wait for checkAuth - it's used to determine auth state
+    if (!this.initialized) {
+      await this.init();
+    }
+    if (!this.client) {
+      throw new Error('API client not initialized');
+    }
+    const { data } = await this.client.get<AuthCheckResponse>('/api/auth/check');
+    return data;
   }
 
   async login(credentials: AuthLoginRequest): Promise<AuthLoginResponse> {
