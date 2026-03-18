@@ -94,8 +94,39 @@
        LIGHT / DUAL THEME SUPPORT
        ======================================== */
 
-    /* === LIGHT THEME (Default) === */
+    /* === SOFT UI EVOLUTION - Light Theme === */
+    /* Soft pastels with improved contrast (WCAG AA+) */
+    --soft-bg: #FAFBFC;
+    --soft-sidebar: #F5F7FA;
+    --soft-main: #FFFFFF;
+    --soft-surface: #EBEEF2;
+    --soft-surface-hover: #E4E8EC;
+    --soft-divider: #DEE2E7;
 
+    /* Soft pastel accents - improved contrast */
+    --soft-blue: #5B9BD5;
+    --soft-blue-dark: #4A8BC4;
+    --soft-pink: #E891A8;
+    --soft-green: #7BC094;
+    --soft-amber: #E5B75A;
+    --soft-purple: #9B8FD4;
+
+    /* Text colors - high contrast for readability */
+    --soft-text-primary: #1A1D23;
+    --soft-text-secondary: #4A5060;
+    --soft-text-muted: #7A8190;
+    --soft-text-tertiary: #9AA0AD;
+
+    /* Soft shadows - subtle depth */
+    --soft-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.02);
+    --soft-shadow-md: 0 2px 4px rgba(0, 0, 0, 0.04), 0 4px 8px rgba(0, 0, 0, 0.02);
+    --soft-shadow-sidebar: 2px 0 8px rgba(0, 0, 0, 0.03);
+
+    /* Gradient backgrounds */
+    --soft-gradient-from: #F8FAFC;
+    --soft-gradient-to: #F0F4F8;
+
+    /* === LEGACY THEME VARIABLES === */
     /* Base Colors - Light Theme */
     --void: #FFFFFF;
     --void-90: #F8FAFC;
@@ -202,6 +233,38 @@
 
   /* === DARK THEME === */
   .dark {
+    /* === SOFT UI EVOLUTION - Dark Theme === */
+    --soft-bg: #0D1117;
+    --soft-sidebar: #161B22;
+    --soft-main: #0D1117;
+    --soft-surface: #21262D;
+    --soft-surface-hover: #2D333B;
+    --soft-divider: #30363D;
+
+    /* Soft pastel accents - dark mode (brighter for visibility) */
+    --soft-blue: #6CB0E8;
+    --soft-blue-dark: #79B8FF;
+    --soft-pink: #F2A5B8;
+    --soft-green: #7EE787;
+    --soft-amber: #F2CC60;
+    --soft-purple: #B4A4F7;
+
+    /* Text colors - dark mode */
+    --soft-text-primary: #F0F6FC;
+    --soft-text-secondary: #C9D1D9;
+    --soft-text-muted: #8B949E;
+    --soft-text-tertiary: #6E7681;
+
+    /* Soft shadows - dark mode */
+    --soft-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3), 0 1px 3px rgba(0, 0, 0, 0.2);
+    --soft-shadow-md: 0 2px 4px rgba(0, 0, 0, 0.3), 0 4px 8px rgba(0, 0, 0, 0.2);
+    --soft-shadow-sidebar: 2px 0 8px rgba(0, 0, 0, 0.4);
+
+    /* Gradient backgrounds - dark */
+    --soft-gradient-from: #161B22;
+    --soft-gradient-to: #0D1117;
+
+    /* === LEGACY THEME VARIABLES === */
     /* Base Colors - Dark */
     --void: #000000;
     --void-90: #0A0A0F;
