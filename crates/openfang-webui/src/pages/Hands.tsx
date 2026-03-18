@@ -12,8 +12,14 @@ import {
   ChevronRight, ExternalLink, Terminal, Shield, Settings,
   Play, Pause, Square, BarChart3, Globe, Package, ChevronLeft,
   Apple, Monitor, Server, TerminalSquare, Eye, Clock, Copy,
-  CheckCircle2, Info
+  CheckCircle2, Info, TrendingUp, TrendingDown, DollarSign,
+  Activity, PieChart, Target
 } from 'lucide-react';
+import {
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  BarChart, Bar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar,
+  Area, AreaChart, Cell
+} from 'recharts';
 import { cn } from '@/lib/utils';
 
 // Detect platform
@@ -1003,7 +1009,7 @@ function SetupWizardModal({
 
 // Instance Card Component
 function InstanceCard({
-  instance, hands, onPause, onResume, onDeactivate, onViewBrowser
+  instance, hands, onPause, onResume, onDeactivate, onViewBrowser, onViewDashboard
 }: {
   instance: HandInstance;
   hands: Hand[];
@@ -1011,11 +1017,13 @@ function InstanceCard({
   onResume: () => void;
   onDeactivate: () => void;
   onViewBrowser?: () => void;
+  onViewDashboard?: () => void;
 }) {
   const [stats, setStats] = useState<HandStats | null>(null);
   const [loadingStats, setLoadingStats] = useState(false);
 
   const isBrowserHand = instance.hand_id === 'browser';
+  const isTraderHand = instance.hand_id === 'trader' || instance.hand_id.includes('trade');
   const hand = hands.find((h) => h.id === instance.hand_id);
   const handIcon = hand?.icon || '🖐️';
 
@@ -1080,6 +1088,16 @@ function InstanceCard({
           </button>
           {isBrowserHand && onViewBrowser && (
             <button className="btn btn-ghost btn-sm" onClick={onViewBrowser}>View Browser</button>
+          )}
+          {isTraderHand && onViewDashboard && (
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={onViewDashboard}
+              style={{ color: 'var(--neon-green)' }}
+            >
+              <BarChart3 className="w-4 h-4 mr-1" />
+              Dashboard
+            </button>
           )}
           {instance.status === 'Active' ? (
             <button className="btn btn-ghost btn-sm" onClick={onPause}>Pause</button>
@@ -1221,6 +1239,368 @@ function BrowserModal({
   );
 }
 
+// Trader Dashboard Data Type
+interface TraderDashboardData {
+  equity_curve?: Array<{ date: string; value: number }>;
+  daily_pnl?: Array<{ date: string; pnl: number }>;
+  signal_radar?: Array<{ name: string; value: number; max: number }>;
+  metrics?: {
+    total_return?: number;
+    win_rate?: number;
+    sharpe_ratio?: number;
+    max_drawdown?: number;
+    total_trades?: number;
+    profitable_trades?: number;
+  };
+}
+
+// Trader Dashboard Modal Component
+function TraderDashboardModal({
+  instance,
+  dashboardData,
+  onClose
+}: {
+  instance: HandInstance | null;
+  dashboardData: TraderDashboardData | null;
+  onClose: () => void;
+}) {
+  if (!instance) return null;
+
+  const equityData = dashboardData?.equity_curve || [];
+  const pnlData = dashboardData?.daily_pnl || [];
+  const radarData = dashboardData?.signal_radar || [];
+  const metrics = dashboardData?.metrics || {};
+
+  // Calculate P&L stats
+  const totalPnL = pnlData.reduce((sum, d) => sum + d.pnl, 0);
+  const positiveDays = pnlData.filter(d => d.pnl > 0).length;
+  const negativeDays = pnlData.filter(d => d.pnl < 0).length;
+
+  // Neon colors for charts
+  const neonCyan = '#00f0ff';
+  const neonGreen = '#00ff7f';
+  const neonMagenta = '#ff00ff';
+  const neonAmber = '#ffbf00';
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <motion.div
+        initial={{ scale: 0.95, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.95, opacity: 0 }}
+        className="trader-dashboard"
+        style={{
+          width: '90vw',
+          maxWidth: '1200px',
+          height: '85vh',
+          background: 'var(--surface-primary)',
+          borderRadius: '12px',
+          overflow: 'hidden',
+          display: 'flex',
+          flexDirection: 'column'
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '16px 24px',
+          borderBottom: '1px solid var(--border-subtle)',
+          background: 'var(--surface-secondary)'
+        }}>
+          <div>
+            <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <TrendingUp className="w-6 h-6" style={{ color: neonGreen }} />
+              <NeonText color="green">{instance.agent_name || 'Trader'} Dashboard</NeonText>
+            </h2>
+            <p style={{ margin: '4px 0 0', fontSize: '12px', color: 'var(--text-muted)' }}>
+              Real-time trading analytics and performance metrics
+            </p>
+          </div>
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={onClose}
+            style={{ borderRadius: '8px' }}
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Dashboard Content */}
+        <div style={{
+          flex: 1,
+          overflow: 'auto',
+          padding: '24px',
+          background: 'var(--void)'
+        }}>
+          {!dashboardData ? (
+            <div style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              height: '100%',
+              color: 'var(--text-muted)'
+            }}>
+              <Loader2 className="w-8 h-8 animate-spin mb-4" />
+              <p>Loading dashboard data...</p>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+              {/* Metrics Cards */}
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+                gap: '16px'
+              }}>
+                <SpotlightCard glowColor="rgba(0, 255, 127, 0.15)" className="p-4">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                    <DollarSign className="w-5 h-5" style={{ color: neonGreen }} />
+                    <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Total Return</span>
+                  </div>
+                  <div style={{
+                    fontSize: '24px',
+                    fontWeight: 'bold',
+                    color: (metrics.total_return || 0) >= 0 ? neonGreen : '#ff5f56'
+                  }}>
+                    {(metrics.total_return || 0) >= 0 ? '+' : ''}
+                    {((metrics.total_return || 0) * 100).toFixed(2)}%
+                  </div>
+                </SpotlightCard>
+
+                <SpotlightCard glowColor="rgba(0, 240, 255, 0.15)" className="p-4">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                    <Target className="w-5 h-5" style={{ color: neonCyan }} />
+                    <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Win Rate</span>
+                  </div>
+                  <div style={{ fontSize: '24px', fontWeight: 'bold', color: neonCyan }}>
+                    {((metrics.win_rate || 0) * 100).toFixed(1)}%
+                  </div>
+                </SpotlightCard>
+
+                <SpotlightCard glowColor="rgba(255, 191, 0, 0.15)" className="p-4">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                    <Activity className="w-5 h-5" style={{ color: neonAmber }} />
+                    <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Sharpe Ratio</span>
+                  </div>
+                  <div style={{ fontSize: '24px', fontWeight: 'bold', color: neonAmber }}>
+                    {(metrics.sharpe_ratio || 0).toFixed(2)}
+                  </div>
+                </SpotlightCard>
+
+                <SpotlightCard glowColor="rgba(255, 0, 255, 0.15)" className="p-4">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                    <TrendingDown className="w-5 h-5" style={{ color: neonMagenta }} />
+                    <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Max Drawdown</span>
+                  </div>
+                  <div style={{ fontSize: '24px', fontWeight: 'bold', color: neonMagenta }}>
+                    -{((metrics.max_drawdown || 0) * 100).toFixed(2)}%
+                  </div>
+                </SpotlightCard>
+              </div>
+
+              {/* Charts Row 1: Equity Curve */}
+              {equityData.length > 0 && (
+                <SpotlightCard glowColor="rgba(0, 255, 127, 0.1)" className="p-4">
+                  <h3 style={{
+                    margin: '0 0 16px',
+                    fontSize: '16px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px'
+                  }}>
+                    <TrendingUp className="w-5 h-5" style={{ color: neonGreen }} />
+                    Equity Curve
+                  </h3>
+                  <div style={{ height: '250px' }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={equityData}>
+                        <defs>
+                          <linearGradient id="equityGradient" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor={neonGreen} stopOpacity={0.3}/>
+                            <stop offset="95%" stopColor={neonGreen} stopOpacity={0}/>
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke="var(--border-subtle)" />
+                        <XAxis
+                          dataKey="date"
+                          tick={{ fill: 'var(--text-muted)', fontSize: 11 }}
+                          tickFormatter={(value) => new Date(value).toLocaleDateString()}
+                          stroke="var(--border-subtle)"
+                        />
+                        <YAxis
+                          tick={{ fill: 'var(--text-muted)', fontSize: 11 }}
+                          stroke="var(--border-subtle)"
+                          tickFormatter={(value) => `$${value.toLocaleString()}`}
+                        />
+                        <Tooltip
+                          contentStyle={{
+                            background: 'var(--surface-secondary)',
+                            border: '1px solid var(--border-subtle)',
+                            borderRadius: '8px'
+                          }}
+                          labelFormatter={(label) => new Date(label).toLocaleDateString()}
+                          formatter={(value: number) => [`$${value.toLocaleString()}`, 'Equity']}
+                        />
+                        <Area
+                          type="monotone"
+                          dataKey="value"
+                          stroke={neonGreen}
+                          strokeWidth={2}
+                          fillOpacity={1}
+                          fill="url(#equityGradient)"
+                        />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+                </SpotlightCard>
+              )}
+
+              {/* Charts Row 2: Daily P&L and Signal Radar */}
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))',
+                gap: '24px'
+              }}>
+                {/* Daily P&L */}
+                {pnlData.length > 0 && (
+                  <SpotlightCard glowColor="rgba(0, 240, 255, 0.1)" className="p-4">
+                    <h3 style={{
+                      margin: '0 0 16px',
+                      fontSize: '16px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px'
+                    }}>
+                      <BarChart3 className="w-5 h-5" style={{ color: neonCyan }} />
+                      Daily P&L
+                      <span style={{
+                        marginLeft: 'auto',
+                        fontSize: '12px',
+                        color: totalPnL >= 0 ? neonGreen : '#ff5f56'
+                      }}>
+                        Total: {totalPnL >= 0 ? '+' : ''}${totalPnL.toFixed(2)}
+                      </span>
+                    </h3>
+                    <div style={{ height: '220px' }}>
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={pnlData}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="var(--border-subtle)" />
+                          <XAxis
+                            dataKey="date"
+                            tick={{ fill: 'var(--text-muted)', fontSize: 10 }}
+                            tickFormatter={(value) => new Date(value).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                            stroke="var(--border-subtle)"
+                          />
+                          <YAxis
+                            tick={{ fill: 'var(--text-muted)', fontSize: 11 }}
+                            stroke="var(--border-subtle)"
+                            tickFormatter={(value) => `$${value.toLocaleString()}`}
+                          />
+                          <Tooltip
+                            contentStyle={{
+                              background: 'var(--surface-secondary)',
+                              border: '1px solid var(--border-subtle)',
+                              borderRadius: '8px'
+                            }}
+                            labelFormatter={(label) => new Date(label).toLocaleDateString()}
+                            formatter={(value: number) => [`$${value.toFixed(2)}`, 'P&L']}
+                          />
+                          <Bar dataKey="pnl" radius={[4, 4, 0, 0]}>
+                            {pnlData.map((entry, index) => (
+                              <Cell
+                                key={`cell-${index}`}
+                                fill={entry.pnl >= 0 ? neonGreen : '#ff5f56'}
+                              />
+                            ))}
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                    <div style={{
+                      display: 'flex',
+                      justifyContent: 'center',
+                      gap: '24px',
+                      marginTop: '12px',
+                      fontSize: '12px'
+                    }}>
+                      <span style={{ color: neonGreen }}>● {positiveDays} Up days</span>
+                      <span style={{ color: '#ff5f56' }}>● {negativeDays} Down days</span>
+                    </div>
+                  </SpotlightCard>
+                )}
+
+                {/* Signal Radar */}
+                {radarData.length > 0 && (
+                  <SpotlightCard glowColor="rgba(255, 0, 255, 0.1)" className="p-4">
+                    <h3 style={{
+                      margin: '0 0 16px',
+                      fontSize: '16px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px'
+                    }}>
+                      <PieChart className="w-5 h-5" style={{ color: neonMagenta }} />
+                      Signal Radar
+                    </h3>
+                    <div style={{ height: '220px' }}>
+                      <ResponsiveContainer width="100%" height="100%">
+                        <RadarChart data={radarData}>
+                          <PolarGrid stroke="var(--border-subtle)" />
+                          <PolarAngleAxis
+                            dataKey="name"
+                            tick={{ fill: 'var(--text-muted)', fontSize: 10 }}
+                          />
+                          <PolarRadiusAxis
+                            tick={{ fill: 'var(--text-muted)', fontSize: 9 }}
+                            stroke="var(--border-subtle)"
+                          />
+                          <Radar
+                            name="Signals"
+                            dataKey="value"
+                            stroke={neonMagenta}
+                            strokeWidth={2}
+                            fill={neonMagenta}
+                            fillOpacity={0.3}
+                          />
+                          <Tooltip
+                            contentStyle={{
+                              background: 'var(--surface-secondary)',
+                              border: '1px solid var(--border-subtle)',
+                              borderRadius: '8px'
+                            }}
+                          />
+                        </RadarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </SpotlightCard>
+                )}
+              </div>
+
+              {/* Empty State */}
+              {equityData.length === 0 && pnlData.length === 0 && radarData.length === 0 && (
+                <div style={{
+                  textAlign: 'center',
+                  padding: '60px',
+                  color: 'var(--text-muted)'
+                }}>
+                  <BarChart3 className="w-16 h-16 mx-auto mb-4" style={{ opacity: 0.3 }} />
+                  <h3>No trading data available yet</h3>
+                  <p style={{ fontSize: '14px', marginTop: '8px' }}>
+                    Trading metrics will appear once the trader hand starts recording activity.
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
 // ==================== Main Component ====================
 
 export function Hands() {
@@ -1233,6 +1613,8 @@ export function Hands() {
   const [setupHand, setSetupHand] = useState<Hand | null>(null);
   const [browserInstance, setBrowserInstance] = useState<HandInstance | null>(null);
   const [browserState, setBrowserState] = useState<HandBrowserState | null>(null);
+  const [dashboardInstance, setDashboardInstance] = useState<HandInstance | null>(null);
+  const [dashboardData, setDashboardData] = useState<TraderDashboardData | null>(null);
 
   // Fetch available hands
   const { data: hands = [], isLoading, error, refetch } = useQuery<Hand[]>({
@@ -1352,6 +1734,33 @@ export function Hands() {
     }, 3000);
     return () => clearInterval(interval);
   }, [browserInstance, handleRefreshBrowser]);
+
+  // View trader dashboard
+  const handleViewDashboard = useCallback(async (instance: HandInstance) => {
+    setDashboardInstance(instance);
+    setDashboardData(null);
+    try {
+      // Fetch dashboard data from KV/memory via API
+      const stats = await api.getHandInstanceStats(instance.instance_id) as Record<string, { value?: number; format?: string } | unknown>;
+      // Transform stats into dashboard format
+      const data: TraderDashboardData = {
+        equity_curve: (stats.equity_curve as { date: string; value: number }[]) || [],
+        daily_pnl: (stats.daily_pnl as { date: string; pnl: number }[]) || [],
+        signal_radar: (stats.signal_radar as { name: string; value: number; max: number }[]) || [],
+        metrics: {
+          total_return: (stats.total_return as { value?: number })?.value || 0,
+          win_rate: (stats.win_rate as { value?: number })?.value || 0,
+          sharpe_ratio: (stats.sharpe_ratio as { value?: number })?.value || 0,
+          max_drawdown: (stats.max_drawdown as { value?: number })?.value || 0,
+          total_trades: (stats.total_trades as { value?: number })?.value || 0,
+          profitable_trades: (stats.profitable_trades as { value?: number })?.value || 0,
+        }
+      };
+      setDashboardData(data);
+    } catch (err) {
+      toaster.error('Failed to load dashboard data');
+    }
+  }, []);
 
   return (
     <div className="h-full overflow-auto p-6">
@@ -1477,6 +1886,7 @@ export function Hands() {
                       onResume={() => handleResume(instance.instance_id)}
                       onDeactivate={() => handleDeactivate(instance.instance_id, instance.agent_name || instance.hand_id)}
                       onViewBrowser={instance.hand_id === 'browser' ? () => handleViewBrowser(instance) : undefined}
+                      onViewDashboard={(instance.hand_id === 'trader' || instance.hand_id.includes('trade')) ? () => handleViewDashboard(instance) : undefined}
                     />
                   ))}
                 </AnimatePresence>
@@ -1518,6 +1928,17 @@ export function Hands() {
             browserState={browserState}
             onRefresh={handleRefreshBrowser}
             onClose={() => { setBrowserInstance(null); setBrowserState(null); }}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Trader Dashboard Modal */}
+      <AnimatePresence>
+        {dashboardInstance && (
+          <TraderDashboardModal
+            instance={dashboardInstance}
+            dashboardData={dashboardData}
+            onClose={() => { setDashboardInstance(null); setDashboardData(null); }}
           />
         )}
       </AnimatePresence>

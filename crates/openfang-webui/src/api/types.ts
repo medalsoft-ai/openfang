@@ -600,3 +600,25 @@ export interface MigrationResult {
   migrated: { agents: number; workflows: number; skills: number };
   errors: string[];
 }
+
+// Auth types
+export interface AuthCheckResponse {
+  mode: 'none' | 'apikey' | 'session';
+  authenticated?: boolean;
+  username?: string;
+}
+
+export interface AuthLoginRequest {
+  username: string;
+  password: string;
+}
+
+export interface AuthLoginResponse {
+  status: 'ok' | 'error';
+  username?: string;
+  error?: string;
+}
+
+export interface AuthLogoutResponse {
+  status: 'ok' | 'error';
+}

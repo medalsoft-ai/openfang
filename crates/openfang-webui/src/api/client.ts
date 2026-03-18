@@ -6,7 +6,8 @@ import type {
   ClawHubSkill, ClawHubSearchResult, ClawHubBrowseResult, SkillDetail,
   McpServersResponse,
   Hand, HandInstance, HandStats, HandBrowserState, InstallDepsResponse,
-  Profile, Template, Provider
+  Profile, Template, Provider,
+  AuthCheckResponse, AuthLoginRequest, AuthLoginResponse, AuthLogoutResponse
 } from './types';
 import { getApiBaseUrl, getWsBaseUrl } from '@/lib/tauri';
 
@@ -1100,6 +1101,20 @@ class ExtendedAPIClient extends APIClient {
 
   async listProviders(): Promise<{ providers: Provider[] }> {
     return this.get('/api/providers');
+  }
+
+  // ===== Auth Operations =====
+
+  async checkAuth(): Promise<AuthCheckResponse> {
+    return this.get('/api/auth/check');
+  }
+
+  async login(credentials: AuthLoginRequest): Promise<AuthLoginResponse> {
+    return this.post('/api/auth/login', credentials);
+  }
+
+  async logout(): Promise<AuthLogoutResponse> {
+    return this.post('/api/auth/logout');
   }
 }
 

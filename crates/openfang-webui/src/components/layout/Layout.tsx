@@ -262,7 +262,7 @@ export function Layout() {
           <div className="absolute bottom-0 left-0 w-px h-20 bg-gradient-to-t from-[var(--neon-cyan)]/20 to-transparent" />
 
           {/* Content with page transition */}
-          <AnimatePresence mode="wait">
+          <AnimatePresence mode="popLayout" initial={false}>
             <motion.div
               key={location.pathname}
               initial="initial"

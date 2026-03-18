@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "identifier": "ai.openfang.desktop",
   "build": {
-    "beforeDevCommand": "test -n \"$TAURI_SKIP_FRONTEND\" || (cd ../openfang-webui && pnpm dev)",
+    "beforeDevCommand": "test -n \"$TAURI_SKIP_FRONTEND\" || (cd /Users/rain/project/innovation/empower/openfang/crates/openfang-webui && pnpm dev)",
     "beforeBuildCommand": "cd /Users/rain/project/innovation/empower/openfang/crates/openfang-webui && pnpm build",
     "devUrl": "http://localhost:5173",
     "frontendDist": "../openfang-webui/dist"
