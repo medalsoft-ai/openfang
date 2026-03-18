@@ -1,2325 +1,1308 @@
-// Settings - Control Center Style
+// Settings - Soft UI Evolution Style
 import { useState, useEffect } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { motion, AnimatePresence } from 'framer-motion';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useAuthQuery } from '@/hooks/useAuthQuery';
+import { motion } from 'framer-motion';
 import { api } from '@/api/client';
-import { NeonText } from '@/components/motion/NeonText';
-import { SpotlightCard } from '@/components/motion/SpotlightCard';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import {
-  Key, Shield, Wrench, Database, Network, Loader2,
-  Check, X, ExternalLink, Save, Cpu, Settings2, Package,
-  ArrowRightLeft, Search, Plus, Trash2, TestTube,
-  Play, AlertCircle, RefreshCw, DollarSign, Info, FlaskConical
+  Key, Shield, Cpu, Database, Network, Loader2,
+  Check, X, Save, Settings2, Plus, TestTube,
+  AlertCircle, RefreshCw, Wallet, Server, Search,
+  ArrowRightLeft, ExternalLink, Zap, Bot, MessageSquare, Pencil
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import type { Provider, Model, SecurityStatus, Budget, AgentBudget, A2AAgent, PeerDetail, SystemVersion, SystemStatus } from '@/api/types';
+import { useTranslation } from 'react-i18next';
+import type { Provider, SecurityStatus } from '@/api/types';
 
-// Control Center Toggle
-function ControlToggle({
-  label,
-  description,
+// Animation variants
+const containerVariants = {
+  hidden: { opacity: 0 },
+  visible: {
+    opacity: 1,
+    transition: { staggerChildren: 0.05 }
+  }
+};
+
+const itemVariants = {
+  hidden: { opacity: 0, y: 10 },
+  visible: {
+    opacity: 1,
+    y: 0,
+    transition: { duration: 0.2 }
+  }
+};
+
+// Soft Toggle Switch - Uses flex layout for cross-platform consistency
+function SoftToggle({
   enabled,
-  onToggle
+  onToggle,
+  size = 'md',
+  disabled = false
 }: {
-  label: string;
-  description?: string;
   enabled: boolean;
   onToggle: () => void;
+  size?: 'sm' | 'md';
+  disabled?: boolean;
+}) {
+  const containerSize = size === 'sm' ? 'w-9 h-5' : 'w-11 h-6';
+  const knobSize = size === 'sm' ? 'w-3.5 h-3.5' : 'w-4 h-4';
+  const padding = size === 'sm' ? 'p-0.5' : 'p-1';
+
+  return (
+    <button
+      onClick={onToggle}
+      disabled={disabled}
+      className={cn(
+        containerSize,
+        padding,
+        'rounded-full transition-all duration-200 flex',
+        enabled ? 'bg-[var(--soft-blue)] justify-end' : 'bg-[var(--soft-divider)] justify-start',
+        disabled && 'opacity-40 grayscale cursor-not-allowed pointer-events-none'
+      )}
+    >
+      <span
+        className={cn(
+          knobSize,
+          'rounded-full bg-white shadow-sm block flex-shrink-0'
+        )}
+      />
+    </button>
+  );
+}
+
+// Soft Card Component
+function SoftCard({
+  children,
+  className,
+  hover = true
+}: {
+  children: React.ReactNode;
+  className?: string;
+  hover?: boolean;
 }) {
   return (
     <motion.div
-      className="flex items-center justify-between p-4 rounded-xl bg-[var(--surface-secondary)] border border-[var(--border-subtle)]"
-      whileHover={{ backgroundColor: 'var(--surface-tertiary)' }}
+      variants={itemVariants}
+      className={cn(
+        'rounded-2xl bg-[var(--soft-sidebar)] border border-[var(--soft-divider)]',
+        'shadow-[0_2px_8px_rgba(0,0,0,0.04)]',
+        hover && 'transition-all duration-200 hover:shadow-[0_4px_12px_rgba(0,0,0,0.06)] hover:border-[var(--soft-blue)]/20',
+        className
+      )}
     >
-      <div>
-        <div className="font-medium text-[var(--text-primary)]">{label}</div>
-        {description && <div className="text-xs text-[var(--text-muted)]">{description}</div>}
-      </div>
-      <motion.button
-        onClick={onToggle}
-        className={cn(
-          'w-12 h-6 rounded-full relative transition-colors',
-          enabled ? 'bg-[var(--neon-green)]' : 'bg-[var(--surface-elevated)]'
-        )}
-        whileTap={{ scale: 0.95 }}
-      >
-        <motion.div
-          className="absolute top-1 w-4 h-4 rounded-full bg-[var(--void)] shadow-lg"
-          animate={{ left: enabled ? '28px' : '4px' }}
-          transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-        />
-      </motion.button>
+      {children}
     </motion.div>
   );
 }
 
-// Provider card for Control Center
-function ProviderCard({
-  provider,
-  onSaveKey,
-  onRemoveKey,
-  onTest,
-  onSaveUrl,
+// Section Header
+function SectionHeader({
+  icon: Icon,
+  title,
+  description
 }: {
-  provider: Provider;
-  onSaveKey: (key: string) => void;
-  onRemoveKey: () => void;
-  onTest: () => Promise<{ success: boolean; latency_ms?: number; error?: string }>;
-  onSaveUrl?: (url: string) => void;
+  icon: React.ElementType;
+  title: string;
+  description?: string;
 }) {
-  const [keyInput, setKeyInput] = useState('');
-  const [urlInput, setUrlInput] = useState(provider.base_url || '');
-  const [isExpanded, setIsExpanded] = useState(false);
-  const [testResult, setTestResult] = useState<{ success: boolean; latency_ms?: number; error?: string } | null>(null);
-  const [isTesting, setIsTesting] = useState(false);
-  const [activeTab, setActiveTab] = useState<'key' | 'url'>('key');
+  return (
+    <div className="flex items-center gap-3 mb-6">
+      <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[var(--soft-blue)]/20 to-[var(--soft-purple)]/20 flex items-center justify-center">
+        <Icon className="w-5 h-5 text-[var(--soft-blue)]" />
+      </div>
+      <div>
+        <h3 className="text-lg font-semibold text-[var(--soft-text-primary)]">{title}</h3>
+        {description && <p className="text-sm text-[var(--soft-text-muted)]">{description}</p>}
+      </div>
+    </div>
+  );
+}
 
-  const isConfigured = provider.auth_status === 'configured' || provider.auth_status === 'not_set';
-  const hasNoKey = provider.auth_status === 'no_key' || provider.auth_status === 'missing';
+// Soft Input
+function SoftInput({
+  value,
+  onChange,
+  placeholder,
+  type = 'text',
+  icon: Icon,
+  className
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  type?: string;
+  icon?: React.ElementType;
+  className?: string;
+}) {
+  return (
+    <div className="relative">
+      {Icon && <Icon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--soft-text-muted)]" />}
+      <input
+        type={type}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className={cn(
+          'w-full px-4 py-2.5 rounded-xl',
+          'bg-[var(--soft-main)] border border-[var(--soft-divider)]',
+          'text-[var(--soft-text-primary)] text-sm',
+          'placeholder:text-[var(--soft-text-tertiary)]',
+          'focus:outline-none focus:border-[var(--soft-blue)]/50 focus:ring-2 focus:ring-[var(--soft-blue)]/10',
+          'transition-all duration-200',
+          Icon && 'pl-10',
+          className
+        )}
+      />
+    </div>
+  );
+}
 
-  const handleTest = async () => {
-    setIsTesting(true);
-    try {
-      const result = await onTest();
-      setTestResult(result);
-    } finally {
-      setIsTesting(false);
+// Soft Button
+function SoftButton({
+  children,
+  onClick,
+  variant = 'primary',
+  size = 'md',
+  icon: Icon,
+  disabled = false,
+  loading = false
+}: {
+  children?: React.ReactNode;
+  onClick?: () => void;
+  variant?: 'primary' | 'secondary' | 'ghost' | 'danger';
+  size?: 'sm' | 'md' | 'lg';
+  icon?: React.ElementType;
+  disabled?: boolean;
+  loading?: boolean;
+}) {
+  const variants = {
+    primary: 'bg-[var(--soft-blue)] text-white hover:bg-[var(--soft-blue-dark)] shadow-sm',
+    secondary: 'bg-[var(--soft-surface)] text-[var(--soft-text-primary)] hover:bg-[var(--soft-surface-hover)] border border-[var(--soft-divider)]',
+    ghost: 'bg-transparent text-[var(--soft-text-secondary)] hover:bg-[var(--soft-surface)] hover:text-[var(--soft-text-primary)]',
+    danger: 'bg-[var(--soft-pink)] text-white hover:bg-[#d97a8f]'
+  };
+
+  const sizes = {
+    sm: 'px-3 py-1.5 text-xs',
+    md: 'px-4 py-2 text-sm',
+    lg: 'px-6 py-3 text-base'
+  };
+
+  return (
+    <motion.button
+      whileTap={{ scale: 0.98 }}
+      onClick={onClick}
+      disabled={disabled || loading}
+      className={cn(
+        'inline-flex items-center justify-center gap-2 rounded-xl font-medium',
+        'transition-all duration-200',
+        'disabled:opacity-50 disabled:cursor-not-allowed',
+        variants[variant],
+        sizes[size]
+      )}
+    >
+      {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : Icon ? <Icon className="w-4 h-4" /> : null}
+      {children}
+    </motion.button>
+  );
+}
+
+// Status Badge
+function StatusBadge({ status }: { status: 'active' | 'inactive' | 'warning' | 'error' }) {
+  const styles = {
+    active: 'bg-[var(--soft-green)]/15 text-[var(--soft-green)]',
+    inactive: 'bg-[var(--soft-text-tertiary)]/15 text-[var(--soft-text-muted)]',
+    warning: 'bg-[var(--soft-amber)]/15 text-[var(--soft-amber)]',
+    error: 'bg-[var(--soft-pink)]/15 text-[var(--soft-pink)]'
+  };
+
+  const labels = { active: 'Active', inactive: 'Inactive', warning: 'Warning', error: 'Error' };
+
+  return (
+    <span className={cn('px-2.5 py-1 rounded-full text-xs font-medium', styles[status])}>
+      {labels[status]}
+    </span>
+  );
+}
+
+// Agent Model Editor Component
+interface AgentModelEditorProps {
+  agent: { id: string; name: string; model_provider?: string; model_name?: string; model?: { provider?: string; model?: string } };
+  providers: Array<{ id: string; display_name: string; auth_status: string }>;
+  models: Array<{ id: string; display_name?: string; provider: string; available: boolean; context_window?: number }>;
+  isEditing: boolean;
+  onEdit: () => void;
+  onCancel: () => void;
+  onSave: (modelValue: string) => void;
+  isSaving: boolean;
+}
+
+function AgentModelEditor({ agent, providers, models, isEditing, onEdit, onCancel, onSave, isSaving }: AgentModelEditorProps) {
+  const currentProvider = agent.model_provider || agent.model?.provider || 'groq';
+  const currentModel = agent.model_name || agent.model?.model || 'llama-3.3-70b-versatile';
+
+  const [selectedProvider, setSelectedProvider] = useState(currentProvider);
+  const [selectedModel, setSelectedModel] = useState(currentModel);
+
+  // Reset selections when entering edit mode
+  useEffect(() => {
+    if (isEditing) {
+      setSelectedProvider(currentProvider);
+      setSelectedModel(currentModel);
+    }
+  }, [isEditing, currentProvider, currentModel]);
+
+  // Get available models for selected provider
+  // For SiliconFlow, show models with full format (e.g., deepseek-ai/DeepSeek-V3)
+  const availableModels = models.filter(m => {
+    if (m.provider !== selectedProvider) return false;
+    // available might be undefined for custom models, treat as true
+    if (m.available === false) return false;
+    // For siliconflow, only show models with vendor prefix format
+    if (selectedProvider === 'siliconflow') {
+      return m.id.includes('/');
+    }
+    return true;
+  });
+
+  // Handle provider change
+  const handleProviderChange = (providerId: string) => {
+    setSelectedProvider(providerId);
+    // Auto-select first available model for this provider
+    const firstModel = models.find(m => m.provider === providerId && m.available);
+    setSelectedModel(firstModel?.id || '');
+  };
+
+  // Get the effective model ID to use
+  // For some providers (zhipu, siliconflow), we may need to use a different format
+  const getEffectiveModelId = (provider: string, modelId: string): string => {
+    // For zhipu, try to use the short alias format if the model ID has a date suffix
+    if (provider === 'zhipu') {
+      // glm-5-20250605 -> glm-5
+      if (modelId.match(/^glm-\d+-\d{8}$/)) {
+        return modelId.replace(/-\d{8}$/, '');
+      }
+      // glm-4.7 -> glm-4.7 (keep as is)
+    }
+    return modelId;
+  };
+
+  // Handle save
+  const handleSave = () => {
+    if (selectedProvider && selectedModel) {
+      const effectiveModel = getEffectiveModelId(selectedProvider, selectedModel);
+      onSave(`${selectedProvider}/${effectiveModel}`);
     }
   };
 
-  const getStatusColor = () => {
-    if (hasNoKey) return 'var(--neon-amber)';
-    if (isConfigured) return 'var(--neon-green)';
-    return 'var(--text-muted)';
-  };
-
-  const getStatusText = () => {
-    if (hasNoKey) return 'No Key Required';
-    if (isConfigured) return 'Configured';
-    return 'Not configured';
-  };
-
   return (
-    <motion.div
-      layout
-      className={cn(
-        'rounded-xl border overflow-hidden',
-        isConfigured && !hasNoKey
-          ? 'bg-[var(--neon-green)]/5 border-[var(--neon-green)]/20'
-          : hasNoKey
-          ? 'bg-[var(--neon-amber)]/5 border-[var(--neon-amber)]/20'
-          : 'bg-[var(--surface-secondary)] border-[var(--border-subtle)]'
-      )}
-    >
-      <button
-        onClick={() => setIsExpanded(!isExpanded)}
-        className="w-full p-4 flex items-center justify-between"
-      >
+    <div className="p-4 rounded-xl bg-[var(--soft-main)] border border-[var(--soft-divider)]">
+      <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          <div
-            className={cn(
-              'w-10 h-10 rounded-lg flex items-center justify-center',
-              isConfigured || hasNoKey ? 'bg-[var(--neon-green)]/20' : 'bg-[var(--surface-tertiary)]'
-            )}
-            style={{ backgroundColor: isConfigured || hasNoKey ? `${getStatusColor()}20` : undefined }}
-          >
-            <Key
-              className={cn('w-5 h-5')}
-              style={{ color: getStatusColor() }}
-            />
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[var(--soft-blue)]/20 to-[var(--soft-purple)]/20 flex items-center justify-center">
+            <MessageSquare className="w-5 h-5 text-[var(--soft-blue)]" />
           </div>
-          <div className="text-left">
-            <div className="font-medium text-[var(--text-primary)]">{provider.display_name}</div>
-            <div className="text-xs text-[var(--text-muted)]" style={{ color: getStatusColor() }}>
-              {getStatusText()}
-              {provider.model_count !== undefined && ` · ${provider.model_count} models`}
-            </div>
+          <div>
+            <h4 className="font-semibold text-[var(--soft-text-primary)]">{agent.name}</h4>
+            <p className="text-xs text-[var(--soft-text-muted)]">
+              {providers.find(p => p.id === currentProvider)?.display_name || currentProvider} / {currentModel}
+            </p>
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {testResult && (
-            <span className={cn(
-              'text-xs',
-              testResult.success ? 'text-[var(--neon-green)]' : 'text-[var(--neon-red)]'
-            )}>
-              {testResult.success ? `✓ ${testResult.latency_ms}ms` : '✗ Failed'}
-            </span>
+          {isEditing ? (
+            <>
+              <SoftButton size="sm" icon={Check} onClick={handleSave} loading={isSaving}>Save</SoftButton>
+              <SoftButton variant="ghost" size="sm" icon={X} onClick={onCancel} />
+            </>
+          ) : (
+            <SoftButton variant="secondary" size="sm" icon={Pencil} onClick={onEdit}>Change</SoftButton>
           )}
-          <div
-            className="w-2 h-2 rounded-full"
-            style={{ backgroundColor: getStatusColor() }}
-          />
         </div>
-      </button>
+      </div>
 
-      <AnimatePresence>
-        {isExpanded && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            className="px-4 pb-4 border-t border-[var(--border-subtle)]"
-          >
-            {/* Tabs for Key / URL */}
-            {provider.is_local ? (
-              <div className="flex gap-2 mt-3 mb-3">
+      {/* Editor Panel */}
+      {isEditing && (
+        <div className="mt-4 pt-4 border-t border-[var(--soft-divider)] space-y-4">
+          {/* Provider Select */}
+          <div>
+            <label className="block text-xs font-medium text-[var(--soft-text-muted)] mb-2">Provider</label>
+            <div className="flex flex-wrap gap-2">
+              {providers.map((provider) => (
                 <button
-                  onClick={() => setActiveTab('key')}
+                  key={provider.id}
+                  onClick={() => handleProviderChange(provider.id)}
                   className={cn(
-                    'px-3 py-1.5 text-xs rounded-lg transition-colors',
-                    activeTab === 'key'
-                      ? 'bg-[var(--neon-cyan)]/20 text-[var(--neon-cyan)]'
-                      : 'bg-[var(--surface-tertiary)] text-[var(--text-muted)]'
+                    'px-3 py-1.5 rounded-lg text-xs border transition-all',
+                    selectedProvider === provider.id
+                      ? 'bg-[var(--soft-blue)] text-white border-[var(--soft-blue)]'
+                      : 'bg-[var(--soft-surface)] text-[var(--soft-text-secondary)] border-[var(--soft-divider)] hover:border-[var(--soft-blue)]/50'
                   )}
                 >
-                  API Key
-                </button>
-                <button
-                  onClick={() => setActiveTab('url')}
-                  className={cn(
-                    'px-3 py-1.5 text-xs rounded-lg transition-colors',
-                    activeTab === 'url'
-                      ? 'bg-[var(--neon-cyan)]/20 text-[var(--neon-cyan)]'
-                      : 'bg-[var(--surface-tertiary)] text-[var(--text-muted)]'
+                  {provider.display_name}
+                  {provider.auth_status !== 'configured' && (
+                    <span className="ml-1 text-[10px] opacity-70">(not configured)</span>
                   )}
-                >
-                  Base URL
                 </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Model Select */}
+          <div>
+            <label className="block text-xs font-medium text-[var(--soft-text-muted)] mb-2">
+              Model ({availableModels.length} available)
+            </label>
+            {availableModels.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {availableModels.map((model) => (
+                  <button
+                    key={model.id}
+                    onClick={() => setSelectedModel(model.id)}
+                    title={`${model.id}${model.context_window ? ` • ${model.context_window.toLocaleString()} tokens` : ''}`}
+                    className={cn(
+                      'px-3 py-1.5 rounded-lg text-xs border transition-all flex items-center gap-1.5',
+                      selectedModel === model.id
+                        ? 'bg-[var(--soft-purple)] text-white border-[var(--soft-purple)]'
+                        : 'bg-[var(--soft-surface)] text-[var(--soft-text-secondary)] border-[var(--soft-divider)] hover:border-[var(--soft-purple)]/50'
+                    )}
+                  >
+                    <span>{model.display_name || model.id}</span>
+                    {model.context_window && (
+                      <span className={cn(
+                        'text-[10px] opacity-70',
+                        selectedModel === model.id ? 'text-white/70' : 'text-[var(--soft-text-muted)]'
+                      )}>
+                        ({(model.context_window / 1000).toFixed(0)}k)
+                      </span>
+                    )}
+                  </button>
+                ))}
               </div>
             ) : (
-              <div className="mt-3" />
-            )}
-
-            {/* Key Tab */}
-            {(!provider.is_local || activeTab === 'key') && (
-              <div className="space-y-3">
-                {provider.key_required !== false && (
-                  <>
-                    <div className="flex gap-2">
-                      <input
-                        type="password"
-                        value={keyInput}
-                        onChange={(e) => setKeyInput(e.target.value)}
-                        placeholder={isConfigured ? 'Update API key' : 'Enter API key'}
-                        className="flex-1 bg-[var(--surface-tertiary)] border border-[var(--border-default)] rounded-lg px-3 py-2 text-[var(--text-primary)] text-sm"
-                      />
-                      <motion.button
-                        onClick={() => {
-                          if (keyInput) {
-                            onSaveKey(keyInput);
-                            setKeyInput('');
-                          }
-                        }}
-                        disabled={!keyInput}
-                        className="px-4 py-2 rounded-lg bg-[var(--neon-cyan)] text-[var(--void)] text-sm font-medium disabled:opacity-50"
-                        whileHover={{ scale: 1.02 }}
-                        whileTap={{ scale: 0.98 }}
-                      >
-                        Save
-                      </motion.button>
-                    </div>
-                    {isConfigured && (
-                      <motion.button
-                        onClick={onRemoveKey}
-                        className="w-full px-4 py-2 rounded-lg bg-[var(--neon-red)]/10 text-[var(--neon-red)] text-sm font-medium border border-[var(--neon-red)]/20"
-                        whileHover={{ scale: 1.01 }}
-                        whileTap={{ scale: 0.99 }}
-                      >
-                        Remove API Key
-                      </motion.button>
-                    )}
-                  </>
-                )}
+              <div className="p-3 rounded-lg bg-[var(--soft-surface)] border border-[var(--soft-divider)]">
+                <p className="text-xs text-[var(--soft-text-tertiary)]">No available models for this provider</p>
+                <p className="text-[10px] text-[var(--soft-text-muted)] mt-1">
+                  Try adding a custom model in the Models tab, or check if the provider is configured.
+                </p>
               </div>
             )}
+          </div>
 
-            {/* URL Tab for local providers */}
-            {provider.is_local && activeTab === 'url' && onSaveUrl && (
-              <div className="space-y-3">
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={urlInput}
-                    onChange={(e) => setUrlInput(e.target.value)}
-                    placeholder="Enter base URL (e.g., http://localhost:11434)"
-                    className="flex-1 bg-[var(--surface-tertiary)] border border-[var(--border-default)] rounded-lg px-3 py-2 text-[var(--text-primary)] text-sm"
-                  />
-                  <motion.button
-                    onClick={() => onSaveUrl(urlInput)}
-                    disabled={!urlInput}
-                    className="px-4 py-2 rounded-lg bg-[var(--neon-cyan)] text-[var(--void)] text-sm font-medium disabled:opacity-50"
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
-                  >
-                    Save
-                  </motion.button>
-                </div>
-              </div>
-            )}
-
-            {/* Test Button */}
-            <motion.button
-              onClick={handleTest}
-              disabled={isTesting}
-              className="w-full mt-3 flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-[var(--surface-tertiary)] text-[var(--text-primary)] text-sm font-medium border border-[var(--border-default)]"
-              whileHover={{ scale: 1.01 }}
-              whileTap={{ scale: 0.99 }}
-            >
-              {isTesting ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <TestTube className="w-4 h-4" />
-              )}
-              Test Connection
-            </motion.button>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </motion.div>
+          {/* Selected Summary */}
+          <div className="flex items-center gap-2 text-xs">
+            <span className="text-[var(--soft-text-muted)]">Will be set to:</span>
+            <code className="px-2 py-0.5 rounded bg-[var(--soft-surface)] text-[var(--soft-text-primary)]">
+              {selectedProvider}/{selectedModel}
+            </code>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
+// Main Settings Component
 export function Settings() {
+  const { t, i18n } = useTranslation();
   const queryClient = useQueryClient();
+  const [activeTab, setActiveTab] = useState('providers');
 
-  const { data: providers = [], isLoading } = useQuery<Provider[]>({
+  // Local state
+  const [securityEnabled, setSecurityEnabled] = useState(true);
+  const [encryptionEnabled, setEncryptionEnabled] = useState(true);
+  const [auditLogging, setAuditLogging] = useState(false);
+  const [monthlyLimit, setMonthlyLimit] = useState(100);
+  const [apiKey, setApiKey] = useState('');
+  const [selectedProvider, setSelectedProvider] = useState('');
+  const [testingProvider, setTestingProvider] = useState<string | null>(null);
+  const [highlightProvider, setHighlightProvider] = useState<string | null>(null);
+  const [testResults, setTestResults] = useState<Record<string, { status: 'ok' | 'error'; latency_ms?: number; error?: string }>>({});
+  const [editingAgent, setEditingAgent] = useState<string | null>(null);
+
+  // Custom model form state
+  const [showCustomModelForm, setShowCustomModelForm] = useState(false);
+  const [customModelId, setCustomModelId] = useState('');
+  const [customModelProvider, setCustomModelProvider] = useState('openrouter');
+  const [customModelContext, setCustomModelContext] = useState(128000);
+  const [customModelMaxOutput, setCustomModelMaxOutput] = useState(8192);
+  const [customModelStatus, setCustomModelStatus] = useState('');
+  const [modelSearch, setModelSearch] = useState('');
+
+  // Fetch data using actual API methods - useAuthQuery waits for authReady automatically
+  const { data: providersData, isLoading: providersLoading } = useAuthQuery({
     queryKey: ['providers'],
-    queryFn: async () => {
-      const res = await api.get<{ providers: Provider[] }>('/api/providers');
-      return res.providers || [];
-    },
+    queryFn: () => api.listProviders()
   });
 
-  const saveKeyMutation = useMutation({
-    mutationFn: async ({ id, key }: { id: string; key: string }) => {
-      await api.post(`/api/providers/${encodeURIComponent(id)}/key`, { key });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['providers'] });
-    },
+  const { data: modelsData, isLoading: modelsLoading } = useAuthQuery({
+    queryKey: ['models'],
+    queryFn: () => api.listModels()
   });
 
-  const removeKeyMutation = useMutation({
-    mutationFn: async (id: string) => {
-      await api.removeProviderKey(id);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['providers'] });
-    },
+  const { data: securityStatus } = useAuthQuery<SecurityStatus>({
+    queryKey: ['security-status'],
+    queryFn: () => api.getSecurityStatus()
+  });
+
+  const { data: budgetData } = useAuthQuery({
+    queryKey: ['budget'],
+    queryFn: () => api.getBudget()
+  });
+
+  const { data: agentBudgets } = useAuthQuery({
+    queryKey: ['budget-agents'],
+    queryFn: () => api.getBudgetAgents()
+  });
+
+  const { data: a2aAgents } = useAuthQuery({
+    queryKey: ['a2a-agents'],
+    queryFn: () => api.listA2AAgents()
+  });
+
+  const { data: peers } = useAuthQuery({
+    queryKey: ['peers'],
+    queryFn: () => api.listPeers()
+  });
+
+  const { data: systemStatus } = useAuthQuery({
+    queryKey: ['system-status'],
+    queryFn: () => api.getSystemStatus()
+  });
+
+  const { data: systemVersion } = useAuthQuery({
+    queryKey: ['system-version'],
+    queryFn: () => api.getVersion()
+  });
+
+  // Agents data for Agent Models tab
+  const { data: agentsData, isLoading: agentsLoading } = useAuthQuery({
+    queryKey: ['agents'],
+    queryFn: () => api.listAgents()
+  });
+
+  // Mutations
+  const updateBudgetMutation = useMutation({
+    mutationFn: api.updateBudget.bind(api),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['budget'] })
   });
 
   const testProviderMutation = useMutation({
-    mutationFn: async (id: string) => {
-      return api.testProvider(id);
-    },
+    mutationFn: async (providerId: string) => {
+      setTestingProvider(providerId);
+      try {
+        const result = await api.testProvider(providerId);
+        setTestResults(prev => ({ ...prev, [providerId]: result }));
+        return result;
+      } catch (error) {
+        setTestResults(prev => ({
+          ...prev,
+          [providerId]: { status: 'error', error: error instanceof Error ? error.message : 'Test failed' }
+        }));
+        throw error;
+      } finally {
+        setTestingProvider(null);
+      }
+    }
   });
 
-  const saveUrlMutation = useMutation({
-    mutationFn: async ({ id, url }: { id: string; url: string }) => {
-      await api.saveProviderUrl(id, url);
+  const toggleProviderMutation = useMutation({
+    mutationFn: async ({ providerId, enabled }: { providerId: string; enabled: boolean }) => {
+      if (enabled) {
+        // Disable: remove the key
+        await api.removeProviderKey(providerId);
+        setApiKey('');
+      } else {
+        // Enable: need API key
+        if (selectedProvider === providerId && apiKey) {
+          await api.saveProviderKey(providerId, apiKey);
+        } else {
+          // Auto-select this provider and prompt for API key
+          setSelectedProvider(providerId);
+          setApiKey('');
+          setHighlightProvider(providerId);
+          setTimeout(() => setHighlightProvider(null), 2000);
+          throw new Error('Please enter an API key first');
+        }
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['providers'] });
-    },
-  });
-
-  return (
-    <div className="h-full overflow-auto p-6">
-      <div className="max-w-4xl mx-auto">
-        {/* Header */}
-        <motion.div
-          className="mb-8"
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-        >
-          <h1 className="text-3xl font-bold">
-            <NeonText color="cyan">Settings</NeonText>
-          </h1>
-          <p className="text-[var(--text-muted)] mt-1">Configure your EnterpriseClaw instance</p>
-        </motion.div>
-
-        {/* Control Center Grid */}
-        <Tabs defaultValue="providers" className="space-y-6">
-          <TabsList className="bg-[var(--surface-secondary)] border border-[var(--border-default)] p-1 rounded-xl flex flex-wrap">
-            <TabsTrigger
-              value="providers"
-              className="data-[state=active]:bg-[var(--neon-cyan)]/20 data-[state=active]:text-[var(--neon-cyan)]"
-            >
-              <Key className="w-4 h-4 mr-2" />
-              Providers
-            </TabsTrigger>
-            <TabsTrigger
-              value="models"
-              className="data-[state=active]:bg-[var(--neon-magenta)]/20 data-[state=active]:text-[var(--neon-magenta)]"
-            >
-              <Cpu className="w-4 h-4 mr-2" />
-              Models
-            </TabsTrigger>
-            <TabsTrigger
-              value="config"
-              className="data-[state=active]:bg-[var(--neon-amber)]/20 data-[state=active]:text-[var(--neon-amber)]"
-            >
-              <Settings2 className="w-4 h-4 mr-2" />
-              Config
-            </TabsTrigger>
-            <TabsTrigger
-              value="tools"
-              className="data-[state=active]:bg-[var(--neon-cyan)]/20 data-[state=active]:text-[var(--neon-cyan)]"
-            >
-              <Wrench className="w-4 h-4 mr-2" />
-              Tools
-            </TabsTrigger>
-            <TabsTrigger
-              value="security"
-              className="data-[state=active]:bg-[var(--neon-green)]/20 data-[state=active]:text-[var(--neon-green)]"
-            >
-              <Shield className="w-4 h-4 mr-2" />
-              Security
-            </TabsTrigger>
-            <TabsTrigger
-              value="network"
-              className="data-[state=active]:bg-[var(--neon-amber)]/20 data-[state=active]:text-[var(--neon-amber)]"
-            >
-              <Network className="w-4 h-4 mr-2" />
-              Network
-            </TabsTrigger>
-            <TabsTrigger
-              value="budget"
-              className="data-[state=active]:bg-[var(--neon-cyan)]/20 data-[state=active]:text-[var(--neon-cyan)]"
-            >
-              <DollarSign className="w-4 h-4 mr-2" />
-              Budget
-            </TabsTrigger>
-            <TabsTrigger
-              value="system"
-              className="data-[state=active]:bg-[var(--neon-green)]/20 data-[state=active]:text-[var(--neon-green)]"
-            >
-              <Info className="w-4 h-4 mr-2" />
-              System
-            </TabsTrigger>
-            <TabsTrigger
-              value="migration"
-              className="data-[state=active]:bg-[var(--neon-red)]/20 data-[state=active]:text-[var(--neon-red)]"
-            >
-              <ArrowRightLeft className="w-4 h-4 mr-2" />
-              Migration
-            </TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="providers" className="space-y-4">
-            <ProvidersPanel
-              providers={providers}
-              isLoading={isLoading}
-              onSaveKey={(id, key) => saveKeyMutation.mutate({ id, key })}
-              onRemoveKey={(id) => removeKeyMutation.mutate(id)}
-              onTest={async (id) => testProviderMutation.mutateAsync(id)}
-              onSaveUrl={(id, url) => saveUrlMutation.mutate({ id, url })}
-            />
-          </TabsContent>
-
-          <TabsContent value="security" className="space-y-4">
-            <SecurityPanel />
-          </TabsContent>
-
-          <TabsContent value="network" className="space-y-4">
-            <SpotlightCard glowColor="rgba(255, 184, 0, 0.1)">
-              <div className="p-6">
-                <div className="flex items-center gap-3 mb-6">
-                  <Network className="w-6 h-6 text-[var(--neon-amber)]" />
-                  <h3 className="text-lg font-semibold text-[var(--text-primary)]">OFP Network</h3>
-                </div>
-                <NetworkPanel />
-              </div>
-            </SpotlightCard>
-          </TabsContent>
-
-          <TabsContent value="models" className="space-y-4">
-            <ModelsPanel />
-          </TabsContent>
-
-          <TabsContent value="config" className="space-y-4">
-            <ConfigPanel />
-          </TabsContent>
-
-          <TabsContent value="tools" className="space-y-4">
-            <ToolsPanel />
-          </TabsContent>
-
-          <TabsContent value="migration" className="space-y-4">
-            <MigrationPanel />
-          </TabsContent>
-
-          <TabsContent value="budget" className="space-y-4">
-            <BudgetPanel />
-          </TabsContent>
-
-          <TabsContent value="system" className="space-y-4">
-            <SystemPanel />
-          </TabsContent>
-        </Tabs>
-      </div>
-    </div>
-  );
-}
-
-// ===== Providers Panel =====
-function ProvidersPanel({
-  providers,
-  isLoading,
-  onSaveKey,
-  onRemoveKey,
-  onTest,
-  onSaveUrl,
-}: {
-  providers: Provider[];
-  isLoading: boolean;
-  onSaveKey: (id: string, key: string) => void;
-  onRemoveKey: (id: string) => void;
-  onTest: (id: string) => Promise<{ success: boolean; latency_ms?: number; error?: string }>;
-  onSaveUrl: (id: string, url: string) => void;
-}) {
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [copilotState, setCopilotState] = useState<{
-    status: 'idle' | 'polling' | 'success' | 'error';
-    userCode?: string;
-    verificationUri?: string;
-    pollId?: string;
-    message?: string;
-  }>({ status: 'idle' });
-  const queryClient = useQueryClient();
-
-  const isCopilot = (p: Provider) => p.id === 'github-copilot' || p.id === 'copilot';
-
-  const startCopilotOAuth = async () => {
-    try {
-      const res = await api.startCopilotOAuth();
-      setCopilotState({
-        status: 'polling',
-        userCode: res.user_code,
-        verificationUri: res.verification_uri,
-        pollId: res.poll_id,
-      });
-
-      // Start polling
-      const interval = setInterval(async () => {
-        try {
-          const poll = await api.pollCopilotOAuth(res.poll_id);
-          if (poll.status === 'success' || poll.configured) {
-            clearInterval(interval);
-            setCopilotState({ status: 'success', message: poll.message || 'Connected!' });
-            queryClient.invalidateQueries({ queryKey: ['providers'] });
-          } else if (poll.status === 'error') {
-            clearInterval(interval);
-            setCopilotState({ status: 'error', message: poll.message || 'Failed' });
-          }
-        } catch (e) {
-          // Continue polling
-        }
-      }, 5000);
-
-      // Stop polling after 5 minutes
-      setTimeout(() => clearInterval(interval), 5 * 60 * 1000);
-    } catch (e) {
-      setCopilotState({ status: 'error', message: 'Failed to start OAuth' });
+      setApiKey('');
     }
-  };
-
-  return (
-    <>
-      <SpotlightCard glowColor="rgba(0, 255, 204, 0.1)">
-        <div className="p-6">
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center gap-3">
-              <Key className="w-6 h-6 text-[var(--neon-cyan)]" />
-              <h3 className="text-lg font-semibold text-[var(--text-primary)]">AI Providers</h3>
-            </div>
-            <motion.button
-              onClick={() => setShowAddModal(true)}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[var(--neon-cyan)] text-[var(--void)] text-sm font-medium"
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-            >
-              <Plus className="w-4 h-4" />
-              Add Custom
-            </motion.button>
-          </div>
-
-          {/* GitHub Copilot OAuth */}
-          {providers.some(isCopilot) && (
-            <div className="mb-6 p-4 rounded-xl bg-[var(--surface-tertiary)] border border-[var(--border-subtle)]">
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="font-medium text-[var(--text-primary)]">GitHub Copilot</div>
-                  <div className="text-xs text-[var(--text-muted)]">
-                    {copilotState.status === 'polling'
-                      ? 'Waiting for authorization...'
-                      : copilotState.status === 'success'
-                      ? 'Connected!'
-                      : 'Connect via OAuth'}
-                  </div>
-                </div>
-                {copilotState.status === 'idle' && (
-                  <motion.button
-                    onClick={startCopilotOAuth}
-                    className="px-4 py-2 rounded-lg bg-[var(--surface-secondary)] text-[var(--text-primary)] text-sm font-medium border border-[var(--border-default)]"
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
-                  >
-                    Connect
-                  </motion.button>
-                )}
-                {copilotState.status === 'polling' && (
-                  <div className="flex items-center gap-2">
-                    <Loader2 className="w-4 h-4 animate-spin text-[var(--neon-cyan)]" />
-                    <span className="text-sm text-[var(--text-muted)]">Polling...</span>
-                  </div>
-                )}
-              </div>
-              {copilotState.status === 'polling' && copilotState.userCode && (
-                <div className="mt-3 p-3 rounded-lg bg-[var(--surface-secondary)]">
-                  <div className="text-sm text-[var(--text-muted)] mb-1">Enter this code at GitHub:</div>
-                  <div className="text-2xl font-mono font-bold text-[var(--neon-cyan)] tracking-wider">
-                    {copilotState.userCode}
-                  </div>
-                  <a
-                    href={copilotState.verificationUri}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-sm text-[var(--neon-cyan)] hover:underline mt-2 inline-block"
-                  >
-                    Open GitHub →
-                  </a>
-                </div>
-              )}
-              {copilotState.message && copilotState.status !== 'polling' && (
-                <div
-                  className={cn(
-                    'mt-3 text-sm',
-                    copilotState.status === 'error' ? 'text-[var(--neon-red)]' : 'text-[var(--neon-green)]'
-                  )}
-                >
-                  {copilotState.message}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Provider List */}
-          <div className="space-y-3">
-            {isLoading ? (
-              <div className="flex items-center justify-center h-32">
-                <Loader2 className="w-6 h-6 text-[var(--neon-cyan)] animate-spin" />
-              </div>
-            ) : (
-              providers
-                .filter((p) => !isCopilot(p) || p.auth_status !== 'not_configured')
-                .map((provider) => (
-                  <ProviderCard
-                    key={provider.id}
-                    provider={provider}
-                    onSaveKey={(key) => onSaveKey(provider.id, key)}
-                    onRemoveKey={() => onRemoveKey(provider.id)}
-                    onTest={() => onTest(provider.id)}
-                    onSaveUrl={provider.is_local ? (url) => onSaveUrl(provider.id, url) : undefined}
-                  />
-                ))
-            )}
-          </div>
-        </div>
-      </SpotlightCard>
-
-      {/* Add Custom Provider Modal */}
-      <AnimatePresence>
-        {showAddModal && (
-          <AddCustomProviderModal onClose={() => setShowAddModal(false)} />
-        )}
-      </AnimatePresence>
-    </>
-  );
-}
-
-// ===== Add Custom Provider Modal =====
-function AddCustomProviderModal({ onClose }: { onClose: () => void }) {
-  const [formData, setFormData] = useState({
-    name: '',
-    baseUrl: '',
-    apiKey: '',
   });
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const queryClient = useQueryClient();
 
-  const handleSubmit = async () => {
-    if (!formData.name || !formData.baseUrl) return;
-    setIsSubmitting(true);
-    try {
-      // Add provider via URL endpoint (which creates a custom provider)
-      await api.saveProviderUrl(formData.name, formData.baseUrl);
-      if (formData.apiKey) {
-        await api.saveProviderKey(formData.name, formData.apiKey);
-      }
+  const saveProviderMutation = useMutation({
+    mutationFn: ({ providerId, key }: { providerId: string; key: string }) =>
+      api.saveProviderKey(providerId, key),
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['providers'] });
-      onClose();
-    } finally {
-      setIsSubmitting(false);
+      setApiKey('');
     }
-  };
-
-  return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
-      onClick={onClose}
-    >
-      <motion.div
-        initial={{ scale: 0.9, opacity: 0 }}
-        animate={{ scale: 1, opacity: 1 }}
-        exit={{ scale: 0.9, opacity: 0 }}
-        className="bg-[var(--surface-secondary)] rounded-xl border border-[var(--border-default)] p-6 w-full max-w-md"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-4">Add Custom Provider</h3>
-        <div className="space-y-3">
-          <div>
-            <label className="text-xs text-[var(--text-muted)] mb-1 block">Provider Name</label>
-            <input
-              type="text"
-              value={formData.name}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-              placeholder="e.g., my-custom-llm"
-              className="w-full bg-[var(--surface-tertiary)] border border-[var(--border-default)] rounded-lg px-3 py-2 text-[var(--text-primary)] text-sm"
-            />
-          </div>
-          <div>
-            <label className="text-xs text-[var(--text-muted)] mb-1 block">Base URL</label>
-            <input
-              type="text"
-              value={formData.baseUrl}
-              onChange={(e) => setFormData({ ...formData, baseUrl: e.target.value })}
-              placeholder="http://localhost:11434/v1"
-              className="w-full bg-[var(--surface-tertiary)] border border-[var(--border-default)] rounded-lg px-3 py-2 text-[var(--text-primary)] text-sm"
-            />
-          </div>
-          <div>
-            <label className="text-xs text-[var(--text-muted)] mb-1 block">API Key (optional)</label>
-            <input
-              type="password"
-              value={formData.apiKey}
-              onChange={(e) => setFormData({ ...formData, apiKey: e.target.value })}
-              placeholder="Enter API key if required"
-              className="w-full bg-[var(--surface-tertiary)] border border-[var(--border-default)] rounded-lg px-3 py-2 text-[var(--text-primary)] text-sm"
-            />
-          </div>
-        </div>
-        <div className="flex gap-2 mt-6">
-          <motion.button
-            onClick={onClose}
-            className="flex-1 px-4 py-2 rounded-lg bg-[var(--surface-tertiary)] text-[var(--text-primary)] text-sm font-medium"
-            whileTap={{ scale: 0.98 }}
-          >
-            Cancel
-          </motion.button>
-          <motion.button
-            onClick={handleSubmit}
-            disabled={!formData.name || !formData.baseUrl || isSubmitting}
-            className="flex-1 px-4 py-2 rounded-lg bg-[var(--neon-cyan)] text-[var(--void)] text-sm font-medium disabled:opacity-50"
-            whileTap={{ scale: 0.98 }}
-          >
-            {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Add Provider'}
-          </motion.button>
-        </div>
-      </motion.div>
-    </motion.div>
-  );
-}
-
-// ===== Security Panel =====
-function SecurityPanel() {
-  const { data: security, isLoading } = useQuery({
-    queryKey: ['security'],
-    queryFn: () => api.getSecurityStatus(),
   });
 
-  const [verifyResult, setVerifyResult] = useState<{
-    valid: boolean;
-    entries_checked: number;
-    message?: string;
-  } | null>(null);
-  const [isVerifying, setIsVerifying] = useState(false);
-
-  const handleVerify = async () => {
-    setIsVerifying(true);
-    try {
-      const result = await api.verifyAuditChain();
-      setVerifyResult(result);
-    } finally {
-      setIsVerifying(false);
+  // Agent model mutation
+  const updateAgentModelMutation = useMutation({
+    mutationFn: ({ agentId, modelValue }: { agentId: string; modelValue: string }) =>
+      api.setAgentModel(agentId, modelValue),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['agents'] });
     }
-  };
-
-  const formatConfigValue = (key: string, _value: boolean) => {
-    const labels: Record<string, string> = {
-      audit: 'Merkle Audit',
-      taint_tracking: 'Taint Tracking',
-      wasm_sandbox: 'WASM Sandbox',
-      gcra_rate_limit: 'GCRA Rate Limit',
-      ed25519_signing: 'Ed25519 Signing',
-      approval_workflow: 'Approval Workflow',
-      auto_approve_low_risk: 'Auto-approve Low Risk',
-      require_justification: 'Require Justification',
-    };
-    return labels[key] || key.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
-  };
-
-  const formatMonitoringValue = (_key: string, value: unknown) => {
-    if (typeof value === 'boolean') return value ? 'Active' : 'Inactive';
-    if (typeof value === 'number') return value.toString();
-    return String(value);
-  };
-
-  const coreFeatures = security?.features
-    ? Object.entries(security.features).filter(([k]) =>
-        ['audit', 'taint_tracking', 'wasm_sandbox', 'gcra_rate_limit', 'ed25519_signing'].includes(k)
-      )
-    : [];
-
-  const configurableFeatures = security?.configurable
-    ? Object.entries(security.configurable)
-    : [];
-
-  const monitoringFeatures = security?.monitoring
-    ? Object.entries(security.monitoring)
-    : [];
-
-  if (isLoading) {
-    return (
-      <SpotlightCard glowColor="rgba(0, 255, 136, 0.1)">
-        <div className="flex items-center justify-center h-32">
-          <Loader2 className="w-6 h-6 text-[var(--neon-green)] animate-spin" />
-        </div>
-      </SpotlightCard>
-    );
-  }
-
-  return (
-    <div className="space-y-4">
-      <SpotlightCard glowColor="rgba(0, 255, 136, 0.1)">
-        <div className="p-6">
-          <div className="flex items-center gap-3 mb-6">
-            <Shield className="w-6 h-6 text-[var(--neon-green)]" />
-            <h3 className="text-lg font-semibold text-[var(--text-primary)]">Security Systems</h3>
-          </div>
-
-          {/* Core Features */}
-          {coreFeatures.length > 0 && (
-            <div className="space-y-3">
-              <h4 className="text-sm font-medium text-[var(--text-muted)] uppercase tracking-wider">
-                Core Security
-              </h4>
-              {coreFeatures.map(([key, value]) => (
-                <SecurityFeatureRow
-                  key={key}
-                  label={formatConfigValue(key, value)}
-                  enabled={value}
-                  description={getSecurityDescription(key)}
-                />
-              ))}
-            </div>
-          )}
-
-          {/* Configurable Features */}
-          {configurableFeatures.length > 0 && (
-            <div className="space-y-3 mt-6">
-              <h4 className="text-sm font-medium text-[var(--text-muted)] uppercase tracking-wider">
-                Configurable
-              </h4>
-              {configurableFeatures.map(([key, value]) => (
-                <SecurityFeatureRow
-                  key={key}
-                  label={formatConfigValue(key, value)}
-                  enabled={value}
-                  description={getSecurityDescription(key)}
-                />
-              ))}
-            </div>
-          )}
-
-          {/* Audit Chain Verification */}
-          <div className="mt-6 pt-6 border-t border-[var(--border-subtle)]">
-            <div className="flex items-center justify-between">
-              <div>
-                <h4 className="font-medium text-[var(--text-primary)]">Audit Chain Verification</h4>
-                <p className="text-xs text-[var(--text-muted)]">
-                  {security?.chain_valid
-                    ? 'Chain integrity verified'
-                    : 'Verify tamper-proof audit chain'}
-                </p>
-              </div>
-              <motion.button
-                onClick={handleVerify}
-                disabled={isVerifying}
-                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[var(--neon-green)]/10 text-[var(--neon-green)] text-sm font-medium border border-[var(--neon-green)]/20"
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-              >
-                {isVerifying ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Check className="w-4 h-4" />
-                )}
-                Verify
-              </motion.button>
-            </div>
-
-            {verifyResult && (
-              <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className={cn(
-                  'mt-4 p-4 rounded-lg border',
-                  verifyResult.valid
-                    ? 'bg-[var(--neon-green)]/10 border-[var(--neon-green)]/30'
-                    : 'bg-[var(--neon-red)]/10 border-[var(--neon-red)]/30'
-                )}
-              >
-                <div className="flex items-center gap-2">
-                  {verifyResult.valid ? (
-                    <Check className="w-5 h-5 text-[var(--neon-green)]" />
-                  ) : (
-                    <AlertCircle className="w-5 h-5 text-[var(--neon-red)]" />
-                  )}
-                  <span
-                    className={cn(
-                      'font-medium',
-                      verifyResult.valid ? 'text-[var(--neon-green)]' : 'text-[var(--neon-red)]'
-                    )}
-                  >
-                    {verifyResult.valid ? 'Chain Valid' : 'Chain Invalid'}
-                  </span>
-                </div>
-                <div className="text-sm text-[var(--text-muted)] mt-1">
-                  Checked {verifyResult.entries_checked} entries
-                  {verifyResult.message && ` · ${verifyResult.message}`}
-                </div>
-              </motion.div>
-            )}
-          </div>
-        </div>
-      </SpotlightCard>
-
-      {/* Monitoring Stats */}
-      {monitoringFeatures.length > 0 && (
-        <SpotlightCard glowColor="rgba(0, 255, 204, 0.1)">
-          <div className="p-6">
-            <h4 className="text-sm font-medium text-[var(--text-muted)] uppercase tracking-wider mb-4">
-              Security Metrics
-            </h4>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-              {monitoringFeatures.map(([key, value]) => (
-                <div key={key} className="p-3 rounded-lg bg-[var(--surface-tertiary)]">
-                  <div className="text-xs text-[var(--text-muted)]">{key.replace(/_/g, ' ')}</div>
-                  <div className="text-lg font-semibold text-[var(--text-primary)]">
-                    {formatMonitoringValue(key, value)}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </SpotlightCard>
-      )}
-    </div>
-  );
-}
-
-function SecurityFeatureRow({
-  label,
-  enabled,
-  description,
-}: {
-  label: string;
-  enabled: boolean;
-  description?: string;
-}) {
-  return (
-    <motion.div
-      className="flex items-center justify-between p-4 rounded-xl bg-[var(--surface-tertiary)] border border-[var(--border-subtle)]"
-      whileHover={{ backgroundColor: 'var(--surface-secondary)' }}
-    >
-      <div>
-        <div className="font-medium text-[var(--text-primary)]">{label}</div>
-        {description && <div className="text-xs text-[var(--text-muted)]">{description}</div>}
-      </div>
-      <div
-        className={cn(
-          'px-2 py-1 rounded text-xs font-medium',
-          enabled
-            ? 'bg-[var(--neon-green)]/20 text-[var(--neon-green)]'
-            : 'bg-[var(--surface-elevated)] text-[var(--text-muted)]'
-        )}
-      >
-        {enabled ? 'Active' : 'Inactive'}
-      </div>
-    </motion.div>
-  );
-}
-
-function getSecurityDescription(key: string): string {
-  const descriptions: Record<string, string> = {
-    audit: 'Tamper-proof audit logging',
-    taint_tracking: 'Data lineage tracking',
-    wasm_sandbox: 'Isolated code execution',
-    gcra_rate_limit: 'Advanced rate limiting',
-    ed25519_signing: 'Cryptographic signatures',
-    approval_workflow: 'Require approval for risky actions',
-    auto_approve_low_risk: 'Automatically approve low-risk actions',
-    require_justification: 'Require justification for approvals',
-  };
-  return descriptions[key] || '';
-}
-
-// ===== Network Panel =====
-function NetworkPanel() {
-  const { data: networkStatus, isLoading } = useQuery({
-    queryKey: ['network-status'],
-    queryFn: () => api.getNetworkStatus(),
   });
 
-  const { data: peers, isLoading: peersLoading } = useQuery({
-    queryKey: ['peers'],
-    queryFn: () => api.listPeers(),
-    refetchInterval: 15000, // Poll every 15 seconds
-  });
-
-  const { data: a2aAgents } = useQuery({
-    queryKey: ['a2a-agents'],
-    queryFn: () => api.listA2AAgents(),
-  });
-
-  const [discoverUrl, setDiscoverUrl] = useState('');
-  const [discoverResult, setDiscoverResult] = useState<{ success: boolean; agent?: A2AAgent; error?: string } | null>(null);
-  const [isDiscovering, setIsDiscovering] = useState(false);
-
-  const handleDiscover = async () => {
-    if (!discoverUrl) return;
-    setIsDiscovering(true);
-    try {
-      const result = await api.discoverA2A(discoverUrl);
-      setDiscoverResult(result);
-    } finally {
-      setIsDiscovering(false);
+  // Custom model mutation
+  const addCustomModelMutation = useMutation({
+    mutationFn: async () => {
+      const id = customModelId.trim();
+      if (!id) throw new Error('Please enter a model ID');
+      setCustomModelStatus('Adding...');
+      await api.addCustomModel({
+        id,
+        provider: customModelProvider || 'openrouter',
+        context_window: customModelContext || 128000,
+        max_output_tokens: customModelMaxOutput || 8192,
+      });
+    },
+    onSuccess: () => {
+      setCustomModelStatus('Added!');
+      setCustomModelId('');
+      setShowCustomModelForm(false);
+      queryClient.invalidateQueries({ queryKey: ['models'] });
+    },
+    onError: (error) => {
+      setCustomModelStatus('Error: ' + (error instanceof Error ? error.message : 'Failed'));
     }
-  };
-
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center h-32">
-        <Loader2 className="w-6 h-6 text-[var(--neon-amber)] animate-spin" />
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-6">
-      {/* Network Status */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="p-4 rounded-xl bg-[var(--surface-tertiary)] border border-[var(--border-subtle)]">
-          <div className="text-xs text-[var(--text-muted)] uppercase tracking-wider mb-1">Status</div>
-          <div className={cn(
-            "text-lg font-semibold",
-            networkStatus?.enabled ? "text-[var(--neon-green)]" : "text-[var(--text-muted)]"
-          )}>
-            {networkStatus?.enabled ? "Enabled" : "Disabled"}
-          </div>
-        </div>
-        <div className="p-4 rounded-xl bg-[var(--surface-tertiary)] border border-[var(--border-subtle)]">
-          <div className="text-xs text-[var(--text-muted)] uppercase tracking-wider mb-1">Connected Peers</div>
-          <div className="text-lg font-semibold text-[var(--neon-cyan)]">
-            {networkStatus?.connected_peers || 0}
-          </div>
-        </div>
-        <div className="p-4 rounded-xl bg-[var(--surface-tertiary)] border border-[var(--border-subtle)]">
-          <div className="text-xs text-[var(--text-muted)] uppercase tracking-wider mb-1">Total Peers</div>
-          <div className="text-lg font-semibold text-[var(--text-primary)]">
-            {networkStatus?.total_peers || 0}
-          </div>
-        </div>
-      </div>
-
-      {/* A2A Discovery */}
-      <div>
-        <h4 className="text-sm font-medium text-[var(--text-primary)] mb-3">A2A Agent Discovery</h4>
-        <div className="p-4 rounded-xl bg-[var(--surface-tertiary)] border border-[var(--border-subtle)]">
-          <div className="flex gap-2 mb-4">
-            <input
-              type="text"
-              value={discoverUrl}
-              onChange={(e) => setDiscoverUrl(e.target.value)}
-              placeholder="Enter A2A agent URL (e.g., http://localhost:8080)"
-              className="flex-1 bg-[var(--surface-secondary)] border border-[var(--border-default)] rounded-lg px-3 py-2 text-[var(--text-primary)] text-sm"
-            />
-            <motion.button
-              onClick={handleDiscover}
-              disabled={!discoverUrl || isDiscovering}
-              className="px-4 py-2 rounded-lg bg-[var(--neon-amber)] text-[var(--void)] text-sm font-medium disabled:opacity-50"
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-            >
-              {isDiscovering ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Discover'}
-            </motion.button>
-          </div>
-
-          {discoverResult && (
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              className={cn(
-                'p-3 rounded-lg border',
-                discoverResult.success
-                  ? 'bg-[var(--neon-green)]/10 border-[var(--neon-green)]/30'
-                  : 'bg-[var(--neon-red)]/10 border-[var(--neon-red)]/30'
-              )}
-            >
-              {discoverResult.success && discoverResult.agent ? (
-                <div className="flex items-center gap-2">
-                  <Check className="w-4 h-4 text-[var(--neon-green)]" />
-                  <span className="text-sm text-[var(--text-primary)]">
-                    Found: {discoverResult.agent.name || discoverResult.agent.url}
-                  </span>
-                </div>
-              ) : (
-                <div className="flex items-center gap-2">
-                  <X className="w-4 h-4 text-[var(--neon-red)]" />
-                  <span className="text-sm text-[var(--neon-red)]">
-                    {discoverResult.error || 'Discovery failed'}
-                  </span>
-                </div>
-              )}
-            </motion.div>
-          )}
-        </div>
-      </div>
-
-      {/* A2A Agents List */}
-      {a2aAgents?.agents && a2aAgents.agents.length > 0 && (
-        <div>
-          <h4 className="text-sm font-medium text-[var(--text-primary)] mb-3">Known A2A Agents</h4>
-          <div className="space-y-2">
-            {a2aAgents.agents.map((agent) => (
-              <motion.div
-                key={agent.url}
-                initial={{ opacity: 0, x: -10 }}
-                animate={{ opacity: 1, x: 0 }}
-                className="flex items-center justify-between p-3 rounded-lg bg-[var(--surface-tertiary)] border border-[var(--border-subtle)]"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-2 h-2 rounded-full bg-[var(--neon-cyan)]" />
-                  <div>
-                    <div className="font-medium text-[var(--text-primary)]">{agent.name}</div>
-                    <div className="text-xs text-[var(--text-muted)]">{agent.url}</div>
-                  </div>
-                </div>
-              </motion.div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Peers List */}
-      <div>
-        <h4 className="text-sm font-medium text-[var(--text-primary)] mb-3">Connected Peers</h4>
-        {peersLoading ? (
-          <div className="flex items-center justify-center h-24">
-            <Loader2 className="w-5 h-5 text-[var(--neon-amber)] animate-spin" />
-          </div>
-        ) : peers && peers.length > 0 ? (
-          <div className="space-y-2">
-            {peers.map((peer) => (
-              <motion.div
-                key={peer.id}
-                initial={{ opacity: 0, x: -10 }}
-                animate={{ opacity: 1, x: 0 }}
-                className="flex items-center justify-between p-3 rounded-lg bg-[var(--surface-tertiary)] border border-[var(--border-subtle)]"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-2 h-2 rounded-full bg-[var(--neon-green)]" />
-                  <div>
-                    <div className="font-medium text-[var(--text-primary)]">{peer.name || peer.id.slice(0, 8)}</div>
-                    <div className="text-xs text-[var(--text-muted)]">{peer.address}</div>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <div className="text-sm text-[var(--text-primary)]">{peer.agent_count || 0} agents</div>
-                  <div className="text-xs text-[var(--text-muted)]">
-                    {peer.last_seen ? new Date(peer.last_seen).toLocaleString() : 'Unknown'}
-                  </div>
-                </div>
-              </motion.div>
-            ))}
-          </div>
-        ) : (
-          <div className="text-center py-8 text-[var(--text-muted)] bg-[var(--surface-tertiary)] rounded-xl border border-[var(--border-subtle)] border-dashed">
-            No peers connected
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ===== Models Panel =====
-function ModelsPanel() {
-  const [searchQuery, setSearchQuery] = useState('');
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [selectedProvider, setSelectedProvider] = useState<string>('all');
-  const [selectedTier, setSelectedTier] = useState<string>('all');
-  const queryClient = useQueryClient();
-
-  const { data: modelsData, isLoading } = useQuery({
-    queryKey: ['models'],
-    queryFn: () => api.listModels(),
   });
 
-  const models = modelsData?.models || [];
-
-  const deleteMutation = useMutation<unknown, Error, string>({
-    mutationFn: (id: string) => api.deleteCustomModel(id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['models'] }),
-  });
-
-  // Get unique providers and tiers for filters
-  const providers = Array.from(new Set(models.map(m => m.provider) || [])).sort();
-  const tiers = Array.from(new Set(models.map(m => m.tier).filter(Boolean) || [])).sort();
-
-  const filteredModels = models.filter(m => {
-    const matchesSearch =
-      m.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      m.display_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      m.provider.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesProvider = selectedProvider === 'all' || m.provider === selectedProvider;
-    const matchesTier = selectedTier === 'all' || m.tier === selectedTier;
-    return matchesSearch && matchesProvider && matchesTier;
-  }) || [];
-
-  const getTierColor = (tier?: string) => {
-    switch (tier) {
-      case 'frontier': return 'var(--neon-magenta)';
-      case 'smart': return 'var(--neon-cyan)';
-      case 'balanced': return 'var(--neon-green)';
-      case 'fast': return 'var(--neon-amber)';
-      default: return 'var(--text-muted)';
-    }
-  };
-
-  return (
-    <>
-      <SpotlightCard glowColor="rgba(255, 0, 136, 0.1)">
-        <div className="p-6">
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center gap-3">
-              <Cpu className="w-6 h-6 text-[var(--neon-magenta)]" />
-              <h3 className="text-lg font-semibold text-[var(--text-primary)]">Model Directory</h3>
-            </div>
-            <motion.button
-              onClick={() => setShowAddModal(true)}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[var(--neon-magenta)] text-[var(--void)] text-sm font-medium"
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-            >
-              <Plus className="w-4 h-4" />
-              Add Custom
-            </motion.button>
-          </div>
-
-          {/* Filters */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)]" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search models..."
-                className="w-full bg-[var(--surface-tertiary)] border border-[var(--border-default)] rounded-lg pl-10 pr-4 py-2 text-[var(--text-primary)] text-sm"
-              />
-            </div>
-            <select
-              value={selectedProvider}
-              onChange={(e) => setSelectedProvider(e.target.value)}
-              className="bg-[var(--surface-tertiary)] border border-[var(--border-default)] rounded-lg px-3 py-2 text-[var(--text-primary)] text-sm"
-            >
-              <option value="all">All Providers</option>
-              {providers.map((p) => (
-                <option key={p} value={p}>{p}</option>
-              ))}
-            </select>
-            <select
-              value={selectedTier}
-              onChange={(e) => setSelectedTier(e.target.value)}
-              className="bg-[var(--surface-tertiary)] border border-[var(--border-default)] rounded-lg px-3 py-2 text-[var(--text-primary)] text-sm"
-            >
-              <option value="all">All Tiers</option>
-              {tiers.map((t) => (
-                <option key={t} value={t}>{t}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* Models List */}
-          {isLoading ? (
-            <div className="flex items-center justify-center h-32">
-              <Loader2 className="w-6 h-6 text-[var(--neon-magenta)] animate-spin" />
-            </div>
-          ) : (
-            <div className="space-y-2 max-h-[400px] overflow-y-auto">
-              {filteredModels.map((model) => (
-                <motion.div
-                  key={model.id}
-                  initial={{ opacity: 0, y: 5 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className={cn(
-                    "flex items-center justify-between p-3 rounded-lg border transition-colors",
-                    model.available
-                      ? "bg-[var(--surface-tertiary)] border-[var(--border-subtle)] hover:border-[var(--border-default)]"
-                      : "bg-[var(--surface-tertiary)]/50 border-[var(--border-subtle)]/50 opacity-60"
-                  )}
-                >
-                  <div className="flex items-center gap-3">
-                    <div
-                      className="w-2 h-2 rounded-full"
-                      style={{ backgroundColor: getTierColor(model.tier) }}
-                    />
-                    <div>
-                      <div className="font-medium text-[var(--text-primary)]">
-                        {model.display_name || model.id}
-                        {!model.available && (
-                          <span className="ml-2 text-xs text-[var(--text-muted)]">(unavailable)</span>
-                        )}
-                      </div>
-                      <div className="text-xs text-[var(--text-muted)]">
-                        {model.provider} · {model.context_window?.toLocaleString()} context
-                        {model.supports_vision && ' · Vision'}
-                        {model.supports_tools && ' · Tools'}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    {/* Cost Display */}
-                    {(model.input_cost_per_m !== undefined || model.output_cost_per_m !== undefined) && (
-                      <div className="text-right text-xs text-[var(--text-muted)]">
-                        {model.input_cost_per_m !== undefined && (
-                          <div>${model.input_cost_per_m.toFixed(2)}/1M in</div>
-                        )}
-                        {model.output_cost_per_m !== undefined && (
-                          <div>${model.output_cost_per_m.toFixed(2)}/1M out</div>
-                        )}
-                      </div>
-                    )}
-                    {model.tier && (
-                      <span
-                        className="px-2 py-0.5 rounded text-xs font-medium"
-                        style={{
-                          backgroundColor: `${getTierColor(model.tier)}20`,
-                          color: getTierColor(model.tier),
-                        }}
-                      >
-                        {model.tier}
-                      </span>
-                    )}
-                    <motion.button
-                      onClick={() => deleteMutation.mutate(model.id)}
-                      disabled={deleteMutation.isPending}
-                      className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--neon-red)] hover:bg-[var(--neon-red)]/10 transition-colors"
-                      whileTap={{ scale: 0.95 }}
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </motion.button>
-                  </div>
-                </motion.div>
-              ))}
-            </div>
-          )}
-        </div>
-      </SpotlightCard>
-
-      {/* Add Custom Model Modal */}
-      <AnimatePresence>
-        {showAddModal && (
-          <AddCustomModelModal onClose={() => setShowAddModal(false)} />
-        )}
-      </AnimatePresence>
-    </>
-  );
-}
-
-// ===== Add Custom Model Modal =====
-function AddCustomModelModal({ onClose }: { onClose: () => void }) {
-  const [formData, setFormData] = useState({
-    id: '',
-    provider: 'openrouter',
-    context_window: 128000,
-    max_output_tokens: 8192,
-  });
-  const queryClient = useQueryClient();
-
-  const addMutation = useMutation({
-    mutationFn: () => api.addCustomModel(formData),
+  // Delete custom model mutation
+  const deleteCustomModelMutation = useMutation({
+    mutationFn: (modelId: string) => api.deleteCustomModel(modelId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['models'] });
-      onClose();
-    },
-  });
-
-  return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
-      onClick={onClose}
-    >
-      <motion.div
-        initial={{ scale: 0.9, opacity: 0 }}
-        animate={{ scale: 1, opacity: 1 }}
-        exit={{ scale: 0.9, opacity: 0 }}
-        className="bg-[var(--surface-secondary)] rounded-xl border border-[var(--border-default)] p-6 w-full max-w-md"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-4">Add Custom Model</h3>
-        <div className="space-y-3">
-          <div>
-            <label className="text-xs text-[var(--text-muted)] mb-1 block">Model ID</label>
-            <input
-              type="text"
-              value={formData.id}
-              onChange={(e) => setFormData({ ...formData, id: e.target.value })}
-              placeholder="e.g., gpt-4-custom"
-              className="w-full bg-[var(--surface-tertiary)] border border-[var(--border-default)] rounded-lg px-3 py-2 text-[var(--text-primary)] text-sm"
-            />
-          </div>
-          <div>
-            <label className="text-xs text-[var(--text-muted)] mb-1 block">Provider</label>
-            <input
-              type="text"
-              value={formData.provider}
-              onChange={(e) => setFormData({ ...formData, provider: e.target.value })}
-              placeholder="openrouter"
-              className="w-full bg-[var(--surface-tertiary)] border border-[var(--border-default)] rounded-lg px-3 py-2 text-[var(--text-primary)] text-sm"
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs text-[var(--text-muted)] mb-1 block">Context Window</label>
-              <input
-                type="number"
-                value={formData.context_window}
-                onChange={(e) => setFormData({ ...formData, context_window: parseInt(e.target.value) })}
-                placeholder="128000"
-                className="w-full bg-[var(--surface-tertiary)] border border-[var(--border-default)] rounded-lg px-3 py-2 text-[var(--text-primary)] text-sm"
-              />
-            </div>
-            <div>
-              <label className="text-xs text-[var(--text-muted)] mb-1 block">Max Output</label>
-              <input
-                type="number"
-                value={formData.max_output_tokens}
-                onChange={(e) => setFormData({ ...formData, max_output_tokens: parseInt(e.target.value) })}
-                placeholder="8192"
-                className="w-full bg-[var(--surface-tertiary)] border border-[var(--border-default)] rounded-lg px-3 py-2 text-[var(--text-primary)] text-sm"
-              />
-            </div>
-          </div>
-        </div>
-        <div className="flex gap-2 mt-4">
-          <motion.button
-            onClick={onClose}
-            className="flex-1 px-4 py-2 rounded-lg bg-[var(--surface-tertiary)] text-[var(--text-primary)] text-sm font-medium"
-            whileTap={{ scale: 0.98 }}
-          >
-            Cancel
-          </motion.button>
-          <motion.button
-            onClick={() => addMutation.mutate()}
-            disabled={!formData.id || !formData.provider || addMutation.isPending}
-            className="flex-1 px-4 py-2 rounded-lg bg-[var(--neon-magenta)] text-[var(--void)] text-sm font-medium disabled:opacity-50"
-            whileTap={{ scale: 0.98 }}
-          >
-            {addMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Add Model'}
-          </motion.button>
-        </div>
-      </motion.div>
-    </motion.div>
-  );
-}
-
-// ===== Config Panel =====
-function ConfigPanel() {
-  const { data: config, isLoading } = useQuery({
-    queryKey: ['config'],
-    queryFn: () => api.getConfig(),
-  });
-
-  const { data: schema, isLoading: schemaLoading } = useQuery({
-    queryKey: ['config-schema'],
-    queryFn: () => api.getConfigSchema(),
-  });
-
-  const updateMutation = useMutation({
-    mutationFn: (data: Record<string, unknown>) => api.updateConfig(data),
-  });
-
-  if (isLoading || schemaLoading) {
-    return (
-      <SpotlightCard glowColor="rgba(255, 184, 0, 0.1)">
-        <div className="flex items-center justify-center h-32">
-          <Loader2 className="w-6 h-6 text-[var(--neon-amber)] animate-spin" />
-        </div>
-      </SpotlightCard>
-    );
-  }
-
-  return (
-    <SpotlightCard glowColor="rgba(255, 184, 0, 0.1)">
-      <div className="p-6">
-        <div className="flex items-center gap-3 mb-6">
-          <Settings2 className="w-6 h-6 text-[var(--neon-amber)]" />
-          <h3 className="text-lg font-semibold text-[var(--text-primary)]">Runtime Configuration</h3>
-        </div>
-
-        <div className="space-y-4">
-          {schema?.schema && Object.entries(schema.schema).map(([key, field]) => (
-            <ConfigField
-              key={key}
-              name={key}
-              field={field as { type: string; description: string; default?: unknown; enum?: unknown[] }}
-              value={(config as Record<string, unknown> | undefined)?.[key]}
-              onChange={(value) => updateMutation.mutate({ [key]: value })}
-            />
-          ))}
-        </div>
-      </div>
-    </SpotlightCard>
-  );
-}
-
-// ===== Config Field Component =====
-function ConfigField({
-  name,
-  field,
-  value,
-  onChange,
-}: {
-  name: string;
-  field: { type: string; description: string; default?: unknown; enum?: unknown[] };
-  value: unknown;
-  onChange: (value: unknown) => void;
-}) {
-  const [localValue, setLocalValue] = useState(value);
-
-  useEffect(() => {
-    setLocalValue(value);
-  }, [value]);
-
-  const handleSave = () => {
-    onChange(localValue);
-  };
-
-  return (
-    <div className="p-4 rounded-lg bg-[var(--surface-tertiary)] border border-[var(--border-subtle)]">
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex-1">
-          <div className="font-medium text-[var(--text-primary)]">{name}</div>
-          <div className="text-xs text-[var(--text-muted)] mt-0.5">{field.description}</div>
-        </div>
-        <div className="flex items-center gap-2">
-          {field.type === 'boolean' && (
-            <motion.button
-              onClick={() => {
-                setLocalValue(!localValue);
-                onChange(!localValue);
-              }}
-              className={cn(
-                'w-12 h-6 rounded-full relative transition-colors',
-                localValue ? 'bg-[var(--neon-green)]' : 'bg-[var(--surface-elevated)]'
-              )}
-              whileTap={{ scale: 0.95 }}
-            >
-              <motion.div
-                className="absolute top-1 w-4 h-4 rounded-full bg-[var(--void)] shadow-lg"
-                animate={{ left: localValue ? '28px' : '4px' }}
-                transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-              />
-            </motion.button>
-          )}
-          {field.type === 'string' && field.enum && (
-            <select
-              value={String(localValue || field.default || '')}
-              onChange={(e) => {
-                setLocalValue(e.target.value);
-                onChange(e.target.value);
-              }}
-              className="bg-[var(--surface-secondary)] border border-[var(--border-default)] rounded-lg px-3 py-1.5 text-[var(--text-primary)] text-sm"
-            >
-              {field.enum.map((option) => (
-                <option key={String(option)} value={String(option)}>
-                  {String(option)}
-                </option>
-              ))}
-            </select>
-          )}
-          {field.type === 'string' && !field.enum && (
-            <input
-              type="text"
-              value={String(localValue || '')}
-              onChange={(e) => setLocalValue(e.target.value)}
-              onBlur={handleSave}
-              className="bg-[var(--surface-secondary)] border border-[var(--border-default)] rounded-lg px-3 py-1.5 text-[var(--text-primary)] text-sm w-48"
-            />
-          )}
-          {field.type === 'number' && (
-            <input
-              type="number"
-              value={Number(localValue || field.default || 0)}
-              onChange={(e) => setLocalValue(Number(e.target.value))}
-              onBlur={handleSave}
-              className="bg-[var(--surface-secondary)] border border-[var(--border-default)] rounded-lg px-3 py-1.5 text-[var(--text-primary)] text-sm w-24"
-            />
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ===== Tools Panel =====
-function ToolsPanel() {
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState<string>('all');
-
-  const { data: tools, isLoading } = useQuery({
-    queryKey: ['tools'],
-    queryFn: () => api.listTools(),
-  });
-
-  // 确保 tools 是数组，防止 API 返回异常数据
-  const toolsArray = Array.isArray(tools) ? tools : [];
-
-  const categories = ['all', ...Array.from(new Set(toolsArray.map(t => t.category).filter(Boolean) || []))];
-
-  const filteredTools = toolsArray.filter(tool => {
-    const matchesSearch = tool.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         tool.description?.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesCategory = selectedCategory === 'all' || tool.category === selectedCategory;
-    return matchesSearch && matchesCategory;
-  }) || [];
-
-  return (
-    <SpotlightCard glowColor="rgba(0, 255, 136, 0.1)">
-      <div className="p-6">
-        <div className="flex items-center gap-3 mb-6">
-          <Wrench className="w-6 h-6 text-[var(--neon-cyan)]" />
-          <h3 className="text-lg font-semibold text-[var(--text-primary)]">Tool Directory</h3>
-        </div>
-
-        {/* Search and Filter */}
-        <div className="flex flex-col sm:flex-row gap-3 mb-4">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)]" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search tools..."
-              className="w-full bg-[var(--surface-tertiary)] border border-[var(--border-default)] rounded-lg pl-10 pr-4 py-2 text-[var(--text-primary)] text-sm"
-            />
-          </div>
-          <select
-            value={selectedCategory}
-            onChange={(e) => setSelectedCategory(e.target.value)}
-            className="bg-[var(--surface-tertiary)] border border-[var(--border-default)] rounded-lg px-3 py-2 text-[var(--text-primary)] text-sm"
-          >
-            {categories.map(cat => (
-              <option key={cat} value={cat}>
-                {cat === 'all' ? 'All Categories' : cat}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        {/* Tools Grid */}
-        {isLoading ? (
-          <div className="flex items-center justify-center h-32">
-            <Loader2 className="w-6 h-6 text-[var(--neon-cyan)] animate-spin" />
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[400px] overflow-y-auto">
-            {filteredTools.map((tool, index) => (
-              <motion.div
-                key={tool.name}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: index * 0.05 }}
-                className="p-4 rounded-lg bg-[var(--surface-tertiary)] border border-[var(--border-subtle)] hover:border-[var(--border-default)] transition-colors"
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <div className="font-medium text-[var(--text-primary)]">{tool.name}</div>
-                    {tool.category && (
-                      <span className="text-xs text-[var(--neon-cyan)]">{tool.category}</span>
-                    )}
-                  </div>
-                </div>
-                {tool.description && (
-                  <p className="text-sm text-[var(--text-muted)] mt-2 line-clamp-2">{tool.description}</p>
-                )}
-              </motion.div>
-            ))}
-          </div>
-        )}
-      </div>
-    </SpotlightCard>
-  );
-}
-
-// ===== Budget Panel =====
-function BudgetPanel() {
-  const { data: budget, isLoading } = useQuery({
-    queryKey: ['budget'],
-    queryFn: () => api.getBudget(),
-  });
-
-  const { data: agentBudgets, isLoading: agentsLoading } = useQuery({
-    queryKey: ['budget-agents'],
-    queryFn: () => api.getBudgetAgents(),
-  });
-
-  const queryClient = useQueryClient();
-
-  const updateMutation = useMutation({
-    mutationFn: (data: { hourly_limit?: number; daily_limit?: number; monthly_limit?: number; alert_threshold?: number }) =>
-      api.updateBudget(data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['budget'] });
-    },
-  });
-
-  const [isEditing, setIsEditing] = useState(false);
-  const [editValues, setEditValues] = useState({
-    hourly_limit: 0,
-    daily_limit: 0,
-    monthly_limit: 0,
-    alert_threshold: 80,
-  });
-
-  useEffect(() => {
-    if (budget) {
-      setEditValues({
-        hourly_limit: budget.hourly_limit,
-        daily_limit: budget.daily_limit,
-        monthly_limit: budget.monthly_limit,
-        alert_threshold: budget.alert_threshold || 80,
-      });
     }
-  }, [budget]);
+  });
 
-  const handleSave = () => {
-    updateMutation.mutate(editValues);
-    setIsEditing(false);
-  };
+  // Derived values - ensure all data is array type with safe defaults
+  const providers = Array.isArray(providersData?.providers) ? providersData?.providers : [];
+  const models = Array.isArray(modelsData?.models) ? modelsData?.models : [];
+  const a2aAgentsList = Array.isArray(a2aAgents?.agents) ? a2aAgents?.agents : [];
+  const peersList = Array.isArray(peers) ? peers : [];
+  const agentBudgetsList = Array.isArray(agentBudgets) ? agentBudgets : [];
+  const agents = Array.isArray(agentsData) ? agentsData : [];
+  const totalLimit = budgetData?.monthly_limit || 100;
 
-  const formatCurrency = (val: number) => `$${val.toFixed(4)}`;
-
-  const getProgressColor = (spend: number, limit: number) => {
-    const pct = (spend / limit) * 100;
-    if (pct >= 100) return 'var(--neon-red)';
-    if (pct >= (budget?.alert_threshold || 80)) return 'var(--neon-amber)';
-    return 'var(--neon-green)';
-  };
-
-  if (isLoading) {
+  // Filtered models based on search
+  const filteredModels = models.filter((model) => {
+    if (!modelSearch.trim()) return true;
+    const q = modelSearch.toLowerCase().trim();
     return (
-      <SpotlightCard glowColor="rgba(0, 255, 204, 0.1)">
-        <div className="flex items-center justify-center h-32">
-          <Loader2 className="w-6 h-6 text-[var(--neon-cyan)] animate-spin" />
-        </div>
-      </SpotlightCard>
+      model.id.toLowerCase().includes(q) ||
+      (model.display_name || '').toLowerCase().includes(q) ||
+      model.provider.toLowerCase().includes(q)
     );
-  }
-
-  if (!budget) return null;
-
-  return (
-    <div className="space-y-4">
-      <SpotlightCard glowColor="rgba(0, 255, 204, 0.1)">
-        <div className="p-6">
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center gap-3">
-              <DollarSign className="w-6 h-6 text-[var(--neon-cyan)]" />
-              <h3 className="text-lg font-semibold text-[var(--text-primary)]">Budget Overview</h3>
-            </div>
-            <motion.button
-              onClick={() => setIsEditing(!isEditing)}
-              className="px-4 py-2 rounded-lg bg-[var(--surface-tertiary)] text-[var(--text-primary)] text-sm font-medium border border-[var(--border-default)]"
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-            >
-              {isEditing ? 'Cancel' : 'Edit Limits'}
-            </motion.button>
-          </div>
-
-          {isEditing ? (
-            <div className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {[
-                  { key: 'hourly_limit', label: 'Hourly Limit' },
-                  { key: 'daily_limit', label: 'Daily Limit' },
-                  { key: 'monthly_limit', label: 'Monthly Limit' },
-                  { key: 'alert_threshold', label: 'Alert Threshold (%)' },
-                ].map(({ key, label }) => (
-                  <div key={key}>
-                    <label className="text-xs text-[var(--text-muted)] mb-1 block">{label}</label>
-                    <input
-                      type="number"
-                      value={editValues[key as keyof typeof editValues]}
-                      onChange={(e) =>
-                        setEditValues({
-                          ...editValues,
-                          [key]: parseFloat(e.target.value) || 0,
-                        })
-                      }
-                      className="w-full bg-[var(--surface-tertiary)] border border-[var(--border-default)] rounded-lg px-3 py-2 text-[var(--text-primary)] text-sm"
-                    />
-                  </div>
-                ))}
-              </div>
-              <motion.button
-                onClick={handleSave}
-                disabled={updateMutation.isPending}
-                className="w-full px-4 py-2 rounded-lg bg-[var(--neon-cyan)] text-[var(--void)] text-sm font-medium disabled:opacity-50"
-                whileTap={{ scale: 0.98 }}
-              >
-                {updateMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Save Changes'}
-              </motion.button>
-            </div>
-          ) : (
-            <div className="space-y-6">
-              {/* Hourly */}
-              <BudgetProgress
-                label="Hourly"
-                spend={budget.hourly_spend}
-                limit={budget.hourly_limit}
-                color={getProgressColor(budget.hourly_spend, budget.hourly_limit)}
-              />
-              {/* Daily */}
-              <BudgetProgress
-                label="Daily"
-                spend={budget.daily_spend}
-                limit={budget.daily_limit}
-                color={getProgressColor(budget.daily_spend, budget.daily_limit)}
-              />
-              {/* Monthly */}
-              <BudgetProgress
-                label="Monthly"
-                spend={budget.monthly_spend}
-                limit={budget.monthly_limit}
-                color={getProgressColor(budget.monthly_spend, budget.monthly_limit)}
-              />
-            </div>
-          )}
-        </div>
-      </SpotlightCard>
-
-      {/* Agent Budgets */}
-      <SpotlightCard glowColor="rgba(255, 0, 136, 0.1)">
-        <div className="p-6">
-          <h4 className="text-sm font-medium text-[var(--text-muted)] uppercase tracking-wider mb-4">
-            Per-Agent Spending
-          </h4>
-          {agentsLoading ? (
-            <div className="flex items-center justify-center h-24">
-              <Loader2 className="w-5 h-5 text-[var(--neon-magenta)] animate-spin" />
-            </div>
-          ) : agentBudgets && agentBudgets.length > 0 ? (
-            <div className="space-y-2 max-h-[300px] overflow-y-auto">
-              {agentBudgets
-                .sort((a, b) => b.spend - a.spend)
-                .map((agent) => (
-                  <motion.div
-                    key={agent.agent_id}
-                    initial={{ opacity: 0, x: -10 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    className="flex items-center justify-between p-3 rounded-lg bg-[var(--surface-tertiary)] border border-[var(--border-subtle)]"
-                  >
-                    <div>
-                      <div className="font-medium text-[var(--text-primary)]">
-                        {agent.agent_name || agent.agent_id.slice(0, 8)}
-                      </div>
-                      <div className="text-xs text-[var(--text-muted)]">
-                        {agent.calls} calls · {agent.tokens.toLocaleString()} tokens
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <div className="font-medium text-[var(--text-primary)]">${agent.spend.toFixed(4)}</div>
-                    </div>
-                  </motion.div>
-                ))}
-            </div>
-          ) : (
-            <div className="text-center py-8 text-[var(--text-muted)]">No spending data yet</div>
-          )}
-        </div>
-      </SpotlightCard>
-    </div>
-  );
-}
-
-function BudgetProgress({
-  label,
-  spend,
-  limit,
-  color,
-}: {
-  label: string;
-  spend: number;
-  limit: number;
-  color: string;
-}) {
-  const pct = Math.min((spend / limit) * 100, 100);
-
-  return (
-    <div>
-      <div className="flex items-center justify-between mb-2">
-        <span className="text-sm font-medium text-[var(--text-primary)]">{label}</span>
-        <span className="text-sm text-[var(--text-muted)]">
-          ${spend.toFixed(4)} / ${limit.toFixed(2)}
-        </span>
-      </div>
-      <div className="h-2 bg-[var(--surface-tertiary)] rounded-full overflow-hidden">
-        <motion.div
-          className="h-full rounded-full"
-          style={{ backgroundColor: color }}
-          initial={{ width: 0 }}
-          animate={{ width: `${pct}%` }}
-          transition={{ duration: 0.5 }}
-        />
-      </div>
-      <div className="text-xs text-[var(--text-muted)] mt-1">{pct.toFixed(1)}% used</div>
-    </div>
-  );
-}
-
-// ===== System Panel =====
-function SystemPanel() {
-  const { data: version, isLoading: versionLoading } = useQuery({
-    queryKey: ['version'],
-    queryFn: () => api.getVersion(),
-  });
-
-  const { data: status, isLoading: statusLoading } = useQuery({
-    queryKey: ['system-status'],
-    queryFn: () => api.getSystemStatus(),
-  });
-
-  const { data: agents } = useQuery({
-    queryKey: ['agents'],
-    queryFn: () => api.listAgents(),
   });
 
   const formatUptime = (seconds: number) => {
     const days = Math.floor(seconds / 86400);
     const hours = Math.floor((seconds % 86400) / 3600);
     const mins = Math.floor((seconds % 3600) / 60);
-    if (days > 0) return `${days}d ${hours}h ${mins}m`;
-    if (hours > 0) return `${hours}h ${mins}m`;
-    return `${mins}m`;
-  };
-
-  if (versionLoading || statusLoading) {
-    return (
-      <SpotlightCard glowColor="rgba(0, 255, 136, 0.1)">
-        <div className="flex items-center justify-center h-32">
-          <Loader2 className="w-6 h-6 text-[var(--neon-green)] animate-spin" />
-        </div>
-      </SpotlightCard>
-    );
-  }
-
-  return (
-    <div className="space-y-4">
-      <SpotlightCard glowColor="rgba(0, 255, 136, 0.1)">
-        <div className="p-6">
-          <div className="flex items-center gap-3 mb-6">
-            <Info className="w-6 h-6 text-[var(--neon-green)]" />
-            <h3 className="text-lg font-semibold text-[var(--text-primary)]">System Information</h3>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {/* Version */}
-            <SystemInfoItem label="Version" value={version?.version || 'Unknown'} />
-            <SystemInfoItem label="Platform" value={version?.platform || 'Unknown'} />
-            <SystemInfoItem label="Architecture" value={version?.arch || 'Unknown'} />
-            <SystemInfoItem
-              label="Build Time"
-              value={version?.build_time ? new Date(version.build_time).toLocaleString() : 'Unknown'}
-            />
-            {version?.git_commit && (
-              <SystemInfoItem
-                label="Git Commit"
-                value={version.git_commit.slice(0, 8)}
-                valueClass="font-mono"
-              />
-            )}
-
-            <div className="col-span-1 sm:col-span-2 border-t border-[var(--border-subtle)] my-2" />
-
-            {/* Status */}
-            {status && (
-              <>
-                <SystemInfoItem
-                  label="Uptime"
-                  value={formatUptime(status.uptime_seconds)}
-                  icon={<RefreshCw className="w-4 h-4 text-[var(--neon-cyan)]" />}
-                />
-                <SystemInfoItem
-                  label="Agents"
-                  value={`${status.agent_count} (${agents?.length || 0} loaded)`}
-                  icon={<Cpu className="w-4 h-4 text-[var(--neon-magenta)]" />}
-                />
-                {status.default_provider && (
-                  <SystemInfoItem label="Default Provider" value={status.default_provider} />
-                )}
-                {status.default_model && (
-                  <SystemInfoItem label="Default Model" value={status.default_model} />
-                )}
-              </>
-            )}
-          </div>
-        </div>
-      </SpotlightCard>
-    </div>
-  );
-}
-
-function SystemInfoItem({
-  label,
-  value,
-  icon,
-  valueClass,
-}: {
-  label: string;
-  value: string;
-  icon?: React.ReactNode;
-  valueClass?: string;
-}) {
-  return (
-    <div className="p-3 rounded-lg bg-[var(--surface-tertiary)]">
-      <div className="text-xs text-[var(--text-muted)] mb-1">{label}</div>
-      <div className={cn('font-medium text-[var(--text-primary)] flex items-center gap-2', valueClass)}>
-        {icon}
-        {value}
-      </div>
-    </div>
-  );
-}
-
-// ===== Migration Panel =====
-function MigrationPanel() {
-  const [step, setStep] = useState<'intro' | 'manual' | 'preview' | 'result' | 'not_found'>('intro');
-  const [scanPath, setScanPath] = useState('');
-  const [scanResult, setScanResult] = useState<{ path: string; agents: number; channels: number; skills: number; sessions: number; workflows: number; total_size_mb: number } | null>(null);
-  const [migrationResult, setMigrationResult] = useState<{ success: boolean; migrated: { agents: number; workflows: number; skills: number }; errors: string[] } | null>(null);
-  const [isDryRun, setIsDryRun] = useState(true);
-  const [includeSessions, setIncludeSessions] = useState(false);
-  const [detectError, setDetectError] = useState<string | null>(null);
-
-  const detectMutation = useMutation({
-    mutationFn: () => api.detectMigration(),
-    onSuccess: (data) => {
-      if (data.detected && data.source) {
-        setScanPath(data.source);
-        handleScan(data.source);
-      } else {
-        setStep('not_found');
-        setDetectError(data.reason || 'Could not detect OpenClaw installation');
-      }
-    },
-    onError: () => {
-      setStep('not_found');
-      setDetectError('Auto-detection failed');
-    },
-  });
-
-  const scanMutation = useMutation({
-    mutationFn: (path: string) => api.scanMigrationPath(path),
-    onSuccess: (data) => {
-      // 确保数据包含所有必要字段
-      const enrichedData = {
-        path: scanPath || '/.openclaw',
-        agents: data.agents || 0,
-        channels: (data as { channels?: number }).channels || 0,
-        skills: data.skills || 0,
-        sessions: data.sessions || 0,
-        workflows: data.workflows || 0,
-        total_size_mb: data.total_size_mb || 0,
-      };
-      setScanResult(enrichedData);
-      setStep('preview');
-    },
-    onError: () => {
-      setStep('not_found');
-      setDetectError('Scan failed - invalid path');
-    },
-  });
-
-  const migrateMutation = useMutation({
-    mutationFn: () => {
-      if (!scanResult) throw new Error('No scan result');
-      return api.runMigration({
-        path: scanResult.path,
-        dry_run: isDryRun,
-        include_sessions: includeSessions,
-      });
-    },
-    onSuccess: (data) => {
-      setMigrationResult(data);
-      setStep('result');
-    },
-  });
-
-  const handleScan = (path: string) => {
-    if (!path) return;
-    setScanPath(path);
-    scanMutation.mutate(path);
-  };
-
-  const handleMigrate = () => {
-    migrateMutation.mutate();
-  };
-
-  const reset = () => {
-    setStep('intro');
-    setScanResult(null);
-    setMigrationResult(null);
-    setScanPath('');
-    setDetectError(null);
+    return days > 0 ? `${days}d ${hours}h ${mins}m` : `${hours}h ${mins}m`;
   };
 
   return (
-    <SpotlightCard glowColor="rgba(255, 0, 68, 0.1)">
-      <div className="p-6">
-        <div className="flex items-center gap-3 mb-6">
-          <ArrowRightLeft className="w-6 h-6 text-[var(--neon-red)]" />
-          <h3 className="text-lg font-semibold text-[var(--text-primary)]">OpenClaw Migration</h3>
+    <div className="min-h-screen bg-[var(--soft-bg)]">
+      {/* Header */}
+      <header className="sticky top-0 z-30 bg-[var(--soft-bg)]/80 backdrop-blur-xl border-b border-[var(--soft-divider)]">
+        <div className="max-w-6xl mx-auto px-6 py-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-[var(--soft-blue)] to-[var(--soft-purple)] flex items-center justify-center shadow-lg shadow-[var(--soft-blue)]/20">
+                <Settings2 className="w-6 h-6 text-white" />
+              </div>
+              <div>
+                <h1 className="text-2xl font-bold text-[var(--soft-text-primary)]">{t('settings.title')}</h1>
+                <p className="text-sm text-[var(--soft-text-muted)]">Configure your EnterpriseClaw instance</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="px-4 py-2 rounded-xl bg-[var(--soft-sidebar)] border border-[var(--soft-divider)]">
+                <span className="text-xs text-[var(--soft-text-muted)]">Version</span>
+                <p className="text-sm font-medium text-[var(--soft-text-primary)]">{systemVersion?.version || '1.0.0'}</p>
+              </div>
+              <SoftButton variant="secondary" icon={RefreshCw} onClick={() => queryClient.invalidateQueries()}>
+                Refresh
+              </SoftButton>
+            </div>
+          </div>
         </div>
+      </header>
 
-        {step === 'intro' && (
-          <div className="space-y-4">
-            <p className="text-[var(--text-muted)]">
-              Migrate your data from OpenClaw to OpenFang. This will transfer agents, workflows, skills, and sessions.
-            </p>
-            <div className="flex flex-wrap gap-2">
-              <motion.button
-                onClick={() => detectMutation.mutate()}
-                disabled={detectMutation.isPending}
-                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[var(--neon-red)] text-[var(--void)] text-sm font-medium disabled:opacity-50"
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-              >
-                {detectMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
-                Auto-detect OpenClaw
-              </motion.button>
-              <motion.button
-                onClick={() => setStep('manual')}
-                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[var(--surface-tertiary)] text-[var(--text-primary)] text-sm font-medium border border-[var(--border-default)]"
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-              >
-                <Database className="w-4 h-4" />
-                Manual Path
-              </motion.button>
-            </div>
+      {/* Main Content */}
+      <main className="max-w-6xl mx-auto px-6 py-8">
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
+          {/* Tab Navigation */}
+          <div className="mb-8">
+            <TabsList className="bg-[var(--soft-sidebar)] p-1.5 rounded-2xl border border-[var(--soft-divider)]">
+              {[
+                { id: 'providers', label: t('settings.tabs.providers'), icon: Key },
+                { id: 'models', label: t('settings.tabs.models'), icon: Cpu },
+                { id: 'agents', label: t('settings.tabs.agents'), icon: Bot },
+                { id: 'security', label: t('settings.tabs.security'), icon: Shield },
+                { id: 'budget', label: t('settings.tabs.budget'), icon: Wallet },
+                { id: 'network', label: t('settings.tabs.network'), icon: Network },
+                { id: 'system', label: t('settings.tabs.system'), icon: Server }
+              ].map((tab) => (
+                <TabsTrigger
+                  key={tab.id}
+                  value={tab.id}
+                  className={cn(
+                    'flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-all',
+                    'data-[state=active]:bg-[var(--soft-blue)] data-[state=active]:text-white',
+                    'data-[state=inactive]:text-[var(--soft-text-muted)] data-[state=inactive]:hover:text-[var(--soft-text-primary)]'
+                  )}
+                >
+                  <tab.icon className="w-4 h-4" />
+                  {tab.label}
+                </TabsTrigger>
+              ))}
+            </TabsList>
           </div>
-        )}
 
-        {step === 'manual' && (
-          <div className="space-y-4">
-            <p className="text-[var(--text-muted)]">
-              Enter the path to your OpenClaw data directory:
-            </p>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={scanPath}
-                onChange={(e) => setScanPath(e.target.value)}
-                placeholder="e.g., ~/.openclaw or C:\\Users\\name\\.openclaw"
-                className="flex-1 bg-[var(--surface-tertiary)] border border-[var(--border-default)] rounded-lg px-3 py-2 text-[var(--text-primary)] text-sm"
-              />
-              <motion.button
-                onClick={() => handleScan(scanPath)}
-                disabled={!scanPath || scanMutation.isPending}
-                className="px-4 py-2 rounded-lg bg-[var(--neon-cyan)] text-[var(--void)] text-sm font-medium disabled:opacity-50"
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-              >
-                {scanMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Scan'}
-              </motion.button>
-            </div>
-            <motion.button
-              onClick={() => setStep('intro')}
-              className="w-full px-4 py-2 rounded-lg bg-[var(--surface-tertiary)] text-[var(--text-primary)] text-sm font-medium"
-              whileTap={{ scale: 0.98 }}
-            >
-              Back
-            </motion.button>
-          </div>
-        )}
-
-        {step === 'not_found' && (
-          <div className="space-y-4">
-            <div className="p-4 rounded-lg bg-[var(--neon-amber)]/10 border border-[var(--neon-amber)]/30">
-              <div className="flex items-center gap-2 mb-2">
-                <AlertCircle className="w-5 h-5 text-[var(--neon-amber)]" />
-                <span className="font-medium text-[var(--neon-amber)]">OpenClaw Not Found</span>
+          {/* Providers Tab */}
+          <TabsContent value="providers">
+            <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-6">
+              <SectionHeader icon={Key} title="AI Providers" description="Configure API keys and connection settings" />
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {providersLoading ? (
+                  <div className="col-span-2 flex items-center justify-center py-16">
+                    <Loader2 className="w-8 h-8 text-[var(--soft-blue)] animate-spin" />
+                  </div>
+                ) : providers.map((provider: Provider) => (
+                  <SoftCard key={provider.id} className="p-6">
+                    <div className="flex items-start justify-between mb-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[var(--soft-blue)]/20 to-[var(--soft-purple)]/20 flex items-center justify-center">
+                          <Key className="w-6 h-6 text-[var(--soft-blue)]" />
+                        </div>
+                        <div>
+                          <h4 className="font-semibold text-[var(--soft-text-primary)]">{provider.display_name}</h4>
+                          <p className="text-xs text-[var(--soft-text-muted)]">{provider.id}</p>
+                        </div>
+                      </div>
+                      <StatusBadge status={provider.auth_status === 'configured' ? 'active' : 'inactive'} />
+                    </div>
+                    <div className="space-y-4">
+                      <div>
+                        <label className="block text-sm font-medium text-[var(--soft-text-secondary)] mb-2">API Key</label>
+                        <div className={cn(
+                          'rounded-xl transition-all duration-300',
+                          highlightProvider === provider.id && 'ring-2 ring-[var(--soft-blue)] ring-offset-2 ring-offset-[var(--soft-sidebar)]'
+                        )}>
+                          <SoftInput
+                            type={selectedProvider === provider.id ? 'text' : 'password'}
+                            value={selectedProvider === provider.id ? apiKey : (provider.auth_status === 'configured' ? '••••••••••••••••' : '')}
+                            onChange={(v) => { setSelectedProvider(provider.id); setApiKey(v); }}
+                            placeholder={provider.auth_status === 'configured' ? 'Key saved ••••••••' : 'Enter API key'}
+                            icon={Key}
+                          />
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-between pt-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm text-[var(--soft-text-muted)]">Enabled</span>
+                          <SoftToggle
+                            enabled={provider.auth_status === 'configured'}
+                            onToggle={() => toggleProviderMutation.mutate({
+                              providerId: provider.id,
+                              enabled: provider.auth_status === 'configured'
+                            })}
+                            disabled={toggleProviderMutation.isPending}
+                          />
+                        </div>
+                        <div className="flex flex-col items-end gap-1">
+                          <div className="flex gap-2">
+                            <SoftButton
+                              variant="secondary" size="sm" icon={TestTube}
+                              onClick={() => testProviderMutation.mutate(provider.id)}
+                              loading={testingProvider === provider.id}
+                            >
+                              Test
+                            </SoftButton>
+                            <SoftButton
+                              size="sm"
+                              icon={Save}
+                              onClick={() => {
+                                if (selectedProvider === provider.id && apiKey) {
+                                  saveProviderMutation.mutate({ providerId: provider.id, key: apiKey });
+                                } else {
+                                  setSelectedProvider(provider.id);
+                                }
+                              }}
+                              loading={saveProviderMutation.isPending}
+                            >
+                              Save
+                            </SoftButton>
+                          </div>
+                          {testResults[provider.id] && (
+                            <span className={cn(
+                              'text-xs',
+                              testResults[provider.id].status === 'ok'
+                                ? 'text-[var(--soft-green)]'
+                                : 'text-[var(--soft-pink)]'
+                            )}>
+                              {testResults[provider.id].status === 'ok'
+                                ? `${testResults[provider.id].latency_ms}ms`
+                                : testResults[provider.id].error}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </SoftCard>
+                ))}
               </div>
-              <p className="text-sm text-[var(--text-muted)]">
-                {detectError || 'Could not detect an OpenClaw installation.'}
-              </p>
-            </div>
-            <div className="flex gap-2">
-              <motion.button
-                onClick={() => setStep('manual')}
-                className="flex-1 px-4 py-2 rounded-lg bg-[var(--neon-cyan)] text-[var(--void)] text-sm font-medium"
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-              >
-                Enter Path Manually
-              </motion.button>
-              <motion.button
-                onClick={reset}
-                className="flex-1 px-4 py-2 rounded-lg bg-[var(--surface-tertiary)] text-[var(--text-primary)] text-sm font-medium"
-                whileTap={{ scale: 0.98 }}
-              >
-                Try Again
-              </motion.button>
-            </div>
-          </div>
-        )}
-
-        {step === 'preview' && scanResult && (
-          <div className="space-y-4">
-            <div className="text-sm text-[var(--text-muted)] mb-2">
-              Path: <code className="text-[var(--neon-cyan)]">{scanResult.path}</code>
-            </div>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <div className="p-3 rounded-lg bg-[var(--surface-tertiary)] border border-[var(--border-subtle)] text-center">
-                <div className="text-2xl font-bold text-[var(--neon-cyan)]">{scanResult.agents}</div>
-                <div className="text-xs text-[var(--text-muted)]">Agents</div>
-              </div>
-              <div className="p-3 rounded-lg bg-[var(--surface-tertiary)] border border-[var(--border-subtle)] text-center">
-                <div className="text-2xl font-bold text-[var(--neon-green)]">{scanResult.workflows}</div>
-                <div className="text-xs text-[var(--text-muted)]">Workflows</div>
-              </div>
-              <div className="p-3 rounded-lg bg-[var(--surface-tertiary)] border border-[var(--border-subtle)] text-center">
-                <div className="text-2xl font-bold text-[var(--neon-amber)]">{scanResult.skills}</div>
-                <div className="text-xs text-[var(--text-muted)]">Skills</div>
-              </div>
-              <div className="p-3 rounded-lg bg-[var(--surface-tertiary)] border border-[var(--border-subtle)] text-center">
-                <div className="text-2xl font-bold text-[var(--neon-magenta)]">{scanResult.total_size_mb.toFixed(1)}</div>
-                <div className="text-xs text-[var(--text-muted)]">MB</div>
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={isDryRun}
-                  onChange={(e) => setIsDryRun(e.target.checked)}
-                  className="rounded border-[var(--border-default)]"
-                />
-                <span className="text-sm text-[var(--text-muted)]">Dry run (preview only, no changes)</span>
-              </label>
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={includeSessions}
-                  onChange={(e) => setIncludeSessions(e.target.checked)}
-                  className="rounded border-[var(--border-default)]"
-                />
-                <span className="text-sm text-[var(--text-muted)]">Include session history ({scanResult.sessions} sessions)</span>
-              </label>
-            </div>
-
-            <div className="flex gap-2">
-              <motion.button
-                onClick={() => setStep('manual')}
-                className="flex-1 px-4 py-2 rounded-lg bg-[var(--surface-tertiary)] text-[var(--text-primary)] text-sm font-medium"
-                whileTap={{ scale: 0.98 }}
-              >
-                Back
-              </motion.button>
-              <motion.button
-                onClick={handleMigrate}
-                disabled={migrateMutation.isPending}
-                className="flex-1 px-4 py-2 rounded-lg bg-[var(--neon-red)] text-[var(--void)] text-sm font-medium disabled:opacity-50"
-                whileTap={{ scale: 0.98 }}
-              >
-                {migrateMutation.isPending ? (
-                  <Loader2 className="w-4 h-4 animate-spin mx-auto" />
-                ) : isDryRun ? (
-                  'Preview Migration'
-                ) : (
-                  'Start Migration'
-                )}
-              </motion.button>
-            </div>
-          </div>
-        )}
-
-        {step === 'result' && migrationResult && (
-          <div className="space-y-4">
-            <div className={cn(
-              "p-4 rounded-lg border",
-              migrationResult.success
-                ? "bg-[var(--neon-green)]/10 border-[var(--neon-green)]/30"
-                : "bg-[var(--neon-red)]/10 border-[var(--neon-red)]/30"
-            )}>
-              <div className="flex items-center gap-2 mb-2">
-                {migrationResult.success ? (
-                  <Check className="w-5 h-5 text-[var(--neon-green)]" />
-                ) : (
-                  <AlertCircle className="w-5 h-5 text-[var(--neon-red)]" />
-                )}
-                <span className={cn(
-                  "font-medium",
-                  migrationResult.success ? "text-[var(--neon-green)]" : "text-[var(--neon-red)]"
-                )}>
-                  {migrationResult.success ? (isDryRun ? 'Preview Complete' : 'Migration Successful') : 'Migration Failed'}
-                </span>
-              </div>
-              <div className="text-sm text-[var(--text-muted)]">
-                {migrationResult.migrated.agents} agents, {migrationResult.migrated.workflows} workflows, {migrationResult.migrated.skills} skills
-                {isDryRun && ' (preview only)'}
-              </div>
-              {migrationResult.errors.length > 0 && (
-                <div className="mt-2 text-sm text-[var(--neon-red)]">
-                  Errors: {migrationResult.errors.join(', ')}
+              <SoftCard className="p-6 border-dashed border-2 border-[var(--soft-divider)] hover:border-[var(--soft-blue)]/30 cursor-pointer">
+                <div className="flex items-center justify-center gap-3 py-4">
+                  <div className="w-10 h-10 rounded-xl bg-[var(--soft-surface)] flex items-center justify-center">
+                    <Plus className="w-5 h-5 text-[var(--soft-text-muted)]" />
+                  </div>
+                  <span className="text-[var(--soft-text-muted)] font-medium">Add Custom Provider</span>
                 </div>
-              )}
-            </div>
-            <motion.button
-              onClick={reset}
-              className="w-full px-4 py-2 rounded-lg bg-[var(--surface-tertiary)] text-[var(--text-primary)] text-sm font-medium"
-              whileTap={{ scale: 0.98 }}
-            >
-              {isDryRun ? 'Run Real Migration' : 'Start Over'}
-            </motion.button>
-          </div>
-        )}
-      </div>
-    </SpotlightCard>
+              </SoftCard>
+            </motion.div>
+          </TabsContent>
+
+          {/* Models Tab */}
+          <TabsContent value="models">
+            <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-6">
+              <SectionHeader icon={Cpu} title="AI Models" description="Manage available models and settings" />
+              <SoftCard className="p-6">
+                <div className="flex items-center justify-between mb-6">
+                  <div className="relative flex-1 max-w-md">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--soft-text-muted)]" />
+                    <input
+                      type="text"
+                      placeholder="Search models..."
+                      value={modelSearch}
+                      onChange={(e) => setModelSearch(e.target.value)}
+                      className={cn(
+                        'w-full pl-10 pr-4 py-2.5 rounded-xl bg-[var(--soft-main)] border border-[var(--soft-divider)]',
+                        'text-[var(--soft-text-primary)] text-sm placeholder:text-[var(--soft-text-tertiary)]',
+                        'focus:outline-none focus:border-[var(--soft-blue)]/50'
+                      )}
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <SoftButton
+                      icon={Plus}
+                      variant="secondary"
+                      onClick={() => setShowCustomModelForm(true)}
+                    >
+                      Add Custom
+                    </SoftButton>
+                    <SoftButton icon={RefreshCw} variant="secondary">Sync</SoftButton>
+                  </div>
+                </div>
+
+                {/* Custom Model Form */}
+                {showCustomModelForm && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="mb-6 p-4 rounded-xl bg-[var(--soft-main)] border border-[var(--soft-blue)]/30"
+                  >
+                    <div className="flex items-center justify-between mb-4">
+                      <h4 className="font-medium text-[var(--soft-text-primary)]">Add Custom Model</h4>
+                      <button
+                        onClick={() => setShowCustomModelForm(false)}
+                        className="text-[var(--soft-text-muted)] hover:text-[var(--soft-text-primary)]"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                      <div>
+                        <label className="block text-xs font-medium text-[var(--soft-text-muted)] mb-2">Model ID</label>
+                        <input
+                          type="text"
+                          value={customModelId}
+                          onChange={(e) => setCustomModelId(e.target.value)}
+                          placeholder="e.g., glm-5"
+                          className={cn(
+                            'w-full px-3 py-2 rounded-lg bg-[var(--soft-surface)] border border-[var(--soft-divider)]',
+                            'text-[var(--soft-text-primary)] text-sm',
+                            'focus:outline-none focus:border-[var(--soft-blue)]/50'
+                          )}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-[var(--soft-text-muted)] mb-2">Provider</label>
+                        <select
+                          value={customModelProvider}
+                          onChange={(e) => setCustomModelProvider(e.target.value)}
+                          className={cn(
+                            'w-full px-3 py-2 rounded-lg bg-[var(--soft-surface)] border border-[var(--soft-divider)]',
+                            'text-[var(--soft-text-primary)] text-sm',
+                            'focus:outline-none focus:border-[var(--soft-blue)]/50'
+                          )}
+                        >
+                          {providers.map((p) => (
+                            <option key={p.id} value={p.id}>{p.display_name}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-[var(--soft-text-muted)] mb-2">Context Window</label>
+                        <input
+                          type="number"
+                          value={customModelContext}
+                          onChange={(e) => setCustomModelContext(Number(e.target.value))}
+                          className={cn(
+                            'w-full px-3 py-2 rounded-lg bg-[var(--soft-surface)] border border-[var(--soft-divider)]',
+                            'text-[var(--soft-text-primary)] text-sm',
+                            'focus:outline-none focus:border-[var(--soft-blue)]/50'
+                          )}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-[var(--soft-text-muted)] mb-2">Max Output Tokens</label>
+                        <input
+                          type="number"
+                          value={customModelMaxOutput}
+                          onChange={(e) => setCustomModelMaxOutput(Number(e.target.value))}
+                          className={cn(
+                            'w-full px-3 py-2 rounded-lg bg-[var(--soft-surface)] border border-[var(--soft-divider)]',
+                            'text-[var(--soft-text-primary)] text-sm',
+                            'focus:outline-none focus:border-[var(--soft-blue)]/50'
+                          )}
+                        />
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      {customModelStatus && (
+                        <span className={cn(
+                          'text-sm',
+                          customModelStatus.startsWith('Error') ? 'text-[var(--soft-pink)]' : 'text-[var(--soft-green)]'
+                        )}>
+                          {customModelStatus}
+                        </span>
+                      )}
+                      <div className="flex items-center gap-2 ml-auto">
+                        <SoftButton
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setShowCustomModelForm(false)}
+                        >
+                          Cancel
+                        </SoftButton>
+                        <SoftButton
+                          size="sm"
+                          icon={Plus}
+                          loading={addCustomModelMutation.isPending}
+                          onClick={() => addCustomModelMutation.mutate()}
+                        >
+                          Add Model
+                        </SoftButton>
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+
+                <ScrollArea className="h-[400px]">
+                  <div className="space-y-3">
+                    {modelsLoading ? (
+                      <div className="flex items-center justify-center py-8">
+                        <Loader2 className="w-6 h-6 text-[var(--soft-blue)] animate-spin" />
+                      </div>
+                    ) : filteredModels.map((model) => (
+                      <div
+                        key={model.id}
+                        className={cn(
+                          'flex items-center justify-between p-4 rounded-xl bg-[var(--soft-main)] border border-[var(--soft-divider)]',
+                          'hover:border-[var(--soft-blue)]/30 transition-colors'
+                        )}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-lg bg-[var(--soft-surface)] flex items-center justify-center">
+                            <Cpu className="w-5 h-5 text-[var(--soft-blue)]" />
+                          </div>
+                          <div>
+                            <h4 className="font-medium text-[var(--soft-text-primary)]">{model.display_name || model.id}</h4>
+                            <p className="text-xs text-[var(--soft-text-muted)]">{model.provider} · {model.id}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-4">
+                          <div className="text-right">
+                            <p className="text-sm text-[var(--soft-text-secondary)]">{model.context_window?.toLocaleString()} tokens</p>
+                            <p className="text-xs text-[var(--soft-text-muted)]">context</p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {!model.display_name?.includes('Official') && (
+                              <button
+                                onClick={() => {
+                                  if (confirm(`Delete custom model "${model.id}"?`)) {
+                                    deleteCustomModelMutation.mutate(model.id);
+                                  }
+                                }}
+                                className="p-2 rounded-lg text-[var(--soft-text-muted)] hover:text-[var(--soft-pink)] hover:bg-[var(--soft-pink)]/10 transition-colors"
+                                title="Delete custom model"
+                              >
+                                <X className="w-4 h-4" />
+                              </button>
+                            )}
+                            <SoftToggle enabled={model.available} onToggle={() => {}} />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </ScrollArea>
+              </SoftCard>
+            </motion.div>
+          </TabsContent>
+
+          {/* Agents Tab */}
+          <TabsContent value="agents">
+            <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-6">
+              <SectionHeader icon={Bot} title="Agent Models" description="Configure provider and model for each agent" />
+              <SoftCard className="p-6">
+                {agentsLoading ? (
+                  <div className="flex items-center justify-center py-16">
+                    <Loader2 className="w-8 h-8 text-[var(--soft-blue)] animate-spin" />
+                  </div>
+                ) : agents.length === 0 ? (
+                  <div className="text-center py-16">
+                    <Bot className="w-12 h-12 mx-auto mb-4 text-[var(--soft-text-muted)]" />
+                    <p className="text-[var(--soft-text-muted)]">No agents yet</p>
+                    <p className="text-sm text-[var(--soft-text-tertiary)] mt-2">Create an agent from the sidebar to get started</p>
+                  </div>
+                ) : (
+                  <ScrollArea className="h-[500px]">
+                    <div className="space-y-4">
+                      {agents.map((agent) => (
+                        <AgentModelEditor
+                          key={agent.id}
+                          agent={agent}
+                          providers={providers}
+                          models={models}
+                          isEditing={editingAgent === agent.id}
+                          onEdit={() => setEditingAgent(agent.id)}
+                          onCancel={() => setEditingAgent(null)}
+                          onSave={(modelValue) => updateAgentModelMutation.mutate(
+                            { agentId: agent.id, modelValue },
+                            { onSuccess: () => setEditingAgent(null) }
+                          )}
+                          isSaving={updateAgentModelMutation.isPending}
+                        />
+                      ))}
+                    </div>
+                  </ScrollArea>
+                )}
+              </SoftCard>
+            </motion.div>
+          </TabsContent>
+
+          {/* Security Tab */}
+          <TabsContent value="security">
+            <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-6">
+              <SectionHeader icon={Shield} title="Security Settings" description="Configure authentication and encryption" />
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <SoftCard className="p-6 lg:col-span-1">
+                  <h4 className="font-semibold text-[var(--soft-text-primary)] mb-4">Security Status</h4>
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-[var(--soft-text-secondary)]">Audit Enabled</span>
+                      {securityStatus?.audit_enabled ? <Check className="w-5 h-5 text-[var(--soft-green)]" /> : <X className="w-5 h-5 text-[var(--soft-pink)]" />}
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-[var(--soft-text-secondary)]">Chain Valid</span>
+                      {securityStatus?.chain_valid ? <Check className="w-5 h-5 text-[var(--soft-green)]" /> : <X className="w-5 h-5 text-[var(--soft-pink)]" />}
+                    </div>
+                  </div>
+                  <div className="mt-6 p-4 rounded-xl bg-[var(--soft-green)]/10 border border-[var(--soft-green)]/20">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Shield className="w-4 h-4 text-[var(--soft-green)]" />
+                      <span className="font-medium text-[var(--soft-green)]">Secure</span>
+                    </div>
+                    <p className="text-xs text-[var(--soft-text-muted)]">Your instance is properly secured</p>
+                  </div>
+                </SoftCard>
+                <SoftCard className="p-6 lg:col-span-2">
+                  <h4 className="font-semibold text-[var(--soft-text-primary)] mb-4">Configuration</h4>
+                  <div className="space-y-4">
+                    {[
+                      { icon: Shield, label: 'Authentication', desc: 'Require login to access', state: securityEnabled, setState: setSecurityEnabled },
+                      { icon: Key, label: 'Encryption at Rest', desc: 'Encrypt stored data', state: encryptionEnabled, setState: setEncryptionEnabled },
+                      { icon: Database, label: 'Audit Logging', desc: 'Log all system actions', state: auditLogging, setState: setAuditLogging }
+                    ].map((item) => (
+                      <div key={item.label} className="flex items-center justify-between p-4 rounded-xl bg-[var(--soft-main)]">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-lg bg-[var(--soft-surface)] flex items-center justify-center">
+                            <item.icon className="w-5 h-5 text-[var(--soft-blue)]" />
+                          </div>
+                          <div>
+                            <p className="font-medium text-[var(--soft-text-primary)]">{item.label}</p>
+                            <p className="text-xs text-[var(--soft-text-muted)]">{item.desc}</p>
+                          </div>
+                        </div>
+                        <SoftToggle enabled={item.state} onToggle={() => item.setState(!item.state)} />
+                      </div>
+                    ))}
+                  </div>
+                </SoftCard>
+              </div>
+            </motion.div>
+          </TabsContent>
+
+          {/* Budget Tab */}
+          <TabsContent value="budget">
+            <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-6">
+              <SectionHeader icon={Wallet} title="Budget Management" description="Set spending limits and track usage" />
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <SoftCard className="p-6 lg:col-span-1">
+                  <h4 className="font-semibold text-[var(--soft-text-primary)] mb-4">Global Budget</h4>
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-[var(--soft-text-secondary)]">Budget Enabled</span>
+                      <SoftToggle enabled={true} onToggle={() => {}} />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-[var(--soft-text-secondary)] mb-2">Monthly Limit (USD)</label>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[var(--soft-text-muted)]">$</span>
+                        <input
+                          type="number"
+                          value={monthlyLimit}
+                          onChange={(e) => setMonthlyLimit(Number(e.target.value))}
+                          className={cn(
+                            'flex-1 px-3 py-2 rounded-xl bg-[var(--soft-main)] border border-[var(--soft-divider)]',
+                            'text-[var(--soft-text-primary)] text-sm focus:outline-none focus:border-[var(--soft-blue)]/50'
+                          )}
+                        />
+                      </div>
+                    </div>
+                    <SoftButton
+                      onClick={() => updateBudgetMutation.mutate({ monthly_limit: monthlyLimit })}
+                      loading={updateBudgetMutation.isPending}
+                    >
+                      Save Budget
+                    </SoftButton>
+                  </div>
+                  <div className="mt-6 pt-6 border-t border-[var(--soft-divider)]">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-sm text-[var(--soft-text-muted)]">Monthly Usage</span>
+                      <span className="text-sm font-medium text-[var(--soft-text-primary)]">
+                        ${(budgetData?.monthly_spend || 0).toFixed(2)} / {totalLimit}
+                      </span>
+                    </div>
+                    <div className="h-2 rounded-full bg-[var(--soft-surface)] overflow-hidden">
+                      <div
+                        className="h-full rounded-full bg-gradient-to-r from-[var(--soft-blue)] to-[var(--soft-purple)]"
+                        style={{ width: `${Math.min(((budgetData?.monthly_spend || 0) / totalLimit) * 100, 100)}%` }}
+                      />
+                    </div>
+                  </div>
+                </SoftCard>
+                <SoftCard className="p-6 lg:col-span-2">
+                  <div className="flex items-center justify-between mb-4">
+                    <h4 className="font-semibold text-[var(--soft-text-primary)]">Per-Agent Usage</h4>
+                  </div>
+                  <ScrollArea className="h-[300px]">
+                    <div className="space-y-3">
+                      {agentBudgetsList.map((agentBudget) => (
+                        <div key={agentBudget.agent_id} className="flex items-center justify-between p-4 rounded-xl bg-[var(--soft-main)]">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-[var(--soft-blue)]/20 to-[var(--soft-purple)]/20 flex items-center justify-center">
+                              <Zap className="w-5 h-5 text-[var(--soft-blue)]" />
+                            </div>
+                            <div>
+                              <p className="font-medium text-[var(--soft-text-primary)]">{agentBudget.agent_name || agentBudget.agent_id}</p>
+                              <p className="text-xs text-[var(--soft-text-muted)]">{agentBudget.calls} calls · {agentBudget.tokens.toLocaleString()} tokens</p>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-sm font-medium text-[var(--soft-text-primary)]">${agentBudget.spend.toFixed(2)}</p>
+                            <p className="text-xs text-[var(--soft-text-muted)]">spent</p>
+                          </div>
+                        </div>
+                      ))}
+                      {!agentBudgetsList.length && (
+                        <div className="text-center py-8 text-[var(--soft-text-muted)]">
+                          <Wallet className="w-10 h-10 mx-auto mb-2 opacity-50" />
+                          <p className="text-sm">No agent usage data yet</p>
+                        </div>
+                      )}
+                    </div>
+                  </ScrollArea>
+                </SoftCard>
+              </div>
+            </motion.div>
+          </TabsContent>
+
+          {/* Network Tab */}
+          <TabsContent value="network">
+            <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-6">
+              <SectionHeader icon={Network} title="Network & A2A" description="Manage peer connections and A2A agents" />
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <SoftCard className="p-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <Network className="w-5 h-5 text-[var(--soft-blue)]" />
+                      <h4 className="font-semibold text-[var(--soft-text-primary)]">Connected Peers</h4>
+                    </div>
+                    <StatusBadge status={peers && peers.length > 0 ? 'active' : 'inactive'} />
+                  </div>
+                  <ScrollArea className="h-[250px]">
+                    <div className="space-y-3">
+                      {peersList.map((peer) => (
+                        <div key={peer.id} className="flex items-center justify-between p-3 rounded-xl bg-[var(--soft-main)]">
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-lg bg-[var(--soft-surface)] flex items-center justify-center">
+                              <Server className="w-4 h-4 text-[var(--soft-blue)]" />
+                            </div>
+                            <div>
+                              <p className="font-medium text-[var(--soft-text-primary)] text-sm">{peer.name || peer.id}</p>
+                              <p className="text-xs text-[var(--soft-text-muted)]">{peer.address}</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className={cn('w-2 h-2 rounded-full', peer.status === 'online' ? 'bg-[var(--soft-green)]' : 'bg-[var(--soft-amber)]')} />
+                            <span className="text-xs text-[var(--soft-text-muted)]">{peer.agent_count || 0} agents</span>
+                          </div>
+                        </div>
+                      ))}
+                      {!peersList.length && (
+                        <div className="text-center py-8 text-[var(--soft-text-muted)]">
+                          <Network className="w-10 h-10 mx-auto mb-2 opacity-50" />
+                          <p className="text-sm">No peers connected</p>
+                        </div>
+                      )}
+                    </div>
+                  </ScrollArea>
+                </SoftCard>
+                <SoftCard className="p-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <ArrowRightLeft className="w-5 h-5 text-[var(--soft-purple)]" />
+                      <h4 className="font-semibold text-[var(--soft-text-primary)]">A2A Agents</h4>
+                    </div>
+                    <SoftButton variant="secondary" size="sm" icon={Plus}>Add</SoftButton>
+                  </div>
+                  <ScrollArea className="h-[250px]">
+                    <div className="space-y-3">
+                      {a2aAgentsList.map((agent, idx) => (
+                        <div key={idx} className="flex items-center justify-between p-3 rounded-xl bg-[var(--soft-main)]">
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[var(--soft-purple)]/20 to-[var(--soft-pink)]/20 flex items-center justify-center">
+                              <Bot className="w-4 h-4 text-[var(--soft-purple)]" />
+                            </div>
+                            <div>
+                              <p className="font-medium text-[var(--soft-text-primary)] text-sm">{agent.name}</p>
+                              <p className="text-xs text-[var(--soft-text-muted)] truncate max-w-[200px]">{agent.url}</p>
+                            </div>
+                          </div>
+                          <SoftButton variant="ghost" size="sm" icon={ExternalLink} />
+                        </div>
+                      ))}
+                      {!a2aAgentsList.length && (
+                        <div className="text-center py-8 text-[var(--soft-text-muted)]">
+                          <ArrowRightLeft className="w-10 h-10 mx-auto mb-2 opacity-50" />
+                          <p className="text-sm">No A2A agents configured</p>
+                        </div>
+                      )}
+                    </div>
+                  </ScrollArea>
+                </SoftCard>
+              </div>
+            </motion.div>
+          </TabsContent>
+
+          {/* System Tab */}
+          <TabsContent value="system">
+            <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-6">
+              <SectionHeader icon={Server} title="System Information" description="View system status and diagnostics" />
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <SoftCard className="p-6">
+                  <h4 className="font-semibold text-[var(--soft-text-primary)] mb-4">Status</h4>
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-[var(--soft-text-secondary)]">Agent Count</span>
+                      <span className="text-sm text-[var(--soft-text-primary)]">{systemStatus?.agent_count || 0}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-[var(--soft-text-secondary)]">Uptime</span>
+                      <span className="text-sm text-[var(--soft-text-primary)]">{formatUptime(systemStatus?.uptime_seconds || 0)}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-[var(--soft-text-secondary)]">Version</span>
+                      <span className="text-sm text-[var(--soft-text-primary)]">{systemVersion?.version || 'N/A'}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-[var(--soft-text-secondary)]">Commit</span>
+                      <code className="text-xs text-[var(--soft-text-muted)] bg-[var(--soft-main)] px-2 py-1 rounded">
+                        {systemVersion?.git_commit?.slice(0, 7) || 'N/A'}
+                      </code>
+                    </div>
+                  </div>
+                </SoftCard>
+                <SoftCard className="p-6">
+                  <h4 className="font-semibold text-[var(--soft-text-primary)] mb-4">Configuration</h4>
+                  <div className="space-y-4">
+                    {[
+                      { label: 'Default Provider', value: systemStatus?.default_provider || 'None' },
+                      { label: 'Default Model', value: systemStatus?.default_model || 'None' },
+                      { label: 'Platform', value: systemVersion?.platform || 'Unknown' },
+                      { label: 'Architecture', value: systemVersion?.arch || 'Unknown' }
+                    ].map((item) => (
+                      <div key={item.label} className="flex items-center justify-between">
+                        <span className="text-sm text-[var(--soft-text-secondary)]">{item.label}</span>
+                        <span className="text-sm text-[var(--soft-text-primary)]">{item.value}</span>
+                      </div>
+                    ))}
+                  </div>
+                </SoftCard>
+                <SoftCard className="p-6">
+                  <h4 className="font-semibold text-[var(--soft-text-primary)] mb-4">{t('settings.system.language')}</h4>
+                  <div className="space-y-3">
+                    {[
+                      { code: 'zh-CN', name: t('languages.zh-CN') },
+                      { code: 'zh-TW', name: t('languages.zh-TW') },
+                      { code: 'en', name: t('languages.en') },
+                      { code: 'ja', name: t('languages.ja') }
+                    ].map((lang) => (
+                      <button
+                        key={lang.code}
+                        onClick={() => i18n.changeLanguage(lang.code)}
+                        className={cn(
+                          'w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm transition-colors',
+                          i18n.language === lang.code
+                            ? 'bg-[var(--soft-blue)]/10 text-[var(--soft-blue)] border border-[var(--soft-blue)]/30'
+                            : 'hover:bg-[var(--soft-surface-hover)] text-[var(--soft-text-secondary)]'
+                        )}
+                      >
+                        <span>{lang.name}</span>
+                        {i18n.language === lang.code && <Check className="w-4 h-4" />}
+                      </button>
+                    ))}
+                  </div>
+                </SoftCard>
+                <SoftCard className="p-6">
+                  <h4 className="font-semibold text-[var(--soft-text-primary)] mb-4">Actions</h4>
+                  <div className="space-y-3">
+                    <SoftButton variant="secondary" icon={RefreshCw}>Restart System</SoftButton>
+                    <SoftButton variant="secondary" icon={Database}>Clear Cache</SoftButton>
+                    <SoftButton variant="secondary" icon={Save}>Export Config</SoftButton>
+                    <SoftButton variant="ghost" icon={AlertCircle}>Reset to Defaults</SoftButton>
+                  </div>
+                </SoftCard>
+              </div>
+            </motion.div>
+          </TabsContent>
+        </Tabs>
+      </main>
+    </div>
   );
 }
-
-export default Settings;

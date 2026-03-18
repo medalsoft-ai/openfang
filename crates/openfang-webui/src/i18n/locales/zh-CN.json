@@ -1,0 +1,196 @@
+{
+  "app": {
+    "name": "EnterpriseClaw",
+    "version": "EnterpriseClaw v0.1.0"
+  },
+  "layout": {
+    "newAgent": "新建智能体",
+    "agents": "智能体",
+    "agentsCount": "{{count}} 个",
+    "noAgents": "暂无智能体",
+    "noAgentsHint": "创建你的第一个智能体开始",
+    "settings": "设置",
+    "theme": {
+      "light": "切换到浅色模式",
+      "dark": "切换到深色模式"
+    }
+  },
+  "overview": {
+    "badge": "EnterpriseClaw",
+    "title": "你的 AI 智能体",
+    "subtitle": "操作系统",
+    "description": "构建、部署和管理自主 AI 智能体。连接到你喜欢的工具，让它们为你工作。",
+    "startChat": "开始对话",
+    "createAgent": "创建智能体",
+    "features": {
+      "title": "一切所需",
+      "subtitle": "创建和管理 AI 智能体的完整平台",
+      "aiAgents": {
+        "title": "AI 智能体",
+        "description": "使用自定义指令和功能创建专业智能体"
+      },
+      "conversations": {
+        "title": "对话",
+        "description": "与智能体实时聊天，支持流式响应"
+      },
+      "workflows": {
+        "title": "工作流",
+        "description": "使用可视化设计器构建复杂的多步骤自动化"
+      },
+      "secure": {
+        "title": "安全可靠",
+        "description": "内置安全机制，支持审计追踪和权限控制"
+      },
+      "tools": {
+        "title": "工具与技能",
+        "description": "使用自定义工具和预置技能扩展智能体能力"
+      },
+      "integrations": {
+        "title": "集成",
+        "description": "通过 MCP 连接 Slack、Discord 等 100+ 工具"
+      }
+    },
+    "cta": {
+      "title": "准备开始了吗？",
+      "subtitle": "立即开始构建你的第一个 AI 智能体",
+      "startChatting": "开始对话",
+      "configure": "配置"
+    }
+  },
+  "chat": {
+    "title": "对话",
+    "newChat": "新对话",
+    "placeholder": "输入消息...",
+    "send": "发送",
+    "thinking": "思考中...",
+    "offline": "离线",
+    "connecting": "连接中...",
+    "online": "在线",
+    "disclaimer": "AI 生成的内容可能不准确",
+    "selectAgent": "选择智能体",
+    "noMessages": "暂无消息",
+    "startConversation": "开始对话",
+    "copy": "复制",
+    "copied": "已复制",
+    "retry": "重试",
+    "error": {
+      "sendFailed": "发送失败",
+      "noSession": "未找到会话",
+      "sessionError": "创建会话失败"
+    }
+  },
+  "settings": {
+    "title": "设置",
+    "tabs": {
+      "providers": "服务商",
+      "models": "模型",
+      "agents": "智能体",
+      "security": "安全",
+      "budget": "预算",
+      "network": "网络",
+      "system": "系统",
+      "a2a": "A2A 网络",
+      "storage": "存储",
+      "reset": "重置"
+    },
+    "providers": {
+      "title": "AI 服务商",
+      "add": "添加服务商",
+      "edit": "编辑",
+      "delete": "删除",
+      "test": "测试",
+      "name": "名称",
+      "type": "类型",
+      "apiKey": "API 密钥",
+      "baseUrl": "基础 URL",
+      "models": "模型",
+      "status": {
+        "active": "活跃",
+        "inactive": "非活跃"
+      }
+    },
+    "security": {
+      "title": "安全设置",
+      "apiKey": "API 密钥",
+      "session": "会话安全",
+      "audit": "审计日志",
+      "encryption": "加密"
+    },
+    "system": {
+      "title": "系统设置",
+      "language": "语言",
+      "theme": "主题",
+      "autoStart": "自动启动",
+      "notifications": "通知"
+    },
+    "a2a": {
+      "title": "A2A 网络",
+      "enable": "启用 A2A 网络",
+      "discovery": "自动发现",
+      "peers": "对等节点"
+    },
+    "storage": {
+      "title": "存储设置",
+      "path": "存储路径",
+      "maxSize": "最大容量",
+      "cleanup": "自动清理"
+    },
+    "actions": {
+      "save": "保存",
+      "cancel": "取消",
+      "reset": "重置",
+      "test": "测试连接"
+    }
+  },
+  "common": {
+    "loading": "加载中...",
+    "error": "错误",
+    "success": "成功",
+    "warning": "警告",
+    "info": "信息",
+    "confirm": "确认",
+    "cancel": "取消",
+    "close": "关闭",
+    "save": "保存",
+    "delete": "删除",
+    "edit": "编辑",
+    "create": "创建",
+    "search": "搜索",
+    "filter": "筛选",
+    "sort": "排序",
+    "refresh": "刷新",
+    "more": "更多",
+    "back": "返回",
+    "next": "下一步",
+    "previous": "上一步",
+    "done": "完成"
+  },
+  "sop": {
+    "title": "SOP",
+    "fullName": "标准作业程序",
+    "description": "自主处理特定任务的预配置 AI 智能体",
+    "available": "可用 SOP",
+    "active": "活跃 SOP",
+    "noSOPs": "暂无可用 SOP",
+    "noSOPsHint": "SOP 是精心策划的 AI 能力包。内核加载捆绑的 SOP 后将显示在此处。",
+    "noActiveSOPs": "暂无活跃 SOP",
+    "noActiveSOPsHint": "从可用标签页激活一个 SOP 开始使用。每个 SOP 会生成一个专用智能体。",
+    "browseSOPs": "浏览 SOP",
+    "activate": "激活",
+    "activating": "激活中...",
+    "deactivate": "停用",
+    "pause": "暂停",
+    "resume": "恢复",
+    "setup": "设置",
+    "activated": "SOP \"{{name}}\" 已激活",
+    "deactivated": "SOP 已停用",
+    "alreadyActive": "SOP 已在运行。切换到活跃标签页。",
+    "requirementsNotMet": "未满足要求。请先安装缺少的依赖项。"
+  },
+  "languages": {
+    "zh-CN": "简体中文",
+    "zh-TW": "繁體中文",
+    "en": "English",
+    "ja": "日本語"
+  }
+}

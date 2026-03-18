@@ -1,5 +1,5 @@
 /**
- * OpenFang Animation System v2.0
+ * EnterpriseClaw Animation System v2.0
  * Cyber-Neon Dark theme animations
  * Using Framer Motion
  */

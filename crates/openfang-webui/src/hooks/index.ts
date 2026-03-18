@@ -1,4 +1,4 @@
-// Custom hooks for OpenFang
+// Custom hooks for EnterpriseClaw
 export { useTheme, type Theme } from './useTheme';
 export { usePageTransition } from './usePageTransition';
 export { useSpotlight } from './useSpotlight';

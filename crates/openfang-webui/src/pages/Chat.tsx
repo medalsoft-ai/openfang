@@ -50,9 +50,11 @@ function TerminalMessage({
   isCurrentSearch?: boolean;
   searchQuery?: string;
 }) {
-  const isUser = message.role === 'user';
-  const isAssistant = message.role === 'assistant';
-  const isSystem = message.role === 'system';
+  // Align with Alpine: explicit role mapping (backend returns "User"/"Assistant"/"System")
+  const normalizedRole = message.role === 'User' ? 'user' : (message.role === 'System' ? 'system' : 'agent');
+  const isUser = normalizedRole === 'user';
+  const isAssistant = normalizedRole === 'agent';
+  const isSystem = normalizedRole === 'system';
 
   return (
     <motion.div
@@ -636,7 +638,8 @@ export function Chat() {
     if (msg.type === 'text_delta' && msg.content) {
       setMessages(prev => {
         const lastMsg = prev[prev.length - 1];
-        if (lastMsg && lastMsg.role === 'assistant' && lastMsg.isStreaming) {
+        // Align with Alpine: backend returns "Assistant" not "assistant"
+        if (lastMsg && (lastMsg.role === 'Assistant' || lastMsg.role === 'agent') && lastMsg.isStreaming) {
           const updated = [...prev];
           updated[updated.length - 1] = {
             ...lastMsg,

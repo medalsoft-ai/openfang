@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { Routes, Route, Navigate } from 'react-router'
+import { Routes, Route } from 'react-router'
 import { useTheme } from '@/hooks'
 import { Layout } from '@/components/layout/Layout'
 import { Overview } from '@/pages/Overview'
@@ -40,7 +40,7 @@ function App() {
     <>
       <Routes>
         <Route path="/" element={<Layout />}>
-          <Route index element={<Navigate to="/overview" replace />} />
+          <Route index element={<Overview />} />
           <Route path="overview" element={<Overview />} />
           <Route path="agents" element={<Agents />} />
           <Route path="sessions" element={<Sessions />} />

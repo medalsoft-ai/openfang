@@ -3,15 +3,23 @@ import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { useSearchParams, useNavigate } from 'react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
+import { Virtuoso } from 'react-virtuoso';
 import { api, wsManager } from '@/api/client';
 import type { Agent, Session, Message, ToolCall } from '@/api/types';
 import { useLocalStorage } from '@/hooks/useLocalStorage';
 import { cn } from '@/lib/utils';
+import { useAuthStore } from '@/store/authStore';
+import { ChatInput } from '@/components/chat/ChatInput';
+import { useTranslation } from 'react-i18next';
 import {
   Send, Bot, User, Plus, MessageSquare,
   Loader2, Sparkles, Clock, MoreHorizontal,
   ChevronDown, Paperclip, X, Brain,
-  Command, Settings, ArrowRight, Copy, Check
+  Command, Settings, ArrowRight, Copy, Check,
+  Cpu,
+  Wifi, WifiOff, Loader,
+  Wrench, AlertCircle, Image, Music,
+  ChevronRight
 } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { toaster } from '@/lib/toast';
@@ -20,12 +28,35 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import remarkGfm from 'remark-gfm';
 
+// Extended Tool interface for UI state
+interface ExtendedTool {
+  id: string;
+  name: string;
+  running: boolean;
+  expanded: boolean;
+  input: string;
+  result: string;
+  is_error: boolean;
+  _imageUrls?: string[];
+  _audioFile?: string;
+  _audioDuration?: number;
+  _toolTextDetected?: boolean;
+}
+
 interface ExtendedMessage extends Message {
   isStreaming?: boolean;
   inputTokens?: number;
   outputTokens?: number;
   cost?: number;
-  tools?: ToolCall[];
+  tools?: ExtendedTool[];
+  thinking?: boolean;
+  _reasoning?: string;
+  meta?: string;
+  canvasData?: {
+    title: string;
+    canvasId: string;
+    html: string;
+  };
 }
 
 // Agent gradient colors based on identity
@@ -62,6 +93,7 @@ function WelcomeScreen({
   agent: Agent;
   onStartChat: () => void;
 }) {
+  const { t } = useTranslation();
   const gradient = getAgentGradient(agent);
 
   return (
@@ -101,7 +133,7 @@ function WelcomeScreen({
         transition={{ delay: 0.3 }}
         className="text-[var(--soft-text-muted)] text-center max-w-md mb-8"
       >
-        {agent.description || agent.profile || 'Ready to help you with any task'}
+        {agent.description || agent.profile || t('chat.startConversation')}
       </motion.p>
 
       {/* Quick Actions */}
@@ -142,8 +174,136 @@ function WelcomeScreen({
         whileTap={{ scale: 0.98 }}
       >
         <MessageSquare className="w-5 h-5" />
-        Start Conversation
+        {t('chat.startConversation')}
       </motion.button>
+    </motion.div>
+  );
+}
+
+// Tool Card component for displaying tool calls
+function ToolCard({ tool }: { tool: ExtendedTool }) {
+  const [expanded, setExpanded] = useState(tool.expanded);
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 5 }}
+      animate={{ opacity: 1, y: 0 }}
+      className={cn(
+        'my-2 rounded-lg border overflow-hidden',
+        tool.is_error
+          ? 'border-red-500/30 bg-red-500/5'
+          : tool.running
+          ? 'border-amber-500/30 bg-amber-500/5'
+          : 'border-green-500/30 bg-green-500/5'
+      )}
+    >
+      {/* Header */}
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="w-full px-3 py-2 flex items-center justify-between text-left"
+      >
+        <div className="flex items-center gap-2">
+          <Wrench className={cn(
+            'w-4 h-4',
+            tool.is_error ? 'text-red-400' : tool.running ? 'text-amber-400' : 'text-green-400'
+          )} />
+          <span className="text-sm font-medium text-[var(--soft-text-primary)]">
+            {tool.name}
+          </span>
+          {tool.running && (
+            <Loader2 className="w-3 h-3 animate-spin text-amber-400" />
+          )}
+          {tool.is_error && (
+            <AlertCircle className="w-3 h-3 text-red-400" />
+          )}
+        </div>
+        {expanded ? (
+          <ChevronDown className="w-4 h-4 text-[var(--soft-text-muted)]" />
+        ) : (
+          <ChevronRight className="w-4 h-4 text-[var(--soft-text-muted)]" />
+        )}
+      </button>
+
+      {/* Content */}
+      {expanded && (
+        <div className="px-3 pb-3 border-t border-[var(--soft-divider)]">
+          {/* Input params */}
+          {tool.input && (
+            <div className="mt-2">
+              <div className="text-xs text-[var(--soft-text-muted)] mb-1">Input:</div>
+              <pre className="text-xs bg-[var(--soft-surface)] rounded p-2 overflow-x-auto text-[var(--soft-text-secondary)]">
+                {tool.input}
+              </pre>
+            </div>
+          )}
+
+          {/* Result */}
+          {!tool.running && tool.result && (
+            <div className="mt-2">
+              <div className={cn(
+                'text-xs mb-1',
+                tool.is_error ? 'text-red-400' : 'text-green-400'
+              )}>
+                {tool.is_error ? 'Error:' : 'Result:'}
+              </div>
+              {tool._imageUrls && tool._imageUrls.length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  {tool._imageUrls.map((url, idx) => (
+                    <img
+                      key={idx}
+                      src={url}
+                      alt={`Generated ${idx + 1}`}
+                      className="max-w-[200px] max-h-[200px] rounded-lg border border-[var(--soft-divider)]"
+                    />
+                  ))}
+                </div>
+              ) : tool._audioFile ? (
+                <div className="flex items-center gap-2 text-sm text-[var(--soft-text-secondary)]">
+                  <Music className="w-4 h-4" />
+                  <span>Audio saved to: {tool._audioFile}</span>
+                  {tool._audioDuration && (
+                    <span className="text-xs text-[var(--soft-text-muted)]">
+                      (~{Math.round(tool._audioDuration / 1000)}s)
+                    </span>
+                  )}
+                </div>
+              ) : (
+                <pre className={cn(
+                  'text-xs rounded p-2 overflow-x-auto',
+                  tool.is_error
+                    ? 'bg-red-500/10 text-red-400'
+                    : 'bg-green-500/10 text-green-400'
+                )}>
+                  {tool.result}
+                </pre>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </motion.div>
+  );
+}
+
+// Canvas component for rendering agent canvas
+function CanvasPanel({ title, canvasId, html }: { title: string; canvasId: string; html: string }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 5 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="my-2 rounded-lg border border-[var(--soft-divider)] overflow-hidden"
+    >
+      <div className="px-3 py-2 bg-[var(--soft-surface)] border-b border-[var(--soft-divider)] flex justify-between items-center">
+        <span className="text-sm font-medium text-[var(--soft-text-primary)]">{title || 'Canvas'}</span>
+        <span className="text-xs text-[var(--soft-text-muted)] font-mono">{canvasId.substring(0, 8)}</span>
+      </div>
+      <iframe
+        sandbox="allow-scripts"
+        srcDoc={html}
+        className="w-full min-h-[300px] border-none bg-white"
+        loading="lazy"
+        title={canvasId}
+      />
     </motion.div>
   );
 }
@@ -204,9 +364,14 @@ function MarkdownRenderer({ content }: { content: string }) {
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
       components={{
+        // Handle pre tags to avoid nested pre issues
+        pre({ children }) {
+          return <>{children}</>;
+        },
         code({ className, children, ...props }) {
           const match = /language-(\w+)/.exec(className || '');
-          const code = String(children).replace(/\n$/, '');
+          // Ensure children is converted to string safely
+          const code = String(children ?? '').replace(/\n$/, '');
 
           if (match) {
             return <CodeBlock code={code} language={match[1]} />;
@@ -217,7 +382,7 @@ function MarkdownRenderer({ content }: { content: string }) {
               className="px-1.5 py-0.5 rounded-md bg-[var(--soft-surface)] text-[var(--soft-text-primary)] text-sm font-mono"
               {...props}
             >
-              {children}
+              {code}
             </code>
           );
         },
@@ -295,14 +460,14 @@ function MarkdownRenderer({ content }: { content: string }) {
 }
 
 // Tool call card component
-function ToolCallCard({ tool }: { tool: ToolCall }) {
-  const [expanded, setExpanded] = useState(false);
+function ToolCallCard({ tool }: { tool: ExtendedTool }) {
+  const [expanded, setExpanded] = useState(tool.expanded ?? false);
 
   // Determine status from tool fields
   const getStatus = () => {
     if (tool.is_error) return 'error';
     if (tool.running) return 'running';
-    if (tool.result !== undefined) return 'completed';
+    if (tool.result !== undefined && tool.result !== '') return 'completed';
     return 'pending';
   };
 
@@ -312,23 +477,32 @@ function ToolCallCard({ tool }: { tool: ToolCall }) {
     <motion.div
       initial={{ opacity: 0, y: 5 }}
       animate={{ opacity: 1, y: 0 }}
-      className="mt-2 rounded-xl border border-[var(--soft-divider)] bg-[var(--soft-surface)]/30 overflow-hidden"
+      className={cn(
+        "mt-2 rounded-xl border overflow-hidden",
+        tool.is_error ? "border-red-500/30 bg-red-500/5" :
+        tool.running ? "border-amber-500/30 bg-amber-500/5" :
+        "border-green-500/30 bg-green-500/5"
+      )}
     >
       <button
         onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center justify-between px-3 py-2 hover:bg-[var(--soft-surface)] transition-colors"
+        className="w-full flex items-center justify-between px-3 py-2 hover:bg-[var(--soft-surface)]/50 transition-colors"
       >
         <div className="flex items-center gap-2">
-          <div className="w-5 h-5 rounded-md bg-[var(--soft-blue)]/10 flex items-center justify-center">
-            <Sparkles className="w-3 h-3 text-[var(--soft-blue)]" />
-          </div>
+          {tool.is_error ? (
+            <AlertCircle className="w-4 h-4 text-red-400" />
+          ) : tool.running ? (
+            <Loader2 className="w-4 h-4 text-amber-400 animate-spin" />
+          ) : (
+            <Wrench className="w-4 h-4 text-green-400" />
+          )}
           <span className="text-sm font-medium text-[var(--soft-text-primary)]">
             {tool.name}
           </span>
           <span className={cn(
             "text-xs px-1.5 py-0.5 rounded-full",
             status === 'completed' && "bg-green-500/10 text-green-500",
-            status === 'running' && "bg-[var(--soft-blue)]/10 text-[var(--soft-blue)]",
+            status === 'running' && "bg-amber-500/10 text-amber-500",
             status === 'error' && "bg-red-500/10 text-red-500",
             status === 'pending' && "bg-[var(--soft-surface)] text-[var(--soft-text-muted)]"
           )}>
@@ -350,20 +524,59 @@ function ToolCallCard({ tool }: { tool: ToolCall }) {
             className="overflow-hidden"
           >
             <div className="px-3 pb-3 space-y-2">
-              {tool.input !== undefined && tool.input !== null && (
+              {/* Input params */}
+              {tool.input && (
                 <div>
                   <div className="text-xs text-[var(--soft-text-muted)] mb-1">Input</div>
-                  <pre className="text-xs bg-[var(--soft-bg)] rounded-lg p-2 overflow-x-auto font-mono">
-                    {JSON.stringify(tool.input, null, 2)}
+                  <pre className="text-xs bg-[var(--soft-surface)] rounded-lg p-2 overflow-x-auto font-mono text-[var(--soft-text-secondary)]">
+                    {typeof tool.input === 'string' ? tool.input : JSON.stringify(tool.input, null, 2)}
                   </pre>
                 </div>
               )}
-              {tool.result && (
+
+              {/* Result */}
+              {!tool.running && tool.result && (
                 <div>
-                  <div className="text-xs text-[var(--soft-text-muted)] mb-1">Result</div>
-                  <pre className="text-xs bg-[var(--soft-bg)] rounded-lg p-2 overflow-x-auto font-mono">
-                    {typeof tool.result === 'string' ? tool.result : JSON.stringify(tool.result, null, 2)}
-                  </pre>
+                  <div className={cn(
+                    "text-xs mb-1",
+                    tool.is_error ? "text-red-400" : "text-green-400"
+                  )}>
+                    {tool.is_error ? 'Error:' : 'Result:'}
+                  </div>
+
+                  {/* Special rendering for image generation */}
+                  {tool._imageUrls && tool._imageUrls.length > 0 ? (
+                    <div className="flex flex-wrap gap-2">
+                      {tool._imageUrls.map((url, idx) => (
+                        <img
+                          key={idx}
+                          src={url}
+                          alt={`Generated ${idx + 1}`}
+                          className="max-w-[200px] max-h-[200px] rounded-lg border border-[var(--soft-divider)]"
+                        />
+                      ))}
+                    </div>
+                  ) : tool._audioFile ? (
+                    /* Special rendering for text-to-speech */
+                    <div className="flex items-center gap-2 text-sm text-[var(--soft-text-secondary)] bg-[var(--soft-surface)] rounded-lg p-2">
+                      <Music className="w-4 h-4" />
+                      <span>Audio saved to: {tool._audioFile}</span>
+                      {tool._audioDuration && (
+                        <span className="text-xs text-[var(--soft-text-muted)]">
+                          (~{Math.round(tool._audioDuration / 1000)}s)
+                        </span>
+                      )}
+                    </div>
+                  ) : (
+                    <pre className={cn(
+                      "text-xs rounded-lg p-2 overflow-x-auto font-mono",
+                      tool.is_error
+                        ? "bg-red-500/10 text-red-400"
+                        : "bg-green-500/10 text-green-400"
+                    )}>
+                      {typeof tool.result === 'string' ? tool.result : JSON.stringify(tool.result, null, 2)}
+                    </pre>
+                  )}
                 </div>
               )}
             </div>
@@ -385,7 +598,9 @@ function MessageBubble({
   agent?: Agent;
 }) {
   const gradient = agent ? getAgentGradient(agent) : 'from-[var(--soft-blue)] to-blue-600';
-  const content = message.content || '';
+  // Ensure content is always a string (handle object case from backend)
+  const rawContent = message.content;
+  const content = typeof rawContent === 'string' ? rawContent : JSON.stringify(rawContent || '');
 
   // Check if content looks like code (contains triple backticks)
   const hasCodeBlock = content.includes('```');
@@ -442,6 +657,19 @@ function MessageBubble({
                   <div className="w-2 h-2 rounded-full bg-[var(--soft-blue)] animate-bounce" style={{ animationDelay: '150ms' }} />
                   <div className="w-2 h-2 rounded-full bg-[var(--soft-blue)] animate-bounce" style={{ animationDelay: '300ms' }} />
                 </div>
+              ) : message.thinking ? (
+                /* Thinking/Processing state */
+                <div className="flex items-center gap-2 py-3 px-1 text-[var(--soft-text-muted)]">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span className="text-sm">{content}</span>
+                </div>
+              ) : message.canvasData ? (
+                /* Canvas rendering */
+                <CanvasPanel
+                  title={message.canvasData.title}
+                  canvasId={message.canvasData.canvasId}
+                  html={message.canvasData.html}
+                />
               ) : (
                 <div className="prose prose-sm max-w-none">
                   <MarkdownRenderer content={content} />
@@ -481,7 +709,7 @@ function MessageBubble({
               <span>{message.inputTokens + message.outputTokens} tokens</span>
             </span>
           )}
-          {message.cost !== undefined && (
+          {message.cost != null && (
             <span className="flex items-center gap-1">
               <span>·</span>
               <span>${message.cost.toFixed(4)}</span>
@@ -612,30 +840,55 @@ function SessionSelector({
 
 // Main Chat V2 Component
 export function ChatV2() {
+  const { t } = useTranslation();
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   // Local storage for last selected agent
   const [lastSelectedAgentId, setLastSelectedAgentId] = useLocalStorage<string | null>('chatv2-last-agent', null);
+
+  // Wait for auth to be ready before making API calls
+  const authReady = useAuthStore((state) => state.authReady);
 
   // Get agent from URL or localStorage
   const agentIdFromUrl = searchParams.get('agent');
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(agentIdFromUrl || lastSelectedAgentId);
 
-  // UI State
-  const [input, setInput] = useState('');
+  // UI State - input moved to ChatInput component for performance
   const [messages, setMessages] = useState<ExtendedMessage[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [currentSession, setCurrentSession] = useState<Session | null>(null);
+
+  // WebSocket connection state
+  const [wsConnectionState, setWsConnectionState] = useState<'connecting' | 'connected' | 'disconnected' | 'reconnecting'>('disconnected');
+  const wsMessageHandlerRef = useRef<((data: unknown) => void) | null>(null);
+
+  // Model change dialog state
+  const [modelChangeOpen, setModelChangeOpen] = useState(false);
+  const [newModelValue, setNewModelValue] = useState('');
+  const [modelChanging, setModelChanging] = useState(false);
 
   // Fetch agents
   const { data: agents = [], isLoading: isLoadingAgents } = useQuery({
     queryKey: ['agents'],
     queryFn: api.listAgents,
+    enabled: authReady,
   });
+
+  // Fetch available models
+  const { data: modelsData } = useQuery({
+    queryKey: ['models'],
+    queryFn: () => api.listModels(),
+    enabled: authReady,
+  });
+
+  const models = useMemo(() => {
+    if (!modelsData) return [];
+    if (Array.isArray(modelsData)) return modelsData;
+    return (modelsData as { models?: unknown[] }).models || [];
+  }, [modelsData]);
 
   // Get selected agent
   const selectedAgent = useMemo(() => {
@@ -646,18 +899,18 @@ export function ChatV2() {
   const { data: sessions = [], isLoading: isLoadingSessions } = useQuery({
     queryKey: ['agent-sessions', selectedAgentId],
     queryFn: () => selectedAgentId ? api.listAgentSessions(selectedAgentId) : Promise.resolve([]),
-    enabled: !!selectedAgentId,
+    enabled: authReady && !!selectedAgentId,
   });
 
   // Fetch messages for current session
   const { data: sessionMessages = [], isLoading: isLoadingMessages } = useQuery({
     queryKey: ['session-messages', selectedAgentId, currentSession?.session_id],
     queryFn: async () => {
-      if (!selectedAgentId) return [];
-      const res = await api.getAgentSession(selectedAgentId);
+      if (!selectedAgentId || !currentSession?.session_id) return [];
+      const res = await api.getAgentSession(selectedAgentId, currentSession.session_id);
       return res.messages as ExtendedMessage[];
     },
-    enabled: !!selectedAgentId,
+    enabled: authReady && !!selectedAgentId && !!currentSession?.session_id,
   });
 
   // Update messages when session data changes
@@ -668,30 +921,31 @@ export function ChatV2() {
 
     if (hasChanged) {
       prevSessionMessagesRef.current = sessionMessages;
-      if (sessionMessages.length > 0) {
-        setMessages(sessionMessages);
-      } else {
-        setMessages([]);
-      }
+      setMessages(sessionMessages);
     }
   }, [sessionMessages]);
 
   // Auto-select first session
   const hasAutoSelectedSession = useRef(false);
   useEffect(() => {
-    if (sessions.length > 0 && !hasAutoSelectedSession.current) {
+    if (sessions.length > 0 && !hasAutoSelectedSession.current && selectedAgentId) {
       hasAutoSelectedSession.current = true;
       const sorted = [...sessions].sort((a, b) =>
         new Date(b.updated_at || b.created_at).getTime() - new Date(a.updated_at || a.created_at).getTime()
       );
-      setCurrentSession(sorted[0]);
+      const firstSession = sorted[0];
+      setCurrentSession(firstSession);
+      // Notify backend to switch to this session
+      api.switchSession(selectedAgentId, firstSession.session_id).catch(() => {
+        // Silently fail, messages will still be fetched via query param
+      });
     }
     return () => {
       if (sessions.length === 0) {
         hasAutoSelectedSession.current = false;
       }
     };
-  }, [sessions]);
+  }, [sessions, selectedAgentId]);
 
   // Scroll to bottom
   const prevMessageCountRef = useRef(0);
@@ -701,6 +955,27 @@ export function ChatV2() {
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
   }, [messages.length]);
+
+  // Sync URL agent param to state (for when user clicks aside agent)
+  const lastUrlAgentRef = useRef<string | null>(null);
+  useEffect(() => {
+    const agentFromUrl = searchParams.get('agent');
+    // Only process if URL agent changed (not when selectedAgentId changes)
+    if (agentFromUrl !== lastUrlAgentRef.current) {
+      lastUrlAgentRef.current = agentFromUrl;
+      if (agentFromUrl && agentFromUrl !== selectedAgentId) {
+        setSelectedAgentId(agentFromUrl);
+        setCurrentSession(null);
+        setMessages([]);
+        hasAutoSelectedSession.current = false;
+        prevSessionMessagesRef.current = [];
+        // Invalidate queries to force re-fetch for new agent
+        queryClient.invalidateQueries({ queryKey: ['agent-sessions'] });
+        queryClient.invalidateQueries({ queryKey: ['session-messages'] });
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams])
 
   // Update URL when agent changes
   const prevAgentIdRef = useRef<string | null>(null);
@@ -718,12 +993,373 @@ export function ChatV2() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedAgentId]);
 
+  // WebSocket connection management
+  useEffect(() => {
+    if (!selectedAgentId || !authReady) return;
+
+    // Store the message handler so we can update it when streaming state changes
+    const messageHandler = (data: unknown) => {
+      if (typeof data === 'object' && data !== null) {
+        const msg = data as {
+          type?: string;
+          content?: string | unknown;
+          done?: boolean;
+          error?: string;
+          input_tokens?: number;
+          output_tokens?: number;
+          cost_usd?: number;
+          tools?: ToolCall[];
+          // Extended message fields
+          tool?: string;
+          input?: string;
+          result?: string;
+          is_error?: boolean;
+          state?: string;
+          phase?: string;
+          detail?: string;
+          context_pressure?: string;
+          level?: string;
+          title?: string;
+          canvas_id?: string;
+          html?: string;
+          message?: string;
+          iterations?: number;
+          fallback_model?: string;
+        };
+
+        if (msg.error) {
+          toaster.error(msg.error);
+          setIsStreaming(false);
+          return;
+        }
+
+        // Align with Alpine: use switch-case, unrecognized types are silently ignored
+        switch (msg.type) {
+          case 'connected':
+            break;
+
+          case 'typing':
+            if (msg.state === 'start') {
+              setMessages(prev => {
+                const last = prev[prev.length - 1];
+                // Align with Alpine: check for any streaming/indicator message to prevent duplicates
+                if (last && (last.thinking || last.isStreaming)) return prev;
+                return [...prev, {
+                  id: `typing-${Date.now()}`,
+                  role: 'assistant',
+                  content: 'Processing...',
+                  thinking: true,
+                  isStreaming: true,
+                  ts: Date.now(),
+                }];
+              });
+            } else if (msg.state === 'tool') {
+              setMessages(prev => {
+                const last = prev[prev.length - 1];
+                if (last && last.thinking) {
+                  return [...prev.slice(0, -1), { ...last, content: `Using ${msg.tool || 'tool'}...` }];
+                }
+                return prev;
+              });
+            }
+            break;
+
+          case 'phase':
+            if (msg.phase === 'streaming' || msg.phase === 'done') break;
+            setMessages(prev => {
+              const last = prev[prev.length - 1];
+              if (!last || (!last.thinking && !last.isStreaming)) return prev;
+              if (msg.phase === 'context_warning') {
+                return [...prev, {
+                  id: `warning-${Date.now()}`,
+                  role: 'system',
+                  content: msg.detail || 'Context limit reached.',
+                  ts: Date.now(),
+                }];
+              }
+              let phaseText = t('chat.thinking');
+              if (msg.phase === 'tool_use') {
+                phaseText = `Using ${msg.detail || 'tool'}...`;
+              } else if (msg.phase === 'thinking') {
+                phaseText = t('chat.thinking');
+              } else if (msg.detail) {
+                phaseText = msg.detail;
+              }
+              return [...prev.slice(0, -1), { ...last, content: phaseText }];
+            });
+            break;
+
+          case 'chunk':
+          case 'text_delta':
+            if (!msg.content) break;
+            {
+              const chunkContent = typeof msg.content === 'string' ? msg.content : String(msg.content);
+              setMessages(prev => {
+                const last = prev[prev.length - 1];
+                if (last && last.role === 'assistant' && (last.isStreaming || last.thinking)) {
+                  const currentText = (last.content || '') + chunkContent;
+                  const fcMatch = currentText.match(/(\w+)<\/function[=>]|\<function=(\w+)>/);
+                  if (fcMatch && !last.tools?.some(t => t._toolTextDetected)) {
+                    const toolName = fcMatch[1] || fcMatch[2];
+                    const fcIndex = currentText.search(/\w+<\/function[=>]|\<function=\w+>/);
+                    const textBefore = currentText.substring(0, fcIndex).trim();
+                    const fcPart = currentText.substring(fcIndex);
+                    const inputMatch = fcPart.match(/[=,>]\s*(\{[\s\S]*)/);
+                    const newTool: ExtendedTool = {
+                      id: `${toolName}-txt-${Date.now()}`,
+                      name: toolName,
+                      running: true,
+                      expanded: true,
+                      input: inputMatch ? inputMatch[1].replace(/<\/function>?\s*$/, '').trim() : '',
+                      result: '',
+                      is_error: false,
+                      _toolTextDetected: true,
+                    };
+                    return [...prev.slice(0, -1), {
+                      ...last,
+                      content: textBefore,
+                      thinking: false,
+                      tools: [...(last.tools || []), newTool],
+                    }];
+                  }
+                  return [...prev.slice(0, -1), { ...last, content: currentText, thinking: false }];
+                }
+                return [...prev, {
+                  id: `stream-${Date.now()}`,
+                  role: 'assistant',
+                  content: chunkContent,
+                  isStreaming: true,
+                  ts: Date.now(),
+                }];
+              });
+            }
+            break;
+
+          case 'tool_start':
+            setMessages(prev => {
+              const last = prev[prev.length - 1];
+              if (last && (last.isStreaming || last.thinking)) {
+                const newTool: ExtendedTool = {
+                  id: `${msg.tool}-${Date.now()}`,
+                  name: msg.tool || 'unknown',
+                  running: true,
+                  expanded: true,
+                  input: '',
+                  result: '',
+                  is_error: false,
+                };
+                return [...prev.slice(0, -1), {
+                  ...last,
+                  thinking: false,
+                  tools: [...(last.tools || []), newTool],
+                }];
+              }
+              return prev;
+            });
+            break;
+
+          case 'tool_end':
+            setMessages(prev => {
+              const last = prev[prev.length - 1];
+              if (last && last.tools) {
+                const updatedTools = [...last.tools];
+                for (let i = updatedTools.length - 1; i >= 0; i--) {
+                  if (updatedTools[i].name === msg.tool && updatedTools[i].running) {
+                    updatedTools[i] = { ...updatedTools[i], input: msg.input || '' };
+                    break;
+                  }
+                }
+                return [...prev.slice(0, -1), { ...last, tools: updatedTools }];
+              }
+              return prev;
+            });
+            break;
+
+          case 'tool_result':
+            setMessages(prev => {
+              const last = prev[prev.length - 1];
+              if (last && last.tools) {
+                const updatedTools = [...last.tools];
+                for (let i = updatedTools.length - 1; i >= 0; i--) {
+                  if (updatedTools[i].name === msg.tool && updatedTools[i].running) {
+                    const tool = updatedTools[i];
+                    const result = msg.result || '';
+                    let imageUrls: string[] | undefined;
+                    let audioFile: string | undefined;
+                    let audioDuration: number | undefined;
+                    if ((msg.tool === 'image_generate' || msg.tool === 'browser_screenshot') && !msg.is_error) {
+                      try {
+                        const parsed = JSON.parse(result);
+                        imageUrls = parsed.image_urls;
+                      } catch { /* not JSON */ }
+                    }
+                    if (msg.tool === 'text_to_speech' && !msg.is_error) {
+                      try {
+                        const parsed = JSON.parse(result);
+                        audioFile = parsed.saved_to;
+                        audioDuration = parsed.duration_estimate_ms;
+                      } catch { /* not JSON */ }
+                    }
+                    updatedTools[i] = {
+                      ...tool,
+                      running: false,
+                      result,
+                      is_error: msg.is_error || false,
+                      _imageUrls: imageUrls,
+                      _audioFile: audioFile,
+                      _audioDuration: audioDuration,
+                    };
+                    break;
+                  }
+                }
+                return [...prev.slice(0, -1), { ...last, tools: updatedTools }];
+              }
+              return prev;
+            });
+            break;
+
+          case 'canvas':
+            setMessages(prev => [...prev, {
+              id: `canvas-${Date.now()}`,
+              role: 'assistant',
+              content: '__CANVAS__',
+              canvasData: {
+                title: msg.title || 'Canvas',
+                canvasId: msg.canvas_id || '',
+                html: msg.html || '',
+              },
+              ts: Date.now(),
+            }]);
+            break;
+
+          case 'command_result':
+            setMessages(prev => [...prev, {
+              id: `cmd-${Date.now()}`,
+              role: 'system',
+              content: msg.message || 'Command executed.',
+              ts: Date.now(),
+            }]);
+            break;
+
+          case 'response':
+            {
+              const responseContent = typeof msg.content === 'string' ? msg.content : '';
+              setMessages(prev => {
+                const streamingMessages = prev.filter(m => (m.isStreaming || m.thinking) && m.role === 'assistant');
+                const streamedText = streamingMessages.map(m => m.content).join('');
+                const streamedTools = streamingMessages.flatMap(m => m.tools || []);
+                const nonStreaming = prev.filter(m => !m.isStreaming && !m.thinking);
+                let finalText = responseContent.trim() ? responseContent : streamedText;
+                finalText = finalText.replace(/\w+<\/function[=,>][\s\S]*?<\/function>/g, '');
+                finalText = finalText.replace(/<function=\w+>[\s\S]*?<\/function>/g, '');
+                const finalTools = streamedTools.map(t => {
+                  if (t.id?.includes('-txt-') && !t.result) {
+                    return {
+                      ...t,
+                      running: false,
+                      result: 'Model attempted this call as text (not executed via tool system)',
+                      is_error: true,
+                    };
+                  }
+                  return { ...t, running: false };
+                });
+                const metaParts: string[] = [];
+                if (msg.input_tokens) metaParts.push(`${msg.input_tokens} in`);
+                if (msg.output_tokens) metaParts.push(`${msg.output_tokens} out`);
+                if (msg.cost_usd != null) metaParts.push(`$${msg.cost_usd.toFixed(4)}`);
+                if (msg.iterations) metaParts.push(`${msg.iterations} iter`);
+                if (msg.fallback_model) metaParts.push(`fallback: ${msg.fallback_model}`);
+                return [...nonStreaming, {
+                  id: `response-${Date.now()}`,
+                  role: 'assistant',
+                  content: finalText,
+                  isStreaming: false,
+                  inputTokens: msg.input_tokens,
+                  outputTokens: msg.output_tokens,
+                  cost: msg.cost_usd,
+                  tools: finalTools.length > 0 ? finalTools : undefined,
+                  meta: metaParts.join(' | '),
+                  ts: Date.now(),
+                }];
+              });
+              setIsStreaming(false);
+              queryClient.invalidateQueries({ queryKey: ['agent-sessions', selectedAgentId] });
+            }
+            break;
+
+          case 'silent_complete':
+            setMessages(prev => prev.filter(m => !m.isStreaming && !m.thinking));
+            setIsStreaming(false);
+            break;
+
+          case 'error':
+            {
+              let errorMessage: string;
+              if (typeof msg.content === 'string') {
+                errorMessage = msg.content;
+              } else if (msg.content && typeof msg.content === 'object') {
+                const nestedError = (msg.content as { error?: { message?: string; code?: string } }).error;
+                errorMessage = nestedError?.message || JSON.stringify(msg.content);
+              } else {
+                errorMessage = 'Unknown error';
+              }
+              setMessages(prev => {
+                const filtered = prev.filter(m => !(m.isStreaming && m.role === 'assistant') && !(m.role === 'assistant' && !m.content));
+                return [...filtered, {
+                  id: `error-${Date.now()}`,
+                  role: 'system',
+                  content: `Error: ${errorMessage}`,
+                  isStreaming: false,
+                  ts: Date.now(),
+                }];
+              });
+              toaster.error(errorMessage);
+              setIsStreaming(false);
+            }
+            break;
+
+          case 'agents_updated':
+            queryClient.invalidateQueries({ queryKey: ['agents'] });
+            break;
+
+          case 'pong':
+            break;
+
+          // Unrecognized types are silently ignored (like Alpine)
+          default:
+            break;
+        }
+      }
+    };
+
+    wsMessageHandlerRef.current = messageHandler;
+
+    wsManager.connect(
+      selectedAgentId,
+      messageHandler,
+      {
+        onStateChange: (state) => {
+          setWsConnectionState(state);
+        }
+      }
+    );
+
+    return () => {
+      wsManager.disconnect();
+    };
+  }, [selectedAgentId, authReady, queryClient]);
+
   // Handle agent selection
   const handleAgentSelect = useCallback((agentId: string) => {
     setSelectedAgentId(agentId);
     setCurrentSession(null);
     setMessages([]);
-  }, []);
+    hasAutoSelectedSession.current = false;
+    prevSessionMessagesRef.current = [];
+    // Clear old queries to prevent stale data
+    queryClient.removeQueries({ queryKey: ['session-messages'] });
+    queryClient.removeQueries({ queryKey: ['agent-sessions'] });
+  }, [queryClient]);
 
   // Handle session selection
   const handleSessionSelect = useCallback(async (sessionId: string) => {
@@ -745,7 +1381,7 @@ export function ChatV2() {
   const handleNewSession = useMutation({
     mutationFn: async () => {
       if (!selectedAgentId) return null;
-      return api.createSession(selectedAgentId, 'New Chat');
+      return api.createSession(selectedAgentId, t('chat.newChat'));
     },
     onSuccess: (session) => {
       if (session) {
@@ -756,25 +1392,34 @@ export function ChatV2() {
     },
   });
 
-  // Send message mutation
-  const sendMessageMutation = useMutation({
-    mutationFn: async (content: string) => {
-      if (!selectedAgentId) throw new Error('No agent selected');
-      return api.sendMessage(selectedAgentId, content, currentSession?.session_id);
-    },
-  });
-
-  // Handle send message
-  const handleSend = useCallback(async () => {
-    if (!input.trim() || !selectedAgentId || isStreaming) return;
-
-    const content = input.trim();
-    setInput('');
-
-    // Reset textarea height
-    if (inputRef.current) {
-      inputRef.current.style.height = 'auto';
+  // Handle model change
+  const handleModelChange = useCallback(async () => {
+    if (!selectedAgent || !newModelValue.trim()) return;
+    setModelChanging(true);
+    try {
+      await api.setAgentModel(selectedAgent.id, newModelValue.trim());
+      toaster.success('Model changed (memory reset)');
+      setModelChangeOpen(false);
+      // Refresh agents list
+      await queryClient.invalidateQueries({ queryKey: ['agents'] });
+    } catch (err) {
+      toaster.error('Failed to change model: ' + (err as Error).message);
+    } finally {
+      setModelChanging(false);
     }
+  }, [selectedAgent, newModelValue, queryClient]);
+
+  // Open model change dialog
+  const openModelChange = useCallback(() => {
+    if (!selectedAgent) return;
+    const currentModel = `${selectedAgent.model_provider || ''}/${selectedAgent.model_name || ''}`.replace(/^\//, '').replace(/\/$/, '');
+    setNewModelValue(currentModel);
+    setModelChangeOpen(true);
+  }, [selectedAgent]);
+
+  // Handle send message - now receives content from ChatInput component
+  const handleSend = useCallback(async (content: string) => {
+    if (!content || !selectedAgentId || isStreaming) return;
 
     // Add user message
     const userMessage: ExtendedMessage = {
@@ -788,86 +1433,64 @@ export function ChatV2() {
     setIsStreaming(true);
 
     try {
-      wsManager.connect(
-        selectedAgentId,
-        (data) => {
-          if (typeof data === 'object' && data !== null) {
-            const msg = data as { type?: string; content?: string; done?: boolean; error?: string };
+      // Try WebSocket first
+      const wsPayload: { type: string; content: string; session_id?: string } = {
+        type: 'message',
+        content
+      };
+      if (currentSession?.session_id) {
+        wsPayload.session_id = currentSession.session_id;
+      }
 
-            if (msg.error) {
-              toaster.error(msg.error);
-              setIsStreaming(false);
-              return;
-            }
+      if (wsManager.send(wsPayload)) {
+        // WebSocket send success - message will stream back via onMessage handler
+        // Add placeholder assistant message
+        setMessages(prev => [...prev, {
+          id: `streaming-${Date.now()}`,
+          role: 'assistant',
+          content: '',
+          isStreaming: true,
+          ts: Date.now(),
+        }]);
+        return;
+      }
 
-            if (msg.type === 'chunk' && msg.content) {
-              setMessages(prev => {
-                const last = prev[prev.length - 1];
-                if (last && last.role === 'assistant' && last.isStreaming) {
-                  return [
-                    ...prev.slice(0, -1),
-                    { ...last, content: (last.content || '') + msg.content }
-                  ];
-                }
-                return [...prev, {
-                  id: `stream-${Date.now()}`,
-                  role: 'assistant',
-                  content: msg.content,
-                  isStreaming: true,
-                  ts: Date.now(),
-                }];
-              });
-            }
+      // WebSocket not available - use HTTP fallback
+      toaster.info('Using HTTP mode (no streaming)');
 
-            if (msg.done) {
-              setMessages(prev => {
-                const last = prev[prev.length - 1];
-                if (last && last.isStreaming) {
-                  return [...prev.slice(0, -1), { ...last, isStreaming: false }];
-                }
-                return prev;
-              });
-              setIsStreaming(false);
-              queryClient.invalidateQueries({ queryKey: ['agent-sessions', selectedAgentId] });
-            }
-          }
-        },
-        {
-          onStateChange: (state) => {
-            if (state === 'disconnected') {
-              setIsStreaming(false);
-            }
-          }
-        }
-      );
+      const response = await api.sendMessage(selectedAgentId, content, currentSession?.session_id) as {
+        response?: string;
+        error?: string;
+        session_id?: string;
+      };
 
-      await wsManager.waitForConnection(5000);
-      await sendMessageMutation.mutateAsync(content);
+      if (response.error) {
+        throw new Error(response.error);
+      }
+
+      setMessages(prev => [...prev, {
+        id: `http-${Date.now()}`,
+        role: 'assistant',
+        content: response.response || '',
+        isStreaming: false,
+        ts: Date.now(),
+      }]);
+
+      // Update session if new one was created
+      if (response.session_id && response.session_id !== currentSession?.session_id) {
+        queryClient.invalidateQueries({ queryKey: ['agent-sessions', selectedAgentId] });
+      }
+
+      setIsStreaming(false);
 
     } catch (error) {
       toaster.error(error instanceof Error ? error.message : 'Failed to send message');
       setIsStreaming(false);
     }
-  }, [input, selectedAgentId, currentSession, isStreaming, queryClient]);
-
-  // Handle input keydown
-  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
-    }
-  }, [handleSend]);
-
-  // Handle input change with auto-resize
-  const handleInputChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setInput(e.target.value);
-    // Auto-resize textarea
-    e.target.style.height = 'auto';
-    e.target.style.height = `${Math.min(e.target.scrollHeight, 160)}px`;
-  }, []);
+  }, [selectedAgentId, currentSession, isStreaming, queryClient]);
 
   // If no agent selected, show agent selector
-  if (!selectedAgentId || !selectedAgent) {
+  if (!selectedAgentId) {
     return (
       <div className="h-full flex flex-col bg-[var(--soft-main)]">
         {/* Header */}
@@ -934,6 +1557,13 @@ export function ChatV2() {
 
   return (
     <div className="h-full flex flex-col bg-[var(--soft-main)]">
+      {/* Loading state when agent data is not ready */}
+      {!selectedAgent ? (
+        <div className="flex-1 flex items-center justify-center">
+          <Loader2 className="w-8 h-8 text-[var(--soft-blue)] animate-spin" />
+        </div>
+      ) : (
+        <>
       {/* Header */}
       <div className="px-4 py-3 border-b border-[var(--soft-divider)] flex items-center justify-between bg-[var(--soft-bg)]">
         {/* Left: Agent Info */}
@@ -968,12 +1598,53 @@ export function ChatV2() {
                 onSelect={handleSessionSelect}
                 onNewSession={() => handleNewSession.mutate()}
               />
+              {/* Model indicator */}
+              <button
+                onClick={openModelChange}
+                className="flex items-center gap-1 text-xs text-[var(--soft-text-muted)] hover:text-[var(--soft-text-secondary)] transition-colors"
+                title="Click to change model"
+              >
+                <Cpu className="w-3 h-3" />
+                <span className="max-w-[120px] truncate">
+                  {selectedAgent.model_provider || 'default'}/{selectedAgent.model_name || 'auto'}
+                </span>
+              </button>
             </div>
           </div>
         </div>
 
         {/* Right: Actions */}
         <div className="flex items-center gap-2">
+          {/* Connection Status Badge */}
+          <div
+            className={cn(
+              'flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium transition-colors',
+              wsConnectionState === 'connected'
+                ? 'bg-green-500/10 text-green-600 dark:text-green-400'
+                : wsConnectionState === 'reconnecting'
+                ? 'bg-yellow-500/10 text-yellow-600 dark:text-yellow-400'
+                : 'bg-gray-500/10 text-gray-600 dark:text-gray-400'
+            )}
+            title={wsConnectionState === 'connected' ? t('chat.online') : wsConnectionState === 'connecting' ? t('chat.connecting') : wsConnectionState === 'reconnecting' ? t('chat.connecting') : t('chat.offline')}
+          >
+            {wsConnectionState === 'connected' ? (
+              <>
+                <Wifi className="w-3.5 h-3.5" />
+                <span>WS</span>
+              </>
+            ) : wsConnectionState === 'reconnecting' || wsConnectionState === 'connecting' ? (
+              <>
+                <Loader className="w-3.5 h-3.5 animate-spin" />
+                <span>{wsConnectionState === 'connecting' ? '...' : '...'}</span>
+              </>
+            ) : (
+              <>
+                <WifiOff className="w-3.5 h-3.5" />
+                <span>HTTP</span>
+              </>
+            )}
+          </div>
+
           <motion.button
             onClick={() => handleNewSession.mutate()}
             disabled={handleNewSession.isPending}
@@ -989,6 +1660,15 @@ export function ChatV2() {
           </motion.button>
 
           <motion.button
+            onClick={openModelChange}
+            className="p-2 rounded-lg hover:bg-[var(--soft-surface)] text-[var(--soft-text-secondary)] transition-colors"
+            whileTap={{ scale: 0.95 }}
+            title="Change Model"
+          >
+            <Cpu className="w-5 h-5" />
+          </motion.button>
+
+          <motion.button
             onClick={() => navigate(`/agents?edit=${selectedAgent.id}`)}
             className="p-2 rounded-lg hover:bg-[var(--soft-surface)] text-[var(--soft-text-secondary)] transition-colors"
             whileTap={{ scale: 0.95 }}
@@ -999,136 +1679,149 @@ export function ChatV2() {
         </div>
       </div>
 
-      {/* Messages Area */}
+      {/* Messages Area - Virtual List */}
       <div className="flex-1 overflow-hidden relative">
         {messages.length === 0 && !isLoadingMessages ? (
           <WelcomeScreen
             agent={selectedAgent}
-            onStartChat={() => inputRef.current?.focus()}
+            onStartChat={() => {}}
           />
         ) : (
-          <ScrollArea className="h-full">
-            <div className="py-4">
-              {messages.map((message, index) => (
+          <Virtuoso
+            key={selectedAgentId}
+            data={messages}
+            className="h-full"
+            followOutput="smooth"
+            initialTopMostItemIndex={Math.max(0, messages.length - 1)}
+            itemContent={(_index, message) => {
+              // Align with Alpine: simple role mapping (backend returns "User"/"Assistant"/"System")
+              const roleLower = message.role?.toLowerCase() || '';
+              const isUser = roleLower === 'user';
+              return (
                 <MessageBubble
-                  key={message.id || index}
                   message={message}
-                  isUser={message.role === 'user'}
+                  isUser={isUser}
                   agent={selectedAgent}
                 />
-              ))}
-              <div ref={messagesEndRef} />
-            </div>
-          </ScrollArea>
+              );
+            }}
+          />
         )}
       </div>
 
-      {/* Input Area - Redesigned */}
-      <div className="p-4 border-t border-[var(--soft-divider)] bg-[var(--soft-bg)]">
-        <div className="max-w-3xl mx-auto">
-          {/* Input Container - Clean floating design */}
-          <div className="relative group">
-            <div
-              className={cn(
-                "relative flex flex-col rounded-2xl border bg-[var(--soft-main)] shadow-sm transition-shadow duration-200",
-                "focus-within:shadow-md",
-                input.trim()
-                  ? "border-[var(--soft-blue)]/50"
-                  : "border-[var(--soft-divider)]"
-              )}
+      {/* Input Area - Isolated component for performance */}
+      <ChatInput
+        agentName={selectedAgent.name}
+        isStreaming={isStreaming}
+        onSend={handleSend}
+        onStop={() => {
+          wsManager.disconnect();
+          setIsStreaming(false);
+        }}
+      />
+
+      {/* Model Change Dialog */}
+      <AnimatePresence>
+        {modelChangeOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) setModelChangeOpen(false);
+            }}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-[var(--soft-bg)] border border-[var(--soft-divider)] rounded-2xl p-6 w-full max-w-md shadow-xl"
             >
-              {/* Textarea Container */}
-              <div className="relative flex-1 min-h-[56px] max-h-[200px]">
-                <textarea
-                  ref={inputRef}
-                  value={input}
-                  onChange={handleInputChange}
-                  onKeyDown={handleKeyDown}
-                  placeholder={`Message ${selectedAgent.name}...`}
-                  disabled={isStreaming}
-                  rows={1}
-                  className={cn(
-                    "w-full min-h-[56px] max-h-[200px] bg-transparent resize-none",
-                    "text-[var(--soft-text-primary)] placeholder-[var(--soft-text-muted)]",
-                    "focus:outline-none focus:ring-0 focus:border-transparent",
-                    "border-none outline-none",
-                    "py-4 px-4 pr-14 leading-relaxed text-[15px]"
-                  )}
-                  style={{
-                    overflow: 'auto',
-                    scrollbarWidth: 'thin',
+              {/* Header */}
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-[var(--soft-text-primary)]">
+                  Change Model
+                </h3>
+                <button
+                  onClick={() => setModelChangeOpen(false)}
+                  className="p-2 rounded-lg hover:bg-[var(--soft-surface)] transition-colors"
+                >
+                  <X className="w-5 h-5 text-[var(--soft-text-muted)]" />
+                </button>
+              </div>
+
+              <p className="text-sm text-[var(--soft-text-muted)] mb-4">
+                Enter new model in format: <code className="bg-[var(--soft-surface)] px-1 rounded">provider/model</code> or just <code className="bg-[var(--soft-surface)] px-1 rounded">model</code>
+              </p>
+
+              <div className="space-y-3 mb-6">
+                <input
+                  type="text"
+                  value={newModelValue}
+                  onChange={(e) => setNewModelValue(e.target.value)}
+                  placeholder="e.g. groq/llama-3.3-70b-versatile"
+                  className="w-full bg-[var(--soft-surface)] border border-[var(--soft-divider)] rounded-xl px-4 py-3 text-[var(--soft-text-primary)] font-mono text-sm focus:outline-none focus:border-[var(--soft-blue)] transition-colors"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && newModelValue.trim() && !modelChanging) {
+                      handleModelChange();
+                    }
                   }}
                 />
-              </div>
 
-              {/* Bottom Toolbar */}
-              <div className="flex items-center justify-between px-3 py-2 border-t border-[var(--soft-divider)]/50">
-                {/* Left: Action buttons */}
-                <div className="flex items-center gap-1">
-                  <button
-                    type="button"
-                    disabled={isStreaming}
-                    className="p-2 rounded-lg text-[var(--soft-text-muted)] hover:text-[var(--soft-text-secondary)] hover:bg-[var(--soft-surface)] transition-colors disabled:opacity-40"
-                    title="Attach file"
-                  >
-                    <Paperclip className="w-[18px] h-[18px]" />
-                  </button>
-                </div>
-
-                {/* Right: Send button */}
-                <div className="flex items-center gap-2">
-                  {/* Keyboard hint - subtle */}
-                  <span className="hidden sm:flex items-center gap-1 text-[11px] text-[var(--soft-text-tertiary)]">
-                    <kbd className="px-1.5 py-0.5 rounded bg-[var(--soft-surface)] font-sans text-[10px]">↵</kbd>
-                    <span>to send</span>
-                  </span>
-
-                  {/* Send Button */}
-                  <motion.button
-                    onClick={handleSend}
-                    disabled={!input.trim() || isStreaming}
-                    className={cn(
-                      'flex items-center justify-center w-9 h-9 rounded-xl transition-all duration-200',
-                      input.trim() && !isStreaming
-                        ? 'bg-[var(--soft-blue)] text-white hover:bg-[var(--soft-blue-dark)] shadow-sm'
-                        : 'bg-[var(--soft-surface)] text-[var(--soft-text-muted)]'
-                    )}
-                    whileTap={input.trim() && !isStreaming ? { scale: 0.92 } : {}}
-                  >
-                    {isStreaming ? (
-                      <Loader2 className="w-[18px] h-[18px] animate-spin" />
-                    ) : (
-                      <Send className="w-[18px] h-[18px]" />
-                    )}
-                  </motion.button>
+                {/* Quick select from available models */}
+                <div className="max-h-[200px] overflow-y-auto border border-[var(--soft-divider)] rounded-xl">
+                  {models.filter((m: { available?: boolean }) => m.available).length === 0 ? (
+                    <div className="p-3 text-sm text-[var(--soft-text-muted)]">No available models</div>
+                  ) : (
+                    models.filter((m: { available?: boolean }) => m.available).map((model: { id: string; provider?: string; display_name?: string }) => (
+                      <button
+                        key={model.id}
+                        onClick={() => setNewModelValue(`${model.provider}/${model.id}`)}
+                        className={cn(
+                          'w-full text-left px-3 py-2 text-sm hover:bg-[var(--soft-surface)] transition-colors',
+                          newModelValue === `${model.provider}/${model.id}`
+                            ? 'bg-[var(--soft-blue)]/10 text-[var(--soft-blue)]'
+                            : 'text-[var(--soft-text-secondary)]'
+                        )}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span>{model.display_name || model.id}</span>
+                          <span className="text-xs text-[var(--soft-text-muted)]">{model.provider}</span>
+                        </div>
+                      </button>
+                    ))
+                  )}
                 </div>
               </div>
-            </div>
-          </div>
 
-          {/* Footer */}
-          <div className="flex items-center justify-center mt-2">
-            {isStreaming ? (
-              <motion.button
-                initial={{ opacity: 0, y: 5 }}
-                animate={{ opacity: 1, y: 0 }}
-                onClick={() => {
-                  wsManager.disconnect();
-                  setIsStreaming(false);
-                }}
-                className="flex items-center gap-1.5 text-xs text-[var(--soft-text-muted)] hover:text-red-500 transition-colors px-3 py-1.5 rounded-full hover:bg-red-500/5"
-              >
-                <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
-                Stop generating
-              </motion.button>
-            ) : (
-              <span className="text-[11px] text-[var(--soft-text-tertiary)]">
-                AI-generated content may be inaccurate
-              </span>
-            )}
-          </div>
-        </div>
-      </div>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setModelChangeOpen(false)}
+                  className="flex-1 py-2 px-4 rounded-xl border border-[var(--soft-divider)] text-[var(--soft-text-secondary)] hover:bg-[var(--soft-surface)] transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleModelChange}
+                  disabled={!newModelValue.trim() || modelChanging}
+                  className={cn(
+                    'flex-1 py-2 px-4 rounded-xl font-medium transition-colors flex items-center justify-center gap-2',
+                    !newModelValue.trim() || modelChanging
+                      ? 'bg-[var(--soft-surface)] text-[var(--soft-text-muted)] cursor-not-allowed'
+                      : 'bg-[var(--soft-blue)] text-white hover:bg-[var(--soft-blue-dark)]'
+                  )}
+                >
+                  {modelChanging && <Loader2 className="w-4 h-4 animate-spin" />}
+                  {modelChanging ? 'Changing...' : 'Change Model'}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+        </>
+      )}
     </div>
   );
 }

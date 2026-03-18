@@ -17,14 +17,18 @@ import {
   Wand2,
   Activity,
   LayoutGrid,
+  Globe,
+  Check,
+  Hand,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { pageTransition } from '@/lib/animations'
 import { useTheme } from '@/hooks'
 import { api } from '@/api/client'
 import type { Agent } from '@/api/types'
-import { useCallback, useState } from 'react'
+import { useCallback, useState, useRef, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { useTranslation } from 'react-i18next'
 
 // Agent icon mapping based on profile/archetype
 function getAgentIcon(agent: Agent) {
@@ -92,10 +96,12 @@ function AgentItem({
   agent,
   isActive,
   onClick,
+  isHand,
 }: {
   agent: Agent
   isActive: boolean
   onClick: () => void
+  isHand?: boolean
 }) {
   const Icon = getAgentIcon(agent)
   const gradient = getAgentGradient(agent)
@@ -146,11 +152,20 @@ function AgentItem({
 
       {/* Agent Info */}
       <div className="flex-1 text-left min-w-0">
-        <div className={cn(
-          'font-medium truncate transition-colors text-sm',
-          isActive ? 'text-[var(--soft-text-primary)]' : 'text-[var(--soft-text-secondary)]'
-        )}>
-          {agent.name}
+        <div className="flex items-center gap-1.5">
+          <div className={cn(
+            'font-medium truncate transition-colors text-sm',
+            isActive ? 'text-[var(--soft-text-primary)]' : 'text-[var(--soft-text-secondary)]'
+          )}>
+            {agent.name}
+          </div>
+          {/* Hand Agent Badge */}
+          {isHand && (
+            <span className="shrink-0 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 border border-amber-200 dark:border-amber-800">
+              <Hand className="w-2.5 h-2.5" />
+              SOP
+            </span>
+          )}
         </div>
         <div className="text-[11px] text-[var(--soft-text-muted)] truncate">
           {agent.description || agent.profile || 'Agent'}
@@ -171,6 +186,7 @@ function AgentItem({
 
 // Theme toggle button component - Soft UI compact
 function ThemeToggle() {
+  const { t } = useTranslation()
   const { resolvedTheme, toggleTheme } = useTheme()
 
   return (
@@ -179,7 +195,7 @@ function ThemeToggle() {
       className="flex items-center justify-center w-8 h-8 rounded-lg bg-[var(--soft-surface)] shadow-[var(--soft-shadow-sm)] text-[var(--soft-text-secondary)] hover:text-[var(--soft-blue)] hover:shadow-[var(--soft-shadow-md)] transition-all duration-200"
       whileHover={{ scale: 1.05 }}
       whileTap={{ scale: 0.95 }}
-      aria-label={resolvedTheme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+      aria-label={resolvedTheme === 'dark' ? t('layout.theme.light') : t('layout.theme.dark')}
     >
       <AnimatePresence mode="wait" initial={false}>
         {resolvedTheme === 'dark' ? (
@@ -210,13 +226,14 @@ function ThemeToggle() {
 
 // Settings button component - Soft UI compact
 function SettingsButton() {
+  const { t } = useTranslation()
   return (
     <Link to="/settings">
       <motion.button
         className="flex items-center justify-center w-8 h-8 rounded-lg bg-[var(--soft-surface)] shadow-[var(--soft-shadow-sm)] text-[var(--soft-text-secondary)] hover:text-[var(--soft-blue)] hover:shadow-[var(--soft-shadow-md)] transition-all duration-200"
         whileHover={{ scale: 1.05 }}
         whileTap={{ scale: 0.95 }}
-        aria-label="Settings"
+        aria-label={t('layout.settings')}
       >
         <Settings className="w-4 h-4" />
       </motion.button>
@@ -224,8 +241,92 @@ function SettingsButton() {
   )
 }
 
+// Language switcher component - Soft UI compact with flag images
+function LanguageSwitcher() {
+  const { t, i18n } = useTranslation()
+  const [isOpen, setIsOpen] = useState(false)
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setIsOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  const languages = [
+    { code: 'zh-CN', flag: '/flags/zh-CN.png', name: t('languages.zh-CN') },
+    { code: 'zh-TW', flag: '/flags/zh-TW.png', name: t('languages.zh-TW') },
+    { code: 'en', flag: '/flags/en.png', name: t('languages.en') },
+    { code: 'ja', flag: '/flags/ja.png', name: t('languages.ja') },
+  ]
+
+  const currentLang = languages.find(l => l.code === i18n.language) || languages[2]
+
+  return (
+    <div ref={containerRef} className="relative">
+      <motion.button
+        onClick={() => setIsOpen(!isOpen)}
+        className="flex items-center justify-center w-8 h-8 rounded-lg bg-[var(--soft-surface)] shadow-[var(--soft-shadow-sm)] hover:shadow-[var(--soft-shadow-md)] transition-all duration-200"
+        whileHover={{ scale: 1.05 }}
+        whileTap={{ scale: 0.95 }}
+        aria-label={t('settings.system.language')}
+      >
+        <img
+          src={currentLang.flag}
+          alt={currentLang.name}
+          className="w-5 h-5 rounded object-contain"
+        />
+      </motion.button>
+
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div
+            initial={{ opacity: 0, y: 8, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 8, scale: 0.95 }}
+            transition={{ duration: 0.15 }}
+            className="absolute bottom-full left-0 mb-2 w-40 rounded-xl bg-[var(--soft-surface)] shadow-[var(--soft-shadow-lg)] border border-[var(--soft-divider)] overflow-hidden z-50"
+          >
+            {languages.map((lang) => (
+              <button
+                key={lang.code}
+                onClick={() => {
+                  i18n.changeLanguage(lang.code)
+                  setIsOpen(false)
+                }}
+                className={cn(
+                  'w-full flex items-center justify-between px-3 py-2.5 text-sm transition-colors',
+                  i18n.language === lang.code
+                    ? 'bg-[var(--soft-blue)]/10 text-[var(--soft-blue)]'
+                    : 'text-[var(--soft-text-secondary)] hover:bg-[var(--soft-surface-hover)] hover:text-[var(--soft-text-primary)]'
+                )}
+              >
+                <span className="flex items-center gap-3">
+                  <img
+                    src={lang.flag}
+                    alt={lang.name}
+                    className="w-5 h-5 rounded object-contain"
+                  />
+                  <span className="text-sm">{lang.name}</span>
+                </span>
+                {i18n.language === lang.code && <Check className="w-3.5 h-3.5" />}
+              </button>
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  )
+}
+
 // Create agent button - Soft UI compact style
 function CreateAgentButton({ onClick }: { onClick: () => void }) {
+  const { t } = useTranslation()
   return (
     <motion.button
       onClick={onClick}
@@ -236,15 +337,19 @@ function CreateAgentButton({ onClick }: { onClick: () => void }) {
       <div className="w-6 h-6 rounded-md bg-white/20 flex items-center justify-center">
         <Plus className="w-4 h-4 text-white" />
       </div>
-      <span>New Agent</span>
+      <span>{t('layout.newAgent')}</span>
     </motion.button>
   )
 }
 
 export function Layout() {
+  const { t } = useTranslation()
   const location = useLocation()
   const navigate = useNavigate()
-  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null)
+
+  // Get current agent from URL (single source of truth)
+  const searchParams = new URLSearchParams(location.search)
+  const selectedAgentId = searchParams.get('agent')
 
   // Fetch agents list
   const { data: agentsData, isLoading } = useQuery({
@@ -254,9 +359,20 @@ export function Layout() {
   })
   const agents = agentsData ?? []
 
+  // Fetch active hands to identify Hand agents
+  const { data: handsData } = useQuery({
+    queryKey: ['hands', 'active'],
+    queryFn: () => api.getActiveHands(),
+    refetchInterval: 5000,
+  })
+
+  // Build a Set of Hand agent IDs for quick lookup
+  const handAgentIds = new Set<string>(
+    handsData?.instances?.map((instance) => instance.agent_id).filter(Boolean) ?? []
+  )
+
   // Handle agent click - navigate to chat-v2 with agent
   const handleAgentClick = useCallback((agent: Agent) => {
-    setSelectedAgentId(agent.id)
     navigate(`/chat-v2?agent=${agent.id}`)
   }, [navigate])
 
@@ -284,8 +400,8 @@ export function Layout() {
             </motion.div>
 
             <span className="text-base font-semibold text-[var(--soft-text-primary)] tracking-tight">
-              Open
-              <span className="text-[var(--soft-blue-dark)]">Fang</span>
+              Enterprise
+              <span className="text-[var(--soft-blue-dark)]">Claw</span>
             </span>
           </Link>
         </div>
@@ -297,17 +413,6 @@ export function Layout() {
 
         {/* Agents List - compact */}
         <nav className="flex-1 overflow-y-auto px-2 pb-2 no-scrollbar">
-          {/* Section Title */}
-          <div className="flex items-center gap-2 px-2 py-1.5 mb-1">
-            <LayoutGrid className="w-3.5 h-3.5 text-[var(--soft-text-muted)]" />
-            <span className="text-[11px] font-semibold text-[var(--soft-text-muted)] uppercase tracking-wider">
-              Agents
-            </span>
-            <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded-full bg-[var(--soft-surface)] text-[var(--soft-text-muted)]">
-              {agents.length}
-            </span>
-          </div>
-
           {/* Agents */}
           {isLoading ? (
             <div className="space-y-1.5 p-2">
@@ -324,21 +429,64 @@ export function Layout() {
           ) : agents.length === 0 ? (
             <div className="p-3 text-center">
               <Bot className="w-7 h-7 mx-auto mb-1.5 text-[var(--soft-text-muted)]" />
-              <p className="text-xs text-[var(--soft-text-muted)]">No agents yet</p>
+              <p className="text-xs text-[var(--soft-text-muted)]">{t('layout.noAgents')}</p>
               <p className="text-[10px] text-[var(--soft-text-tertiary)] mt-0.5">
-                Create your first agent to start
+                {t('layout.noAgentsHint')}
               </p>
             </div>
           ) : (
-            <div className="space-y-0.5">
-              {agents.map((agent) => (
-                <AgentItem
-                  key={agent.id}
-                  agent={agent}
-                  isActive={selectedAgentId === agent.id}
-                  onClick={() => handleAgentClick(agent)}
-                />
-              ))}
+            <div className="space-y-3">
+              {/* Hand Agents Group */}
+              {agents.filter(a => handAgentIds.has(a.id)).length > 0 && (
+                <div>
+                  <div className="flex items-center gap-2 px-2 py-1 mb-1">
+                    <Hand className="w-3.5 h-3.5 text-amber-500" />
+                    <span className="text-[10px] font-semibold text-[var(--soft-text-muted)] uppercase tracking-wider">
+                      SOP
+                    </span>
+                    <span className="ml-auto text-[9px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                      {agents.filter(a => handAgentIds.has(a.id)).length}
+                    </span>
+                  </div>
+                  <div className="space-y-0.5">
+                    {agents.filter(a => handAgentIds.has(a.id)).map((agent) => (
+                      <AgentItem
+                        key={agent.id}
+                        agent={agent}
+                        isActive={selectedAgentId === agent.id}
+                        onClick={() => handleAgentClick(agent)}
+                        isHand={true}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Regular Agents Group */}
+              {agents.filter(a => !handAgentIds.has(a.id)).length > 0 && (
+                <div>
+                  <div className="flex items-center gap-2 px-2 py-1 mb-1">
+                    <Bot className="w-3.5 h-3.5 text-[var(--soft-text-muted)]" />
+                    <span className="text-[10px] font-semibold text-[var(--soft-text-muted)] uppercase tracking-wider">
+                      Agents
+                    </span>
+                    <span className="ml-auto text-[9px] px-1.5 py-0.5 rounded-full bg-[var(--soft-surface)] text-[var(--soft-text-muted)]">
+                      {agents.filter(a => !handAgentIds.has(a.id)).length}
+                    </span>
+                  </div>
+                  <div className="space-y-0.5">
+                    {agents.filter(a => !handAgentIds.has(a.id)).map((agent) => (
+                      <AgentItem
+                        key={agent.id}
+                        agent={agent}
+                        isActive={selectedAgentId === agent.id}
+                        onClick={() => handleAgentClick(agent)}
+                        isHand={false}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </nav>
@@ -347,13 +495,16 @@ export function Layout() {
         <div className="p-2 border-t border-[var(--soft-divider)] space-y-2">
           {/* Quick Actions Row */}
           <div className="flex items-center justify-between gap-2">
-            <ThemeToggle />
+            <div className="flex items-center gap-2">
+              <ThemeToggle />
+              <LanguageSwitcher />
+            </div>
             <SettingsButton />
           </div>
 
           {/* Version */}
           <div className="text-[9px] text-[var(--soft-text-muted)] text-center font-medium">
-            OpenFang v0.1.0
+            {t('app.version')}
           </div>
         </div>
       </aside>

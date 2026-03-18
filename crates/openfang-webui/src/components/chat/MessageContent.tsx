@@ -1,5 +1,5 @@
 // MessageContent - Unified message content renderer (Markdown, Text, HTML, Tools, Images)
-import { useMemo } from 'react';
+import { useMemo, memo } from 'react';
 import { motion } from 'framer-motion';
 import { MarkdownContent } from './MarkdownContent';
 import { ToolCallsContainer } from './ToolCallCard';
@@ -30,11 +30,14 @@ function highlightSearch(text: string, query: string): string {
   );
 }
 
-export function MessageContent({ message, searchQuery, isStreaming }: MessageContentProps) {
+// Memoized component to prevent re-renders when parent updates
+function MessageContentComponent({ message, searchQuery, isStreaming }: MessageContentProps) {
   const content = message.content || message.text || '';
-  const isUser = message.role === 'user';
-  const isAssistant = message.role === 'assistant' || message.role === 'agent';
-  const isSystem = message.role === 'system';
+  // Align with Alpine: explicit role mapping (backend returns "User"/"Assistant"/"System")
+  const normalizedRole = message.role === 'User' ? 'user' : (message.role === 'System' ? 'system' : 'agent');
+  const isUser = normalizedRole === 'user';
+  const isAssistant = normalizedRole === 'agent';
+  const isSystem = normalizedRole === 'system';
   const isHtml = message.isHtml;
 
   // Determine if we should render markdown
@@ -122,3 +125,6 @@ export function MessageContent({ message, searchQuery, isStreaming }: MessageCon
     </div>
   );
 }
+
+// Export memoized version
+export const MessageContent = memo(MessageContentComponent);

@@ -80,8 +80,10 @@ class APIClient {
       (error: AxiosError) => {
         if (error.response) {
           const status = error.response.status;
-          // Trigger auth prompt on 401
-          if (status === 401 && authErrorCallback) {
+          const config = error.config;
+          // Trigger auth prompt on 401, but skip for auth check endpoint
+          // (it's used to determine auth state, triggering a prompt would be wrong)
+          if (status === 401 && authErrorCallback && !config?.url?.includes('/auth/check')) {
             authErrorCallback();
           }
           const data = error.response.data as { error?: string };
@@ -229,8 +231,11 @@ class APIClient {
     return res.sessions || [];
   }
 
-  async getAgentSession(agentId: string): Promise<{ messages: unknown[] }> {
-    return this.get('/api/agents/' + agentId + '/session');
+  async getAgentSession(agentId: string, sessionId?: string): Promise<{ messages: unknown[] }> {
+    const url = sessionId
+      ? `/api/agents/${agentId}/session?session_id=${encodeURIComponent(sessionId)}`
+      : `/api/agents/${agentId}/session`;
+    return this.get(url);
   }
 
   async createSession(agentId: string, title?: string): Promise<Session> {
@@ -329,7 +334,15 @@ class APIClient {
   }
 
   async setAgentModel(id: string, model: string): Promise<void> {
-    await this.put(`/api/agents/${id}/model`, { model });
+    // Parse provider/model format and send separately to backend
+    const parts = model.split('/');
+    if (parts.length >= 2) {
+      const provider = parts[0];
+      const modelName = parts.slice(1).join('/');
+      await this.put(`/api/agents/${id}/model`, { model: modelName, provider });
+    } else {
+      await this.put(`/api/agents/${id}/model`, { model });
+    }
   }
 
   async cloneAgent(id: string, newName: string): Promise<{ agent_id: string; name: string }> {
@@ -405,11 +418,28 @@ class WebSocketManager {
 
   private connectingPromise: Promise<void> | null = null;
 
+  private connectLock: boolean = false;
+
+  private pendingConnect: { agentId: string; onMessage: (data: unknown) => void; callbacks?: ConnectionCallbacks } | null = null;
+
   async connect(
     agentId: string,
     onMessage: (data: unknown) => void,
     callbacks?: ConnectionCallbacks
   ) {
+    // Prevent concurrent connection attempts
+    if (this.connectLock) {
+      // If already connecting to the same agent, just update handlers
+      if (this.agentId === agentId) {
+        this.messageHandlers = [onMessage];
+        this.callbacks = callbacks || {};
+        return;
+      }
+      // If connecting to different agent, queue it
+      this.pendingConnect = { agentId, onMessage, callbacks };
+      return;
+    }
+
     // Prevent duplicate connections to the same agent
     if (this.agentId === agentId) {
       if (this.ws?.readyState === WebSocket.OPEN) {
@@ -489,6 +519,15 @@ class WebSocketManager {
     } catch (error) {
       console.error('Failed to create WebSocket:', error);
       this.setConnectionState('disconnected');
+    } finally {
+      // Release lock and process pending connect
+      this.connectLock = false;
+      if (this.pendingConnect) {
+        const { agentId, onMessage, callbacks } = this.pendingConnect;
+        this.pendingConnect = null;
+        // Use setTimeout to avoid deep recursion
+        setTimeout(() => this.connect(agentId, onMessage, callbacks), 0);
+      }
     }
   }
 
@@ -1008,7 +1047,7 @@ class ExtendedAPIClient extends APIClient {
     await this.del(`/api/providers/${encodeURIComponent(provider)}/key`);
   }
 
-  async testProvider(provider: string): Promise<{ success: boolean; latency_ms?: number; error?: string }> {
+  async testProvider(provider: string): Promise<{ status: 'ok' | 'error'; latency_ms?: number; error?: string }> {
     return this.post(`/api/providers/${encodeURIComponent(provider)}/test`);
   }
 

@@ -1,0 +1,196 @@
+{
+  "app": {
+    "name": "EnterpriseClaw",
+    "version": "EnterpriseClaw v0.1.0"
+  },
+  "layout": {
+    "newAgent": "新規エージェント",
+    "agents": "エージェント",
+    "agentsCount": "{{count}} 件",
+    "noAgents": "エージェントがありません",
+    "noAgentsHint": "最初のエージェントを作成して開始",
+    "settings": "設定",
+    "theme": {
+      "light": "ライトモードに切り替え",
+      "dark": "ダークモードに切り替え"
+    }
+  },
+  "overview": {
+    "badge": "EnterpriseClaw",
+    "title": "あなたの AI エージェント",
+    "subtitle": "オペレーティングシステム",
+    "description": "自律型 AI エージェントを構築、展開、管理します。お気に入りのツールに接続して、作業を任せましょう。",
+    "startChat": "チャット開始",
+    "createAgent": "エージェント作成",
+    "features": {
+      "title": "必要なものがすべて",
+      "subtitle": "AI エージェントの作成と管理を行う完全なプラットフォーム",
+      "aiAgents": {
+        "title": "AI エージェント",
+        "description": "カスタム指示と機能を持つ専門エージェントを作成"
+      },
+      "conversations": {
+        "title": "会話",
+        "description": "リアルタイムでエージェントとチャット、ストリーミングレスポンス対応"
+      },
+      "workflows": {
+        "title": "ワークフロー",
+        "description": "ビジュアルデザイナーで複雑なマルチステップ自動化を構築"
+      },
+      "secure": {
+        "title": "セキュア",
+        "description": "監査証跡と権限制御を備えた組み込みセキュリティ"
+      },
+      "tools": {
+        "title": "ツールとスキル",
+        "description": "カスタムツールとビルド済みスキルでエージェントを拡張"
+      },
+      "integrations": {
+        "title": "統合",
+        "description": "MCP 経由で Slack、Discord など 100+ のツールに接続"
+      }
+    },
+    "cta": {
+      "title": "始める準備はできましたか？",
+      "subtitle": "今すぐ最初の AI エージェントの構築を開始",
+      "startChatting": "チャットを開始",
+      "configure": "設定"
+    }
+  },
+  "chat": {
+    "title": "チャット",
+    "newChat": "新規チャット",
+    "placeholder": "メッセージを入力...",
+    "send": "送信",
+    "thinking": "考え中...",
+    "offline": "オフライン",
+    "connecting": "接続中...",
+    "online": "オンライン",
+    "disclaimer": "AI が生成した内容は正確でない場合があります",
+    "selectAgent": "エージェント選択",
+    "noMessages": "メッセージがありません",
+    "startConversation": "会話を開始",
+    "copy": "コピー",
+    "copied": "コピー済み",
+    "retry": "再試行",
+    "error": {
+      "sendFailed": "送信に失敗しました",
+      "noSession": "セッションが見つかりません",
+      "sessionError": "セッションの作成に失敗しました"
+    }
+  },
+  "settings": {
+    "title": "設定",
+    "tabs": {
+      "providers": "プロバイダー",
+      "models": "モデル",
+      "agents": "エージェント",
+      "security": "セキュリティ",
+      "budget": "予算",
+      "network": "ネットワーク",
+      "system": "システム",
+      "a2a": "A2A ネットワーク",
+      "storage": "ストレージ",
+      "reset": "リセット"
+    },
+    "providers": {
+      "title": "AI プロバイダー",
+      "add": "プロバイダー追加",
+      "edit": "編集",
+      "delete": "削除",
+      "test": "テスト",
+      "name": "名前",
+      "type": "タイプ",
+      "apiKey": "API キー",
+      "baseUrl": "ベース URL",
+      "models": "モデル",
+      "status": {
+        "active": "アクティブ",
+        "inactive": "非アクティブ"
+      }
+    },
+    "security": {
+      "title": "セキュリティ設定",
+      "apiKey": "API キー",
+      "session": "セッションセキュリティ",
+      "audit": "監査ログ",
+      "encryption": "暗号化"
+    },
+    "system": {
+      "title": "システム設定",
+      "language": "言語",
+      "theme": "テーマ",
+      "autoStart": "自動開始",
+      "notifications": "通知"
+    },
+    "a2a": {
+      "title": "A2A ネットワーク",
+      "enable": "A2A ネットワークを有効化",
+      "discovery": "自動検出",
+      "peers": "ピア"
+    },
+    "storage": {
+      "title": "ストレージ設定",
+      "path": "ストレージパス",
+      "maxSize": "最大容量",
+      "cleanup": "自動クリーンアップ"
+    },
+    "actions": {
+      "save": "保存",
+      "cancel": "キャンセル",
+      "reset": "リセット",
+      "test": "接続テスト"
+    }
+  },
+  "common": {
+    "loading": "読み込み中...",
+    "error": "エラー",
+    "success": "成功",
+    "warning": "警告",
+    "info": "情報",
+    "confirm": "確認",
+    "cancel": "キャンセル",
+    "close": "閉じる",
+    "save": "保存",
+    "delete": "削除",
+    "edit": "編集",
+    "create": "作成",
+    "search": "検索",
+    "filter": "フィルター",
+    "sort": "並び替え",
+    "refresh": "更新",
+    "more": "詳細",
+    "back": "戻る",
+    "next": "次へ",
+    "previous": "前へ",
+    "done": "完了"
+  },
+  "sop": {
+    "title": "SOP",
+    "fullName": "標準作業手順",
+    "description": "特定のタスクを自律的に処理する事前設定済み AI エージェント",
+    "available": "利用可能な SOP",
+    "active": "アクティブな SOP",
+    "noSOPs": "利用可能な SOP がありません",
+    "noSOPsHint": "SOP は厳選された AI 機能パッケージです。カーネルがバンドルされた SOP を読み込むと表示されます。",
+    "noActiveSOPs": "アクティブな SOP がありません",
+    "noActiveSOPsHint": "利用可能タブから SOP を有効化して開始してください。各 SOP は専用エージェントを生成します。",
+    "browseSOPs": "SOP を閲覧",
+    "activate": "有効化",
+    "activating": "有効化中...",
+    "deactivate": "無効化",
+    "pause": "一時停止",
+    "resume": "再開",
+    "setup": "設定",
+    "activated": "SOP \"{{name}}\" が有効化されました",
+    "deactivated": "SOP が無効化されました",
+    "alreadyActive": "SOP は既に実行中です。アクティブタブに切り替えます。",
+    "requirementsNotMet": "要件が満たされていません。不足している依存関係を先にインストールしてください。"
+  },
+  "languages": {
+    "zh-CN": "简体中文",
+    "zh-TW": "繁體中文",
+    "en": "English",
+    "ja": "日本語"
+  }
+}

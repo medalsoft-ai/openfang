@@ -1,4 +1,4 @@
-// Toast Notification System — aligned with Alpine OpenFangToast
+// Toast Notification System — aligned with Alpine EnterpriseClawToast
 export type ToastType = 'success' | 'error' | 'warn' | 'info';
 
 const DEFAULT_DURATION = 4000;
@@ -130,7 +130,7 @@ export function toastInfo(message: string, duration?: number) {
   return toast(message, 'info', duration);
 }
 
-// Export as object (like Alpine OpenFangToast)
+// Export as object (like Alpine EnterpriseClawToast)
 export const toaster = {
   toast,
   success: toastSuccess,

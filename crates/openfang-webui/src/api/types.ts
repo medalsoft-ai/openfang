@@ -1,4 +1,4 @@
-// OpenFang API Types
+// EnterpriseClaw API Types
 
 export interface ApiError {
   error: string;
@@ -64,7 +64,8 @@ export interface Session {
 
 export interface Message {
   id: string;
-  role: 'user' | 'assistant' | 'system' | 'agent';
+  // Backend returns capitalized roles: 'User', 'Assistant', 'System' (Debug format)
+  role: 'user' | 'assistant' | 'system' | 'agent' | 'User' | 'Assistant' | 'System';
   content?: string;
   text?: string;
   timestamp?: string;

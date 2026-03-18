@@ -1,0 +1,196 @@
+{
+  "app": {
+    "name": "EnterpriseClaw",
+    "version": "EnterpriseClaw v0.1.0"
+  },
+  "layout": {
+    "newAgent": "New Agent",
+    "agents": "Agents",
+    "agentsCount": "{{count}}",
+    "noAgents": "No agents yet",
+    "noAgentsHint": "Create your first agent to start",
+    "settings": "Settings",
+    "theme": {
+      "light": "Switch to light mode",
+      "dark": "Switch to dark mode"
+    }
+  },
+  "overview": {
+    "badge": "EnterpriseClaw",
+    "title": "Your AI Agent",
+    "subtitle": "Operating System",
+    "description": "Build, deploy, and manage autonomous AI agents. Connect them to your favorite tools and let them work for you.",
+    "startChat": "Start Chat",
+    "createAgent": "Create Agent",
+    "features": {
+      "title": "Everything you need",
+      "subtitle": "A complete platform for creating and managing AI agents",
+      "aiAgents": {
+        "title": "AI Agents",
+        "description": "Create specialized agents with custom instructions and capabilities"
+      },
+      "conversations": {
+        "title": "Conversations",
+        "description": "Chat with your agents in real-time with streaming responses"
+      },
+      "workflows": {
+        "title": "Workflows",
+        "description": "Build complex multi-step automations with visual designer"
+      },
+      "secure": {
+        "title": "Secure",
+        "description": "Built-in security with audit trails and permission controls"
+      },
+      "tools": {
+        "title": "Tools & Skills",
+        "description": "Extend agents with custom tools and pre-built skills"
+      },
+      "integrations": {
+        "title": "Integrations",
+        "description": "Connect to Slack, Discord, and 100+ tools via MCP"
+      }
+    },
+    "cta": {
+      "title": "Ready to get started?",
+      "subtitle": "Jump right in and start building your first AI agent",
+      "startChatting": "Start Chatting",
+      "configure": "Configure"
+    }
+  },
+  "chat": {
+    "title": "Chat",
+    "newChat": "New Chat",
+    "placeholder": "Type a message...",
+    "send": "Send",
+    "thinking": "Thinking...",
+    "offline": "Offline",
+    "connecting": "Connecting...",
+    "online": "Online",
+    "disclaimer": "AI-generated content may be inaccurate",
+    "selectAgent": "Select Agent",
+    "noMessages": "No messages",
+    "startConversation": "Start a conversation",
+    "copy": "Copy",
+    "copied": "Copied",
+    "retry": "Retry",
+    "error": {
+      "sendFailed": "Failed to send",
+      "noSession": "No session found",
+      "sessionError": "Failed to create session"
+    }
+  },
+  "settings": {
+    "title": "Settings",
+    "tabs": {
+      "providers": "Providers",
+      "models": "Models",
+      "agents": "Agents",
+      "security": "Security",
+      "budget": "Budget",
+      "network": "Network",
+      "system": "System",
+      "a2a": "A2A Network",
+      "storage": "Storage",
+      "reset": "Reset"
+    },
+    "providers": {
+      "title": "AI Providers",
+      "add": "Add Provider",
+      "edit": "Edit",
+      "delete": "Delete",
+      "test": "Test",
+      "name": "Name",
+      "type": "Type",
+      "apiKey": "API Key",
+      "baseUrl": "Base URL",
+      "models": "Models",
+      "status": {
+        "active": "Active",
+        "inactive": "Inactive"
+      }
+    },
+    "security": {
+      "title": "Security Settings",
+      "apiKey": "API Key",
+      "session": "Session Security",
+      "audit": "Audit Logs",
+      "encryption": "Encryption"
+    },
+    "system": {
+      "title": "System Settings",
+      "language": "Language",
+      "theme": "Theme",
+      "autoStart": "Auto Start",
+      "notifications": "Notifications"
+    },
+    "a2a": {
+      "title": "A2A Network",
+      "enable": "Enable A2A Network",
+      "discovery": "Auto Discovery",
+      "peers": "Peers"
+    },
+    "storage": {
+      "title": "Storage Settings",
+      "path": "Storage Path",
+      "maxSize": "Max Size",
+      "cleanup": "Auto Cleanup"
+    },
+    "actions": {
+      "save": "Save",
+      "cancel": "Cancel",
+      "reset": "Reset",
+      "test": "Test Connection"
+    }
+  },
+  "common": {
+    "loading": "Loading...",
+    "error": "Error",
+    "success": "Success",
+    "warning": "Warning",
+    "info": "Info",
+    "confirm": "Confirm",
+    "cancel": "Cancel",
+    "close": "Close",
+    "save": "Save",
+    "delete": "Delete",
+    "edit": "Edit",
+    "create": "Create",
+    "search": "Search",
+    "filter": "Filter",
+    "sort": "Sort",
+    "refresh": "Refresh",
+    "more": "More",
+    "back": "Back",
+    "next": "Next",
+    "previous": "Previous",
+    "done": "Done"
+  },
+  "sop": {
+    "title": "SOP",
+    "fullName": "Standard Operating Procedures",
+    "description": "Pre-configured AI agents that autonomously handle specific tasks",
+    "available": "Available SOPs",
+    "active": "Active SOPs",
+    "noSOPs": "No SOPs available",
+    "noSOPsHint": "SOPs are curated AI capability packages. They will appear once the kernel loads bundled SOPs.",
+    "noActiveSOPs": "No active SOPs",
+    "noActiveSOPsHint": "Activate a SOP from the Available tab to get started. Each SOP spawns a dedicated agent.",
+    "browseSOPs": "Browse SOPs",
+    "activate": "Activate",
+    "activating": "Activating...",
+    "deactivate": "Deactivate",
+    "pause": "Pause",
+    "resume": "Resume",
+    "setup": "Set up",
+    "activated": "SOP \"{{name}}\" activated",
+    "deactivated": "SOP deactivated",
+    "alreadyActive": "SOP is already running. Switching to Active tab.",
+    "requirementsNotMet": "Requirements not met. Please install missing dependencies first."
+  },
+  "languages": {
+    "zh-CN": "简体中文",
+    "zh-TW": "繁體中文",
+    "en": "English",
+    "ja": "日本語"
+  }
+}

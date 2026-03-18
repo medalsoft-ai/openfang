@@ -487,10 +487,15 @@ export function Agents() {
     queryFn: () => api.listAgents(),
   });
 
-  // Fetch available models
+  // Fetch available models and providers
   const { data: modelsData } = useQuery({
     queryKey: ['models'],
     queryFn: () => api.listModels(),
+  });
+
+  const { data: providersData } = useQuery({
+    queryKey: ['providers'],
+    queryFn: () => api.listProviders(),
   });
 
   const models = useMemo(() => {
@@ -498,6 +503,18 @@ export function Agents() {
     if (Array.isArray(modelsData)) return modelsData;
     return modelsData.models || [];
   }, [modelsData]);
+
+  const providers = useMemo(() => {
+    if (!providersData) return [];
+    return providersData.providers || [];
+  }, [providersData]);
+
+  // Check if a provider is configured
+  const isProviderConfigured = useCallback((providerName: string) => {
+    if (!providerName) return false;
+    const p = providers.find(pr => pr.id === providerName);
+    return p ? p.auth_status === 'configured' : false;
+  }, [providers]);
 
   // Create agent mutation
   const createMutation = useMutation({
@@ -584,15 +601,27 @@ You are a helpful assistant.
     navigate(`/chat?agent=${agent.id}`);
   }, [navigate]);
 
-  // Open spawn wizard
-  const openSpawnWizard = useCallback(() => {
+  // Open spawn wizard with dynamic default provider/model
+  const openSpawnWizard = useCallback(async () => {
     setShowCreateModal(true);
     setSpawnMode('wizard');
     setSpawnStep(1);
+
+    // Fetch default provider/model from status
+    let defaultProvider = 'groq';
+    let defaultModel = 'llama-3.3-70b-versatile';
+    try {
+      const status = await api.status() as { default_provider?: string; default_model?: string };
+      if (status.default_provider) defaultProvider = status.default_provider;
+      if (status.default_model) defaultModel = status.default_model;
+    } catch (e) {
+      // Keep hardcoded defaults
+    }
+
     setSpawnForm({
       name: '',
-      provider: 'groq',
-      model: 'llama-3.3-70b-versatile',
+      provider: defaultProvider,
+      model: defaultModel,
       systemPrompt: 'You are a helpful assistant.',
       profile: 'full',
       caps: {
@@ -1052,6 +1081,7 @@ ${t.system_prompt}
             spawning={spawning}
             onClose={() => setShowCreateModal(false)}
             onSpawn={spawnAgent}
+            providers={providers}
           />
         )}
       </AnimatePresence>
@@ -1065,6 +1095,7 @@ ${t.system_prompt}
             setSelectedCategory={setSelectedCategory}
             onClose={() => setShowTemplates(false)}
             onSpawn={spawnBuiltin}
+            providers={providers}
           />
         )}
       </AnimatePresence>
@@ -1228,7 +1259,7 @@ function CreateWizardModal({
   spawnStep, setSpawnStep, spawnForm, setSpawnForm,
   spawnIdentity, setSpawnIdentity, selectedPreset, setSelectedPreset,
   soulContent, setSoulContent, spawnToml, setSpawnToml,
-  spawning, onClose, onSpawn
+  spawning, onClose, onSpawn, providers
 }: {
   spawnMode: 'wizard' | 'toml';
   setSpawnMode: (m: 'wizard' | 'toml') => void;
@@ -1247,7 +1278,13 @@ function CreateWizardModal({
   spawning: boolean;
   onClose: () => void;
   onSpawn: () => void;
+  providers: Array<{ id: string; auth_status: string }>;
 }) {
+  // Check if current provider is configured
+  const isCurrentProviderConfigured = useMemo(() => {
+    const p = providers.find(pr => pr.id === spawnForm.provider);
+    return p ? p.auth_status === 'configured' : false;
+  }, [providers, spawnForm.provider]);
   const stepTitles = ['Basic Info', 'Personality', 'Identity', 'Capabilities', 'Confirm'];
 
   return (
@@ -1413,7 +1450,10 @@ function CreateWizardModal({
                 <select
                   value={spawnForm.provider}
                   onChange={(e) => setSpawnForm({ ...spawnForm, provider: e.target.value })}
-                  className="w-full bg-[var(--surface-tertiary)] border border-[var(--border-default)] rounded-lg px-4 py-3 text-[var(--text-primary)]"
+                  className={cn(
+                    "w-full bg-[var(--surface-tertiary)] border rounded-lg px-4 py-3 text-[var(--text-primary)]",
+                    isCurrentProviderConfigured ? "border-[var(--border-default)]" : "border-amber-500/50"
+                  )}
                 >
                   <option value="anthropic">Anthropic</option>
                   <option value="openai">OpenAI</option>
@@ -1427,6 +1467,18 @@ function CreateWizardModal({
                   <option value="sambanova">SambaNova</option>
                   <option value="together">Together</option>
                 </select>
+                {/* Provider status indicator */}
+                <div className="flex items-center gap-2 mt-2 text-xs">
+                  <span className={cn(
+                    "w-2 h-2 rounded-full",
+                    isCurrentProviderConfigured ? "bg-green-500" : "bg-amber-500"
+                  )} />
+                  <span className={isCurrentProviderConfigured ? "text-green-400" : "text-amber-400"}>
+                    {isCurrentProviderConfigured
+                      ? `${spawnForm.provider} is configured`
+                      : `${spawnForm.provider} is not configured. Go to Settings > Providers to configure.`}
+                  </span>
+                </div>
               </div>
               <div>
                 <label className="block text-sm text-[var(--text-secondary)] mb-2">Model</label>
@@ -1678,18 +1730,26 @@ function CreateWizardModal({
 
 // Templates Modal Component
 function TemplatesModal({
-  templates, selectedCategory, setSelectedCategory, onClose, onSpawn
+  templates, selectedCategory, setSelectedCategory, onClose, onSpawn, providers
 }: {
   templates: Template[];
   selectedCategory: string;
   setSelectedCategory: (c: string) => void;
   onClose: () => void;
   onSpawn: (t: Template) => void;
+  providers: Array<{ id: string; auth_status: string }>;
 }) {
   const categories = ['All', ...Array.from(new Set(templates.map(t => t.category).filter(Boolean))).filter((c): c is string => typeof c === 'string')];
   const filtered = selectedCategory === 'All'
     ? templates
     : templates.filter(t => t.category === selectedCategory);
+
+  // Check if a provider is configured
+  const isProviderConfigured = (providerName: string) => {
+    if (!providerName) return false;
+    const p = providers.find(pr => pr.id === providerName);
+    return p ? p.auth_status === 'configured' : false;
+  };
 
   return (
     <motion.div
@@ -1735,33 +1795,60 @@ function TemplatesModal({
 
         {/* Templates Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {filtered.map((template) => (
-            <div
-              key={template.name}
-              className="p-4 rounded-xl border border-[var(--border-default)] hover:border-[var(--neon-cyan)]/50 transition-all group"
-            >
-              <div className="flex items-start justify-between mb-2">
-                <h3 className="font-medium text-[var(--text-primary)]">{template.name}</h3>
-                <span className="text-xs px-2 py-0.5 rounded bg-[var(--surface-secondary)] text-[var(--text-muted)]">
-                  {template.category}
-                </span>
-              </div>
-              <p className="text-sm text-[var(--text-muted)] mb-3 line-clamp-2">{template.description}</p>
-              <div className="flex items-center gap-2 text-xs text-[var(--text-muted)] mb-3">
-                <Cpu className="w-3 h-3" />
-                <span>{template.model}</span>
-                <span className="text-[var(--border-subtle)]">|</span>
-                <Shield className="w-3 h-3" />
-                <span>{profileDescriptions[template.profile || 'full']?.label}</span>
-              </div>
-              <button
-                onClick={() => onSpawn(template)}
-                className="w-full py-2 rounded-lg bg-[var(--neon-cyan)]/10 text-[var(--neon-cyan)] hover:bg-[var(--neon-cyan)]/20 font-medium text-sm opacity-0 group-hover:opacity-100 transition-opacity"
+          {filtered.map((template) => {
+            const providerConfigured = isProviderConfigured(template.provider || 'groq');
+            return (
+              <div
+                key={template.name}
+                className={cn(
+                  "p-4 rounded-xl border transition-all group",
+                  providerConfigured
+                    ? "border-[var(--border-default)] hover:border-[var(--neon-cyan)]/50"
+                    : "border-[var(--border-default)]/50 opacity-75"
+                )}
               >
-                Create from Template
-              </button>
-            </div>
-          ))}
+                <div className="flex items-start justify-between mb-2">
+                  <h3 className="font-medium text-[var(--text-primary)]">{template.name}</h3>
+                  <span className="text-xs px-2 py-0.5 rounded bg-[var(--surface-secondary)] text-[var(--text-muted)]">
+                    {template.category}
+                  </span>
+                </div>
+                <p className="text-sm text-[var(--text-muted)] mb-3 line-clamp-2">{template.description}</p>
+                <div className="flex items-center gap-2 text-xs text-[var(--text-muted)] mb-3">
+                  <Cpu className="w-3 h-3" />
+                  <span>{template.model}</span>
+                  <span className="text-[var(--border-subtle)]">|</span>
+                  <Shield className="w-3 h-3" />
+                  <span>{profileDescriptions[template.profile || 'full']?.label}</span>
+                </div>
+                {/* Provider status indicator */}
+                <div className="flex items-center gap-2 text-xs mb-3">
+                  <span className={cn(
+                    "w-2 h-2 rounded-full",
+                    providerConfigured ? "bg-green-500" : "bg-amber-500"
+                  )} />
+                  <span className={providerConfigured ? "text-green-400" : "text-amber-400"}>
+                    {providerConfigured
+                      ? `Provider: ${template.provider || 'groq'} (configured)`
+                      : `Provider: ${template.provider || 'groq'} (not configured)`}
+                  </span>
+                </div>
+                <button
+                  onClick={() => onSpawn(template)}
+                  disabled={!providerConfigured}
+                  className={cn(
+                    "w-full py-2 rounded-lg font-medium text-sm transition-all",
+                    providerConfigured
+                      ? "bg-[var(--neon-cyan)]/10 text-[var(--neon-cyan)] hover:bg-[var(--neon-cyan)]/20 opacity-0 group-hover:opacity-100"
+                      : "bg-[var(--surface-secondary)] text-[var(--text-muted)] cursor-not-allowed"
+                  )}
+                  title={providerConfigured ? '' : 'Provider not configured. Go to Settings > Providers to configure.'}
+                >
+                  {providerConfigured ? 'Create from Template' : 'Provider Not Configured'}
+                </button>
+              </div>
+            );
+          })}
         </div>
       </motion.div>
     </motion.div>

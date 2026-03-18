@@ -1,4 +1,4 @@
-// Motion components for OpenFang Cyber-Neon theme
+// Motion components for EnterpriseClaw Cyber-Neon theme
 export { PageTransition } from './PageTransition';
 export { SpotlightCard } from './SpotlightCard';
 export { AnimatedList, AnimatedItem } from './AnimatedList';

@@ -1644,7 +1644,7 @@ export function Hands() {
   const handleActivate = useCallback(async (hand: Hand, settings: Record<string, string>) => {
     try {
       await api.activateHand(hand.id, settings);
-      toaster.success(`Hand "${hand.name}" activated`);
+      toaster.success(`SOP "${hand.name}" activated`);
       setSetupHand(null);
       setActiveTab('active');
       refetchActive();
@@ -1652,7 +1652,7 @@ export function Hands() {
       const errorMsg = (err as Error).message || '';
 
       // Handle specific error cases with user-friendly messages
-      if (errorMsg.includes('Hand already active')) {
+      if (errorMsg.includes('Hand already active') || errorMsg.includes('SOP already active')) {
         const handName = errorMsg.split(':').pop()?.trim() || hand.name;
         toaster.error(`${handName} is already running. Switching to Active tab.`);
         setSetupHand(null);
@@ -1696,7 +1696,7 @@ export function Hands() {
     if (!confirm(`Deactivate hand "${name}"? This will kill its agent.`)) return;
     try {
       await api.deactivateHandInstance(id);
-      toaster.success('Hand deactivated');
+      toaster.success('SOP deactivated');
       refetchActive();
     } catch (err) {
       toaster.error('Failed to deactivate: ' + (err as Error).message);
