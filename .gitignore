@@ -53,3 +53,11 @@ crates/openfang-webui/dist
 
 # Other
 .serena/
+
+# Temporary files (screenshots, logs, etc.)
+.playwright-mcp/
+*.png
+*.jpg
+*.jpeg
+/tmp/
+/temp/
