@@ -11195,20 +11195,52 @@ pub async fn auth_check(
     request: axum::http::Request<axum::body::Body>,
 ) -> impl IntoResponse {
     let auth_cfg = &state.kernel.config.auth;
-    if !auth_cfg.enabled {
+    let api_key = state.kernel.config.api_key.trim().to_string();
+
+    // Determine auth mode: apikey > session > none
+    // This must match middleware.rs logic exactly
+    let mode = if !api_key.is_empty() {
+        "apikey"
+    } else if auth_cfg.enabled {
+        "session"
+    } else {
+        "none"
+    };
+
+    if mode == "none" {
         return Json(serde_json::json!({
             "authenticated": true,
             "mode": "none",
         }));
     }
 
-    // Derive the session secret the same way as server.rs
-    let api_key = state.kernel.config.api_key.trim().to_string();
-    let secret = if !api_key.is_empty() {
-        api_key
-    } else {
-        auth_cfg.password_hash.clone()
-    };
+    if mode == "apikey" {
+        // For API key mode, client needs to provide the key
+        // Check if they already sent a valid one
+        let auth_header = request
+            .headers()
+            .get("authorization")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.strip_prefix("Bearer "));
+        let key_header = request
+            .headers()
+            .get("x-api-key")
+            .and_then(|v| v.to_str().ok());
+        let token = auth_header.or(key_header);
+
+        let authenticated = token.map_or(false, |t| {
+            use subtle::ConstantTimeEq;
+            t.len() == api_key.len() && bool::from(t.as_bytes().ct_eq(api_key.as_bytes()))
+        });
+
+        return Json(serde_json::json!({
+            "authenticated": authenticated,
+            "mode": "apikey",
+        }));
+    }
+
+    // Session mode - derive the session secret
+    let secret = auth_cfg.password_hash.clone();
 
     // Check session cookie
     let session_user = request
