@@ -6,10 +6,13 @@
   "permissions": [
     "core:default",
     "core:window:default",
+    "core:window:allow-set-fullscreen",
+    "core:window:allow-is-fullscreen",
     "core:app:default",
     "core:event:default",
     "notification:default",
     "shell:default",
+    "shell:allow-open",
     "dialog:default",
     "global-shortcut:allow-register",
     "global-shortcut:allow-unregister",

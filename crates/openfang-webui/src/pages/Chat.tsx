@@ -20,7 +20,8 @@ import {
   Cpu,
   Wifi, WifiOff, Loader,
   Wrench, AlertCircle, Image, Music,
-  ChevronRight
+  ChevronRight,
+  ExternalLink, Maximize2, Minimize2,
 } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { toaster } from '@/lib/toast';
@@ -181,6 +182,48 @@ function WelcomeScreen({
   );
 }
 
+// Process canvas_present tools in session messages and convert them to canvasData messages
+function processCanvasTools(messages: ExtendedMessage[]): ExtendedMessage[] {
+  const result: ExtendedMessage[] = [];
+  let canvasIdx = 0;
+
+  for (const msg of messages) {
+    const canvasTools = msg.tools?.filter(t => t.name === 'canvas_present') ?? [];
+    const otherTools = msg.tools?.filter(t => t.name !== 'canvas_present') ?? [];
+
+    if (canvasTools.length > 0) {
+      // Add the message (without canvas tools)
+      result.push({ ...msg, tools: otherTools.length > 0 ? otherTools : undefined });
+
+      // Insert canvas messages after the tool message
+      for (const canvasTool of canvasTools) {
+        let inputObj: Record<string, unknown> = {};
+        try {
+          inputObj = typeof canvasTool.input === 'string'
+            ? JSON.parse(canvasTool.input)
+            : canvasTool.input;
+        } catch { /* use empty object */ }
+
+        const html = typeof inputObj.html === 'string' ? inputObj.html : '';
+        const title = typeof inputObj.title === 'string' ? inputObj.title : 'Canvas';
+        const canvasId = `canvas-hist-${canvasIdx++}`;
+
+        result.push({
+          id: canvasId,
+          role: 'assistant',
+          content: '__CANVAS__',
+          canvasData: { title, canvasId, html },
+          ts: msg.ts,
+        });
+      }
+    } else {
+      result.push(msg);
+    }
+  }
+
+  return result;
+}
+
 // Tool Card component for displaying tool calls
 function ToolCard({ tool }: { tool: ExtendedTool }) {
   const [expanded, setExpanded] = useState(tool.expanded);
@@ -288,23 +331,99 @@ function ToolCard({ tool }: { tool: ExtendedTool }) {
 
 // Canvas component for rendering agent canvas
 function CanvasPanel({ title, canvasId, html }: { title: string; canvasId: string; html: string }) {
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const toggleFullscreen = () => setIsFullscreen((v) => !v);
+
+  const openInBrowser = async () => {
+    if (!html) {
+      toaster.error('No canvas content to open');
+      return;
+    }
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      await invoke('open_html_in_browser', { title: title || 'Canvas', html });
+    } catch (e) {
+      toaster.error(`Failed to open in browser: ${e}`);
+    }
+  };
+
   return (
     <motion.div
+      ref={containerRef}
       initial={{ opacity: 0, y: 5 }}
       animate={{ opacity: 1, y: 0 }}
       className="my-2 rounded-lg border border-[var(--soft-divider)] overflow-hidden"
     >
-      <div className="px-3 py-2 bg-[var(--soft-surface)] border-b border-[var(--soft-divider)] flex justify-between items-center">
-        <span className="text-sm font-medium text-[var(--soft-text-primary)]">{title || 'Canvas'}</span>
-        <span className="text-xs text-[var(--soft-text-muted)] font-mono">{canvasId.substring(0, 8)}</span>
+      <div className="px-3 py-2 bg-[var(--soft-surface)] border-b border-[var(--soft-divider)] flex justify-between items-center gap-2">
+        <span className="text-sm font-medium text-[var(--soft-text-primary)] truncate">{title || 'Canvas'}</span>
+        <div className="flex items-center gap-1 shrink-0">
+          <span className="text-xs text-[var(--soft-text-muted)] font-mono hidden sm:inline">{canvasId.substring(0, 8)}</span>
+          <button
+            onClick={openInBrowser}
+            title="Open in browser"
+            className="p-1.5 rounded hover:bg-[var(--soft-surface-hover)] text-[var(--soft-text-muted)] hover:text-[var(--soft-text-primary)] transition-colors cursor-pointer"
+          >
+            <ExternalLink className="w-3.5 h-3.5" />
+          </button>
+          <button
+            onClick={toggleFullscreen}
+            title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+            className="p-1.5 rounded hover:bg-[var(--soft-surface-hover)] text-[var(--soft-text-muted)] hover:text-[var(--soft-text-primary)] transition-colors cursor-pointer"
+          >
+            {isFullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+          </button>
+        </div>
       </div>
       <iframe
         sandbox="allow-scripts"
         srcDoc={html}
-        className="w-full min-h-[300px] border-none bg-white"
+        className="w-full bg-white"
+        style={{ minHeight: '300px' }}
         loading="lazy"
         title={canvasId}
       />
+
+      {/* Custom fullscreen overlay — covers the viewport with just the iframe */}
+      <AnimatePresence>
+        {isFullscreen && (
+          <motion.div
+            key="canvas-fullscreen-overlay"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.15 }}
+            className="fixed inset-0 z-[9999] flex flex-col bg-black"
+          >
+            {/* Header bar with title and close button */}
+            <div className="flex items-center justify-between gap-3 px-4 py-2 bg-[var(--soft-surface)] border-b border-[var(--soft-divider)] shrink-0">
+              <span className="text-sm font-medium text-[var(--soft-text-primary)] truncate">
+                {title || 'Canvas'}
+              </span>
+              <div className="flex items-center gap-1 shrink-0">
+                <span className="text-xs text-[var(--soft-text-muted)] font-mono hidden sm:inline">
+                  {canvasId.substring(0, 8)}
+                </span>
+                <button
+                  onClick={toggleFullscreen}
+                  title="Exit fullscreen"
+                  className="p-1.5 rounded hover:bg-[var(--soft-surface-hover)] text-[var(--soft-text-muted)] hover:text-[var(--soft-text-primary)] transition-colors cursor-pointer"
+                >
+                  <Minimize2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+            {/* Fullscreen iframe */}
+            <iframe
+              sandbox="allow-scripts"
+              srcDoc={html}
+              className="flex-1 w-full bg-white border-0"
+              title={canvasId}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 }
@@ -1311,7 +1430,7 @@ export function Chat() {
         // Use the last sent user message content (stored in ref when sent).
         const userContent = lastSentUserMessageRef.current || '...';
 
-        const newMessages = [...sessionMessages];
+        const newMessages = processCanvasTools([...sessionMessages]);
 
         // If last message is not from user, inject the real user message
         const lastMsg = newMessages[newMessages.length - 1];
@@ -1336,7 +1455,8 @@ export function Chat() {
 
         setMessages(newMessages);
       } else {
-        setMessages(sessionMessages);
+        const processed = processCanvasTools(sessionMessages);
+        setMessages(processed);
       }
     }
   }, [sessionMessages, streamingAgents, selectedAgentId]);

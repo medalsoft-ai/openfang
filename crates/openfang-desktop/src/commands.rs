@@ -162,6 +162,36 @@ pub fn open_config_dir() -> Result<(), String> {
     open::that(&dir).map_err(|e| format!("Failed to open directory: {e}"))
 }
 
+/// Open a piece of HTML in the OS default browser.
+///
+/// Writes the content to a temp file (named canvas-{timestamp}.html) and opens it
+/// via the OS shell.  Blob URLs are browser-internal and have no OS handler, so
+/// `shell.open("blob:...")` silently fails on every platform.
+#[tauri::command]
+pub fn open_html_in_browser(title: String, html: String) -> Result<(), String> {
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system time before epoch")
+        .as_nanos();
+
+    let file_name = format!("openfang-canvas-{timestamp}.html");
+    let tmp_path = std::env::temp_dir().join(&file_name);
+    let tmp_path_str = tmp_path.to_string_lossy().into_owned();
+
+    let full_html = format!(
+        "<!DOCTYPE html>\n<html>\n<head><meta charset=\"utf-8\"><title>{}</title></head>\n<body>{}</body>\n</html>",
+        title,
+        html
+    );
+
+    std::fs::write(&tmp_path, &full_html)
+        .map_err(|e| format!("Failed to write temp file: {e}"))?;
+
+    open::that(&tmp_path_str).map_err(|e| format!("Failed to open browser: {e}"))
+}
+
 /// Open the OpenFang logs directory (`~/.openfang/logs/`) in the OS file manager.
 #[tauri::command]
 pub fn open_logs_dir() -> Result<(), String> {

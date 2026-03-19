@@ -101,6 +101,7 @@ pub fn run() {
             commands::install_update,
             commands::open_config_dir,
             commands::open_logs_dir,
+            commands::open_html_in_browser,
         ])
         .setup(move |app| {
             // HTTP服务器仍然启动（提供API）
