@@ -62,8 +62,8 @@ pub async fn build_router(
             format!("http://{listen_addr}").parse().unwrap(),
             format!("http://localhost:{port}").parse().unwrap(),
         ];
-        // Also allow common dev ports
-        for p in [3000u16, 8080] {
+        // Also allow common dev ports (Vite, webpack, etc.)
+        for p in [3000u16, 5173, 5174, 8080] {
             if p != port {
                 if let Ok(v) = format!("http://127.0.0.1:{p}").parse() {
                     origins.push(v);
@@ -85,6 +85,10 @@ pub async fn build_router(
             format!("http://{listen_addr}").parse().unwrap(),
             "http://localhost:4200".parse().unwrap(),
             "http://127.0.0.1:4200".parse().unwrap(),
+            "http://localhost:5173".parse().unwrap(),
+            "http://127.0.0.1:5173".parse().unwrap(),
+            "http://localhost:5174".parse().unwrap(),
+            "http://127.0.0.1:5174".parse().unwrap(),
             "http://localhost:8080".parse().unwrap(),
             "http://127.0.0.1:8080".parse().unwrap(),
         ];
