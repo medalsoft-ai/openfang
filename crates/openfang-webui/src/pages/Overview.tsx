@@ -238,7 +238,7 @@ export function Overview() {
                 transition={{ delay: 0.3, duration: 0.5 }}
               >
                 <button
-                  onClick={() => navigate('/chat-v2')}
+                  onClick={() => navigate('/chat')}
                   className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-[var(--neon-cyan)] text-[var(--void)] font-medium hover:bg-[var(--neon-cyan-dim)] transition-colors"
                 >
                   {t('overview.startChat')}
@@ -324,7 +324,7 @@ export function Overview() {
           </p>
           <div className="flex flex-col sm:flex-row gap-3 justify-center">
             <button
-              onClick={() => navigate('/chat-v2')}
+              onClick={() => navigate('/chat')}
               className="inline-flex items-center justify-center gap-2 px-8 py-3 rounded-xl bg-[var(--neon-cyan)] text-[var(--void)] font-medium hover:bg-[var(--neon-cyan-dim)] transition-colors"
             >
               <MessageSquare className="w-5 h-5" />

@@ -6,7 +6,6 @@ import { Overview } from '@/pages/Overview'
 import { Agents } from '@/pages/Agents'
 import { Sessions } from '@/pages/Sessions'
 import { Chat } from '@/pages/Chat'
-import { ChatV2 } from '@/pages/ChatV2'
 import { Workflows } from '@/pages/Workflows'
 import { WorkflowBuilder } from '@/pages/WorkflowBuilder'
 import { Scheduler } from '@/pages/Scheduler'
@@ -45,7 +44,6 @@ function App() {
           <Route path="agents" element={<Agents />} />
           <Route path="sessions" element={<Sessions />} />
           <Route path="chat" element={<Chat />} />
-          <Route path="chat-v2" element={<ChatV2 />} />
           <Route path="workflows" element={<Workflows />} />
           <Route path="workflows/builder" element={<WorkflowBuilder />} />
           <Route path="scheduler" element={<Scheduler />} />

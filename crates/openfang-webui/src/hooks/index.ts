@@ -51,3 +51,4 @@ export {
   useCombinedMotion,
   useSequencedAnimation,
 } from './useMotion';
+export { useSessionWebSocket, type UseSessionWebSocketOptions, type UseSessionWebSocketReturn } from './useSessionWebSocket';

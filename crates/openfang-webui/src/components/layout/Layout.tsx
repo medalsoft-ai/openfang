@@ -368,12 +368,12 @@ export function Layout() {
 
   // Build a Set of Hand agent IDs for quick lookup
   const handAgentIds = new Set<string>(
-    handsData?.instances?.map((instance) => instance.agent_id).filter(Boolean) ?? []
+    (handsData?.instances?.map((instance) => instance.agent_id).filter(Boolean) as string[]) ?? []
   )
 
-  // Handle agent click - navigate to chat-v2 with agent
+  // Handle agent click - navigate to chat with agent
   const handleAgentClick = useCallback((agent: Agent) => {
-    navigate(`/chat-v2?agent=${agent.id}`)
+    navigate(`/chat?agent=${agent.id}`)
   }, [navigate])
 
   // Handle create agent - navigate to agents page

@@ -13,7 +13,9 @@ export interface WebSocketCallbacks {
   onOpen?: () => void;
   onMessage?: (data: WebSocketMessage) => void;
   onClose?: () => void;
-  onError?: () => void;
+  onError?: (error?: Event) => void;
+  /** @deprecated Use connection state listeners instead */
+  onStateChange?: (state: ConnectionState) => void;
 }
 
 const MAX_RECONNECT = 5;
@@ -29,16 +31,36 @@ class WebSocketManager {
   private listeners: Set<(state: ConnectionState) => void> = new Set();
   private authToken: string = '';
   private wsBaseUrl: string | null = null;
+  private intentionalDisconnect = false;
 
   setAuthToken(token: string) {
     this.authToken = token;
   }
 
-  async connect(agentId: string, callbacks: WebSocketCallbacks) {
+  async connect(
+    agentId: string,
+    onMessageOrCallbacks: WebSocketCallbacks | ((data: unknown) => void),
+    legacyCallbacks?: WebSocketCallbacks
+  ) {
     this.disconnect();
     this.agentId = agentId;
-    this.callbacks = callbacks;
     this.reconnectAttempts = 0;
+    this.intentionalDisconnect = false;
+
+    // Support both old API: connect(agentId, onMessage, callbacks?) and new API: connect(agentId, callbacks)
+    if (typeof onMessageOrCallbacks === 'function') {
+      // Old API
+      this.callbacks = {
+        onMessage: legacyCallbacks?.onMessage ?? onMessageOrCallbacks as (data: WebSocketMessage) => void,
+        onOpen: legacyCallbacks?.onOpen,
+        onClose: legacyCallbacks?.onClose,
+        onError: legacyCallbacks?.onError,
+      };
+    } else {
+      // New API
+      this.callbacks = onMessageOrCallbacks;
+    }
+
     await this.doConnect();
   }
 
@@ -75,10 +97,18 @@ class WebSocketManager {
       };
 
       this.ws.onclose = (event) => {
+        const wasIntentional = this.intentionalDisconnect;
         this.ws = null;
 
+        // Don't reconnect if this was an intentional disconnect (e.g., switching agents)
+        if (wasIntentional || event.code === 1000) {
+          this.setConnectionState('disconnected');
+          this.callbacks.onClose?.();
+          return;
+        }
+
         // Attempt reconnection if not clean close and under max attempts
-        if (this.agentId && this.reconnectAttempts < MAX_RECONNECT && event.code !== 1000) {
+        if (this.agentId && this.reconnectAttempts < MAX_RECONNECT) {
           this.reconnectAttempts++;
           this.setConnectionState('reconnecting');
 
@@ -87,10 +117,7 @@ class WebSocketManager {
           return;
         }
 
-        if (this.reconnectAttempts >= MAX_RECONNECT) {
-          this.setConnectionState('disconnected');
-        }
-
+        this.setConnectionState('disconnected');
         this.callbacks.onClose?.();
       };
 
@@ -103,6 +130,8 @@ class WebSocketManager {
   }
 
   disconnect() {
+    // Mark as intentional disconnect to prevent reconnection attempts
+    this.intentionalDisconnect = true;
     this.agentId = null;
     this.reconnectAttempts = MAX_RECONNECT;
     this.wsBaseUrl = null;
@@ -113,6 +142,7 @@ class WebSocketManager {
     }
 
     if (this.ws) {
+      // Use code 1000 for normal closure
       this.ws.close(1000);
       this.ws = null;
     }
@@ -140,6 +170,8 @@ class WebSocketManager {
     if (this.connectionState === state) return;
     this.connectionState = state;
     this.listeners.forEach((fn) => fn(state));
+    // Call legacy onStateChange callback for backward compatibility
+    this.callbacks.onStateChange?.(state);
   }
 
   onConnectionChange(fn: (state: ConnectionState) => void): () => void {

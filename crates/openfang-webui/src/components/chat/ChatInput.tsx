@@ -12,6 +12,12 @@ interface ChatInputProps {
   onStop?: () => void;
 }
 
+// keyCode 229 is VK_PROCESS_KEY - set by IME during composition
+// No physical key produces this value, making it a reliable IME signal
+const isImeProcessing = (e: React.KeyboardEvent | KeyboardEvent): boolean => {
+  return e.keyCode === 229 || e.charCode === 229;
+};
+
 export const ChatInput = memo(function ChatInput({
   agentName,
   isStreaming,
@@ -21,6 +27,7 @@ export const ChatInput = memo(function ChatInput({
   const { t } = useTranslation();
   const [input, setInput] = useState('');
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const isComposingRef = useRef(false);
 
   const handleSend = useCallback(() => {
     const content = input.trim();
@@ -36,10 +43,27 @@ export const ChatInput = memo(function ChatInput({
   }, [input, isStreaming, onSend]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
+    if (e.key !== 'Enter' || e.shiftKey) return;
+
+    // KEY SIGNAL 1: keyCode 229 (VK_PROCESS_KEY) - most reliable, set during keydown itself
+    // This catches the Enter key that confirms IME composition before compositionend fires
+    if (isImeProcessing(e.nativeEvent)) {
+      return;
     }
+
+    // KEY SIGNAL 2: isComposing flag from compositionstart/end
+    if (isComposingRef.current) {
+      return;
+    }
+
+    // KEY SIGNAL 3: Native isComposing property (fallback)
+    if ((e.nativeEvent as KeyboardEvent).isComposing) {
+      return;
+    }
+
+    // Normal Enter key - send message
+    e.preventDefault();
+    handleSend();
   }, [handleSend]);
 
   const handleInputChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -47,6 +71,26 @@ export const ChatInput = memo(function ChatInput({
     // Auto-resize textarea
     e.target.style.height = 'auto';
     e.target.style.height = `${Math.min(e.target.scrollHeight, 160)}px`;
+  }, []);
+
+  // Handle composition start
+  const handleCompositionStart = useCallback(() => {
+    isComposingRef.current = true;
+  }, []);
+
+  // Handle composition end - use setTimeout for Firefox compatibility
+  // In Firefox, compositionend fires ~20ms before keydown, so we need to
+  // delay the flag reset to allow the keydown to see the composition state
+  const handleCompositionEnd = useCallback((e: React.CompositionEvent<HTMLTextAreaElement>) => {
+    // Delay flag reset to next event loop iteration (Firefox fix)
+    setTimeout(() => {
+      isComposingRef.current = false;
+    }, 0);
+
+    // Sync input value and auto-resize
+    setInput(e.currentTarget.value);
+    e.currentTarget.style.height = 'auto';
+    e.currentTarget.style.height = `${Math.min(e.currentTarget.scrollHeight, 160)}px`;
   }, []);
 
   return (
@@ -70,6 +114,8 @@ export const ChatInput = memo(function ChatInput({
                 value={input}
                 onChange={handleInputChange}
                 onKeyDown={handleKeyDown}
+                onCompositionStart={handleCompositionStart}
+                onCompositionEnd={handleCompositionEnd}
                 placeholder={t('chat.placeholder').replace('{agentName}', agentName)}
                 disabled={isStreaming}
                 rows={1}
