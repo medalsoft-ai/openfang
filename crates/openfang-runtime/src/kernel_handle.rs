@@ -172,6 +172,31 @@ pub trait KernelHandle: Send + Sync {
         Err("Hands system not available".to_string())
     }
 
+    /// Create a new Hand with steps.
+    async fn hand_create(
+        &self,
+        name: &str,
+        description: &str,
+        category: &str,
+        icon: Option<&str>,
+        steps_json: serde_json::Value,
+    ) -> Result<serde_json::Value, String> {
+        let _ = (name, description, category, icon, steps_json);
+        Err("Hands system not available".to_string())
+    }
+
+    /// Update steps of an existing Hand.
+    async fn hand_update_steps(
+        &self,
+        hand_id: &str,
+        operation: &str,
+        steps_json: serde_json::Value,
+        step_ids_to_delete: Vec<String>,
+    ) -> Result<serde_json::Value, String> {
+        let _ = (hand_id, operation, steps_json, step_ids_to_delete);
+        Err("Hands system not available".to_string())
+    }
+
     /// List discovered external A2A agents as (name, url) pairs.
     fn list_a2a_agents(&self) -> Vec<(String, String)> {
         vec![]

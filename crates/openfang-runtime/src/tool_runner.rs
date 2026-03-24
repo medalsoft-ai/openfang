@@ -338,6 +338,8 @@ pub async fn execute_tool(
         "hand_activate" => tool_hand_activate(input, kernel).await,
         "hand_status" => tool_hand_status(input, kernel).await,
         "hand_deactivate" => tool_hand_deactivate(input, kernel).await,
+        "hand_create" => tool_hand_create(input, kernel).await,
+        "hand_update_steps" => tool_hand_update_steps(input, kernel).await,
 
         // A2A outbound tools (cross-instance agent communication)
         "a2a_discover" => tool_a2a_discover(input).await,
@@ -1098,6 +1100,67 @@ pub fn builtin_tool_definitions() -> Vec<ToolDefinition> {
                     "instance_id": { "type": "string", "description": "The UUID of the hand instance to deactivate" }
                 },
                 "required": ["instance_id"]
+            }),
+        },
+        ToolDefinition {
+            name: "hand_create".to_string(),
+            description: "Create a new Hand (SOP) with an initial set of steps. Returns the new Hand ID.".to_string(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "name": { "type": "string", "description": "Name of the Hand" },
+                    "description": { "type": "string", "description": "Description of what the Hand does" },
+                    "category": { "type": "string", "description": "Category: content, security, productivity, development, communication, or data" },
+                    "icon": { "type": "string", "description": "Emoji icon for the Hand (optional)" },
+                    "steps": {
+                        "type": "array",
+                        "description": "Initial steps for the Hand",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": { "type": "string", "description": "Unique step identifier" },
+                                "name": { "type": "string", "description": "Human-readable step name" },
+                                "type": { "type": "string", "description": "Step type: execute-tool, send-message, wait-for-input, condition, loop, sub-hand" },
+                                "config": { "type": "object", "description": "Step-specific configuration" },
+                                "nextSteps": { "type": "array", "items": { "type": "string" }, "description": "IDs of steps to execute next" }
+                            },
+                            "required": ["id", "name", "type"]
+                        }
+                    }
+                },
+                "required": ["name", "description", "category"]
+            }),
+        },
+        ToolDefinition {
+            name: "hand_update_steps".to_string(),
+            description: "Update steps of an existing Hand. Supports add, update, delete, or replace operations.".to_string(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "hand_id": { "type": "string", "description": "The ID of the Hand to update" },
+                    "operation": { "type": "string", "description": "Operation to perform: add, update, delete, or replace" },
+                    "steps": {
+                        "type": "array",
+                        "description": "Steps to add, update, or replace (required for add/update/replace operations)",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": { "type": "string", "description": "Unique step identifier" },
+                                "name": { "type": "string", "description": "Human-readable step name" },
+                                "type": { "type": "string", "description": "Step type: execute-tool, send-message, wait-for-input, condition, loop, sub-hand" },
+                                "config": { "type": "object", "description": "Step-specific configuration" },
+                                "nextSteps": { "type": "array", "items": { "type": "string" }, "description": "IDs of steps to execute next" }
+                            },
+                            "required": ["id", "name", "type"]
+                        }
+                    },
+                    "step_ids_to_delete": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "description": "IDs of steps to delete (required for delete operation)"
+                    }
+                },
+                "required": ["hand_id", "operation"]
             }),
         },
         // --- A2A outbound tools ---
@@ -3260,6 +3323,73 @@ async fn tool_canvas_present(
     serde_json::to_string_pretty(&response).map_err(|e| format!("Serialize error: {e}"))
 }
 
+// ---------------------------------------------------------------------------
+// Hand management tools (hand_create, hand_update_steps)
+// ---------------------------------------------------------------------------
+
+async fn tool_hand_create(
+    input: &serde_json::Value,
+    kernel: Option<&Arc<dyn KernelHandle>>,
+) -> Result<String, String> {
+    let kh = require_kernel(kernel)?;
+
+    let name = input["name"]
+        .as_str()
+        .ok_or("Missing 'name' parameter")?;
+    let description = input["description"]
+        .as_str()
+        .ok_or("Missing 'description' parameter")?;
+    let category = input["category"]
+        .as_str()
+        .ok_or("Missing 'category' parameter")?;
+    let icon = input["icon"].as_str();
+    let steps = input["steps"].clone();
+
+    let result = kh
+        .hand_create(name, description, category, icon, steps)
+        .await?;
+
+    let hand_id = result["hand_id"].as_str().unwrap_or("?");
+    let step_count = result["step_count"].as_u64().unwrap_or(0);
+
+    Ok(format!(
+        "Created Hand '{}' with {} steps. Hand ID: {}",
+        name, step_count, hand_id
+    ))
+}
+
+async fn tool_hand_update_steps(
+    input: &serde_json::Value,
+    kernel: Option<&Arc<dyn KernelHandle>>,
+) -> Result<String, String> {
+    let kh = require_kernel(kernel)?;
+
+    let hand_id = input["hand_id"]
+        .as_str()
+        .ok_or("Missing 'hand_id' parameter")?;
+    let operation = input["operation"]
+        .as_str()
+        .ok_or("Missing 'operation' parameter")?;
+    let steps = input["steps"].clone();
+    let step_ids_to_delete: Vec<String> = input["step_ids_to_delete"]
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let result = kh
+        .hand_update_steps(hand_id, operation, steps, step_ids_to_delete)
+        .await?;
+
+    let message = result["message"].as_str().unwrap_or("Steps updated");
+    let step_count = result["step_count"].as_u64().unwrap_or(0);
+
+    Ok(format!("{} (Total steps: {})", message, step_count))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3268,8 +3398,8 @@ mod tests {
     fn test_builtin_tool_definitions() {
         let tools = builtin_tool_definitions();
         assert!(
-            tools.len() >= 39,
-            "Expected at least 39 tools, got {}",
+            tools.len() >= 41,
+            "Expected at least 41 tools, got {}",
             tools.len()
         );
         let names: Vec<&str> = tools.iter().map(|t| t.name.as_str()).collect();
@@ -3322,6 +3452,9 @@ mod tests {
         assert!(names.contains(&"hand_activate"));
         assert!(names.contains(&"hand_status"));
         assert!(names.contains(&"hand_deactivate"));
+        // 2 hand management tools
+        assert!(names.contains(&"hand_create"));
+        assert!(names.contains(&"hand_update_steps"));
         // 3 voice/docker tools
         assert!(names.contains(&"text_to_speech"));
         assert!(names.contains(&"speech_to_text"));

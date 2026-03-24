@@ -6058,6 +6058,238 @@ impl KernelHandle for OpenFangKernel {
         self.deactivate_hand(uuid).map_err(|e| format!("{e}"))
     }
 
+    async fn hand_create(
+        &self,
+        name: &str,
+        description: &str,
+        category: &str,
+        icon: Option<&str>,
+        steps_json: serde_json::Value,
+    ) -> Result<serde_json::Value, String> {
+        use openfang_hands::steps::HandStep;
+        use openfang_hands::{HandCategory, HandDefinition, HandAgentConfig, HandDashboard};
+
+        // Parse category
+        let category = match category.to_lowercase().as_str() {
+            "content" => HandCategory::Content,
+            "security" => HandCategory::Security,
+            "productivity" => HandCategory::Productivity,
+            "development" => HandCategory::Development,
+            "communication" => HandCategory::Communication,
+            "data" => HandCategory::Data,
+            _ => return Err(format!("Invalid category: {}", category)),
+        };
+
+        // Parse steps from JSON
+        let steps: Vec<HandStep> = steps_json
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|s| {
+                        let id = s.get("id")?.as_str()?;
+                        let name = s.get("name")?.as_str()?;
+                        let step_type_str = s.get("type")?.as_str()?;
+                        let config = s.get("config").cloned().unwrap_or_default();
+                        let next_steps: Vec<String> = s
+                            .get("nextSteps")
+                            .and_then(|n| n.as_array())
+                            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                            .unwrap_or_default();
+
+                        let step_type = parse_step_type_from_json(step_type_str, config).ok()?;
+                        Some(HandStep {
+                            id: id.to_string(),
+                            name: name.to_string(),
+                            step_type,
+                            next_steps,
+                        })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        // Create Hand definition
+        let hand_def = HandDefinition {
+            id: uuid::Uuid::new_v4().to_string(),
+            name: name.to_string(),
+            description: description.to_string(),
+            category,
+            icon: icon.unwrap_or("🤖").to_string(),
+            tools: vec![],
+            skills: vec![],
+            mcp_servers: vec![],
+            requires: vec![],
+            settings: vec![],
+            agent: HandAgentConfig {
+                name: format!("{}-hand", name.to_lowercase().replace(" ", "-")),
+                description: description.to_string(),
+                module: "builtin:chat".to_string(),
+                provider: "anthropic".to_string(),
+                model: "claude-sonnet-4-20250514".to_string(),
+                api_key_env: None,
+                base_url: None,
+                max_tokens: 4096,
+                temperature: 0.7,
+                system_prompt: format!("You are a Hand named '{}' that follows a predefined workflow.", name),
+                max_iterations: None,
+            },
+            dashboard: HandDashboard::default(),
+            steps,
+            skill_content: None,
+        };
+
+        let hand_id = hand_def.id.clone();
+        let step_count = hand_def.steps.len();
+
+        // Save to registry using upsert to allow updates if needed
+        self.hand_registry
+            .upsert_from_content(
+                &toml::to_string(&hand_def).map_err(|e| format!("Failed to serialize hand: {e}"))?,
+                "",
+            )
+            .map_err(|e| format!("{e}"))?;
+
+        Ok(serde_json::json!({
+            "hand_id": hand_id,
+            "name": name,
+            "step_count": step_count,
+            "message": format!("Created Hand '{}' with {} steps", name, step_count),
+        }))
+    }
+
+    async fn hand_update_steps(
+        &self,
+        hand_id: &str,
+        operation: &str,
+        steps_json: serde_json::Value,
+        step_ids_to_delete: Vec<String>,
+    ) -> Result<serde_json::Value, String> {
+        use openfang_hands::steps::HandStep;
+
+        // Get existing hand
+        let mut hand_def = self
+            .hand_registry
+            .get_definition(hand_id)
+            .ok_or_else(|| format!("Hand '{}' not found", hand_id))?;
+
+        let original_count = hand_def.steps.len();
+
+        match operation {
+            "add" => {
+                let new_steps: Vec<HandStep> = steps_json
+                    .as_array()
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|s| {
+                                let id = s.get("id")?.as_str()?;
+                                let name = s.get("name")?.as_str()?;
+                                let step_type_str = s.get("type")?.as_str()?;
+                                let config = s.get("config").cloned().unwrap_or_default();
+                                let next_steps: Vec<String> = s
+                                    .get("nextSteps")
+                                    .and_then(|n| n.as_array())
+                                    .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                                    .unwrap_or_default();
+
+                                let step_type = parse_step_type_from_json(step_type_str, config).ok()?;
+                                Some(HandStep {
+                                    id: id.to_string(),
+                                    name: name.to_string(),
+                                    step_type,
+                                    next_steps,
+                                })
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                hand_def.steps.extend(new_steps);
+            }
+            "update" => {
+                let updates: Vec<HandStep> = steps_json
+                    .as_array()
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|s| {
+                                let id = s.get("id")?.as_str()?;
+                                let name = s.get("name")?.as_str()?;
+                                let step_type_str = s.get("type")?.as_str()?;
+                                let config = s.get("config").cloned().unwrap_or_default();
+                                let next_steps: Vec<String> = s
+                                    .get("nextSteps")
+                                    .and_then(|n| n.as_array())
+                                    .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                                    .unwrap_or_default();
+
+                                let step_type = parse_step_type_from_json(step_type_str, config).ok()?;
+                                Some(HandStep {
+                                    id: id.to_string(),
+                                    name: name.to_string(),
+                                    step_type,
+                                    next_steps,
+                                })
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                for update in updates {
+                    if let Some(existing) = hand_def.steps.iter_mut().find(|s| s.id == update.id) {
+                        *existing = update;
+                    }
+                }
+            }
+            "delete" => {
+                hand_def.steps.retain(|s| !step_ids_to_delete.contains(&s.id));
+            }
+            "replace" => {
+                let new_steps: Vec<HandStep> = steps_json
+                    .as_array()
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|s| {
+                                let id = s.get("id")?.as_str()?;
+                                let name = s.get("name")?.as_str()?;
+                                let step_type_str = s.get("type")?.as_str()?;
+                                let config = s.get("config").cloned().unwrap_or_default();
+                                let next_steps: Vec<String> = s
+                                    .get("nextSteps")
+                                    .and_then(|n| n.as_array())
+                                    .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                                    .unwrap_or_default();
+
+                                let step_type = parse_step_type_from_json(step_type_str, config).ok()?;
+                                Some(HandStep {
+                                    id: id.to_string(),
+                                    name: name.to_string(),
+                                    step_type,
+                                    next_steps,
+                                })
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                hand_def.steps = new_steps;
+            }
+            _ => return Err(format!("Unknown operation: {}", operation)),
+        }
+
+        let new_count = hand_def.steps.len();
+
+        // Save updated hand
+        self.hand_registry
+            .upsert_from_content(
+                &toml::to_string(&hand_def).map_err(|e| format!("Failed to serialize hand: {e}"))?,
+                "",
+            )
+            .map_err(|e| format!("{e}"))?;
+
+        Ok(serde_json::json!({
+            "hand_id": hand_id,
+            "operation": operation,
+            "step_count": new_count,
+            "message": format!("Updated Hand '{}': {} steps → {} steps", hand_id, original_count, new_count),
+        }))
+    }
+
     fn requires_approval(&self, tool_name: &str) -> bool {
         self.approval_manager.requires_approval(tool_name)
     }
@@ -6343,6 +6575,117 @@ impl KernelHandle for OpenFangKernel {
 
         // Delegate to the normal spawn path (use trait method via KernelHandle::)
         KernelHandle::spawn_agent(self, manifest_toml, parent_id).await
+    }
+}
+
+/// Helper function to parse step type from JSON config
+fn parse_step_type_from_json(
+    step_type: &str,
+    config: serde_json::Value,
+) -> Result<openfang_hands::steps::StepType, String> {
+    use openfang_hands::steps::StepType;
+
+    match step_type {
+        "execute-tool" => {
+            let tool_name = config
+                .get("toolName")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| "execute-tool requires toolName".to_string())?
+                .to_string();
+            let input = config.get("input").cloned().unwrap_or_default();
+            Ok(StepType::ExecuteTool { tool_name, input })
+        }
+        "send-message" => {
+            let content = config
+                .get("content")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| "send-message requires content".to_string())?
+                .to_string();
+            let target_agent = config
+                .get("targetAgent")
+                .and_then(|v| v.as_str())
+                .map(String::from);
+            Ok(StepType::SendMessage {
+                content,
+                target_agent,
+            })
+        }
+        "wait-for-input" => {
+            let prompt = config
+                .get("prompt")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| "wait-for-input requires prompt".to_string())?
+                .to_string();
+            let timeout_secs = config
+                .get("timeoutSecs")
+                .and_then(|v| v.as_u64())
+                .map(|v| v as u32);
+            Ok(StepType::WaitForInput {
+                prompt,
+                timeout_secs,
+            })
+        }
+        "condition" => {
+            let expression = config
+                .get("expression")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| "condition requires expression".to_string())?
+                .to_string();
+            let true_branch = config
+                .get("trueBranch")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| "condition requires trueBranch".to_string())?
+                .to_string();
+            let false_branch = config
+                .get("falseBranch")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| "condition requires falseBranch".to_string())?
+                .to_string();
+            Ok(StepType::Condition {
+                expression,
+                true_branch,
+                false_branch,
+            })
+        }
+        "loop" => {
+            let iterator = config
+                .get("iterator")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| "loop requires iterator".to_string())?
+                .to_string();
+            let items = config
+                .get("items")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| "loop requires items".to_string())?
+                .to_string();
+            let body = config
+                .get("body")
+                .and_then(|v| v.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|v| v.as_str().map(String::from))
+                        .collect()
+                })
+                .unwrap_or_default();
+            Ok(StepType::Loop {
+                iterator,
+                items,
+                body,
+            })
+        }
+        "sub-hand" => {
+            let hand_id = config
+                .get("handId")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| "sub-hand requires handId".to_string())?
+                .to_string();
+            let input_mapping = config.get("inputMapping").cloned().unwrap_or_default();
+            Ok(StepType::SubHand {
+                hand_id,
+                input_mapping,
+            })
+        }
+        _ => Err(format!("Unknown step type: {}", step_type)),
     }
 }
 
