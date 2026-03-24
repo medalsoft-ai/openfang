@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { ToolCall } from '@/api/types';
+import { ToolCallsTimeline } from './ToolCallsTimeline';
 
 interface ToolCallCardProps {
   tool: ToolCall;
@@ -228,7 +229,7 @@ export function ToolCallCard({ tool, index = 0 }: ToolCallCardProps) {
   );
 }
 
-// Container for multiple tool calls
+// Container for multiple tool calls - uses Timeline view for multiple tools
 interface ToolCallsContainerProps {
   tools: ToolCall[];
 }
@@ -236,11 +237,15 @@ interface ToolCallsContainerProps {
 export function ToolCallsContainer({ tools }: ToolCallsContainerProps) {
   if (!tools || tools.length === 0) return null;
 
+  // Use Timeline view for 2+ tools
+  if (tools.length >= 2) {
+    return <ToolCallsTimeline toolCalls={tools} />;
+  }
+
+  // Single tool - use card view
   return (
     <div className="space-y-1 mt-2">
-      {tools.map((tool, index) => (
-        <ToolCallCard key={tool.id || index} tool={tool} index={index} />
-      ))}
+      <ToolCallCard key={tools[0].id || 0} tool={tools[0]} index={0} />
     </div>
   );
 }

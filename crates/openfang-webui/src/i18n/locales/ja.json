@@ -66,7 +66,16 @@
     "offline": "オフライン",
     "connecting": "接続中...",
     "online": "オンライン",
+    "connected": "接続済み",
+    "disconnected": "切断済み",
+    "reconnecting": "再接続中...",
     "disclaimer": "AI が生成した内容は正確でない場合があります",
+    "model": "モデル",
+    "switchModel": "モデルを切り替え",
+    "models": "モデル",
+    "selectModel": "モデルを選択",
+    "modelChanged": "モデルを変更しました",
+    "modelChangeFailed": "モデルの変更に失敗しました",
     "selectAgent": "エージェント選択",
     "noMessages": "メッセージがありません",
     "startConversation": "会話を開始",
@@ -185,7 +194,8 @@
     "activated": "SOP \"{{name}}\" が有効化されました",
     "deactivated": "SOP が無効化されました",
     "alreadyActive": "SOP は既に実行中です。アクティブタブに切り替えます。",
-    "requirementsNotMet": "要件が満たされていません。不足している依存関係を先にインストールしてください。"
+    "requirementsNotMet": "要件が満たされていません。不足している依存関係を先にインストールしてください。",
+    "noFlow": "フローが定義されていません"
   },
   "languages": {
     "zh-CN": "简体中文",

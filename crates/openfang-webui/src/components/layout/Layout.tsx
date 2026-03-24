@@ -4,187 +4,115 @@ import {
   Bot,
   MessageSquare,
   Settings,
-  Plus,
   Sun,
   Moon,
-  Cpu,
-  Sparkles,
-  Zap,
-  Brain,
-  Shield,
-  Code,
-  Terminal,
-  Wand2,
-  Activity,
-  LayoutGrid,
-  Globe,
-  Check,
   Hand,
+  Workflow,
+  Puzzle,
+  Blocks,
+  Check,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { pageTransition } from '@/lib/animations'
 import { useTheme } from '@/hooks'
-import { api } from '@/api/client'
-import type { Agent } from '@/api/types'
-import { useCallback, useState, useRef, useEffect } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useState, useRef, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 
-// Agent icon mapping based on profile/archetype
-function getAgentIcon(agent: Agent) {
-  const archetype = agent.identity?.archetype?.toLowerCase() || ''
-  const profile = agent.profile?.toLowerCase() || ''
-  const name = agent.name?.toLowerCase() || ''
+// ============================================
+// CLAYMORPHISM DESIGN SYSTEM
+// ============================================
+// Style: Soft 3D, chunky, playful, rounded
+// Primary: Purple (#8B5CF6)
+// Background: White with purple gradient
+// ============================================
 
-  if (archetype.includes('code') || profile.includes('code') || name.includes('code')) return Code
-  if (archetype.includes('security') || profile.includes('security') || name.includes('sec')) return Shield
-  if (archetype.includes('brain') || profile.includes('brain') || name.includes('brain')) return Brain
-  if (archetype.includes('terminal') || profile.includes('terminal') || name.includes('term')) return Terminal
-  if (archetype.includes('wizard') || profile.includes('wizard') || name.includes('wizard')) return Wand2
-  if (archetype.includes('spark') || profile.includes('spark')) return Sparkles
-  if (archetype.includes('zap') || profile.includes('zap') || name.includes('fast')) return Zap
-  if (archetype.includes('activity') || profile.includes('monitor')) return Activity
-  if (agent.capabilities?.tools?.length && agent.capabilities.tools.length > 5) return Cpu
-
-  return Bot
+// Navigation items type
+interface NavItem {
+  id: string
+  icon: React.ComponentType<{ className?: string }>
+  label: string
+  path: string
+  badge?: string
+  badgeColor?: string
 }
 
-// Agent gradient colors based on identity
-function getAgentGradient(agent: Agent): string {
-  const color = agent.identity?.color?.toLowerCase() || ''
-
-  const gradients: Record<string, string> = {
-    cyan: 'from-cyan-500 to-blue-600',
-    blue: 'from-blue-500 to-indigo-600',
-    purple: 'from-purple-500 to-pink-600',
-    pink: 'from-pink-500 to-rose-600',
-    rose: 'from-rose-500 to-red-600',
-    red: 'from-red-500 to-orange-600',
-    orange: 'from-orange-500 to-amber-600',
-    amber: 'from-amber-500 to-yellow-600',
-    yellow: 'from-yellow-500 to-lime-600',
-    lime: 'from-lime-500 to-green-600',
-    green: 'from-green-500 to-emerald-600',
-    emerald: 'from-emerald-500 to-teal-600',
-    teal: 'from-teal-500 to-cyan-600',
-    indigo: 'from-indigo-500 to-violet-600',
-    violet: 'from-violet-500 to-purple-600',
-    fuchsia: 'from-fuchsia-500 to-pink-600',
-  }
-
-  return gradients[color] || 'from-[var(--neon-cyan)] to-blue-600'
-}
-
-// Agent status color
-function getStatusColor(status?: string): string {
-  switch (status?.toLowerCase()) {
-    case 'running':
-      return 'bg-[var(--neon-cyan)]'
-    case 'idle':
-      return 'bg-[var(--neon-green)]'
-    case 'paused':
-      return 'bg-[var(--neon-amber)]'
-    case 'crashed':
-      return 'bg-[var(--neon-magenta)]'
-    default:
-      return 'bg-[var(--text-muted)]'
-  }
-}
-
-// Agent item component - Soft UI compact style
-function AgentItem({
-  agent,
+// ============================================
+// NAV ITEM BUTTON - Minimal Claymorphism Style
+// ============================================
+function NavItemButton({
+  item,
   isActive,
   onClick,
-  isHand,
 }: {
-  agent: Agent
+  item: NavItem
   isActive: boolean
   onClick: () => void
-  isHand?: boolean
 }) {
-  const Icon = getAgentIcon(agent)
-  const gradient = getAgentGradient(agent)
-  const statusColor = getStatusColor(agent.status || agent.state)
+  const Icon = item.icon
 
   return (
     <motion.button
       onClick={onClick}
       initial={false}
-      animate={isActive ? { x: 2 } : { x: 0 }}
-      whileHover={{ x: 2 }}
-      whileTap={{ scale: 0.98 }}
+      animate={isActive ? { scale: 0.96 } : { scale: 1 }}
+      whileHover={{ scale: 1.05 }}
+      whileTap={{ scale: 0.94 }}
       className={cn(
-        'w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 group relative',
+        'w-full flex flex-col items-center justify-center gap-1 p-2 rounded-xl transition-all duration-200 group relative',
         isActive
-          ? 'bg-[var(--soft-surface)] shadow-[var(--soft-shadow-sm)]'
-          : 'hover:bg-[var(--soft-surface-hover)]'
+          ? 'bg-violet-50 shadow-[inset_0_2px_4px_rgba(139,92,246,0.1)]'
+          : 'bg-white/50 hover:bg-white shadow-[0_2px_8px_rgba(139,92,246,0.08)] hover:shadow-[0_4px_12px_rgba(139,92,246,0.12)]'
       )}
     >
-      {/* Active indicator */}
+      {/* Active indicator - left side */}
       {isActive && (
         <motion.div
-          layoutId="agentActiveIndicator"
-          className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 rounded-r-full bg-[var(--soft-blue)]"
+          layoutId="navActiveIndicator"
+          className="absolute -left-0.5 top-1/2 -translate-y-1/2 w-1 h-5 rounded-r-full bg-violet-500"
           initial={false}
           transition={{ type: 'spring', stiffness: 400, damping: 30 }}
         />
       )}
 
-      {/* Agent Avatar - smaller, softer */}
-      <div
-        className={cn(
-          'relative w-8 h-8 rounded-lg flex items-center justify-center shrink-0',
-          'bg-gradient-to-br',
-          gradient
-        )}
-      >
-        <Icon className="w-4 h-4 text-white" />
-
-        {/* Status indicator dot */}
-        <div
+      {/* Icon */}
+      <div className="relative">
+        <Icon
           className={cn(
-            'absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-[var(--soft-sidebar)]',
-            statusColor
+            'w-5 h-5 transition-colors duration-200',
+            isActive ? 'text-violet-600' : 'text-gray-400 group-hover:text-violet-500'
           )}
         />
-      </div>
 
-      {/* Agent Info */}
-      <div className="flex-1 text-left min-w-0">
-        <div className="flex items-center gap-1.5">
-          <div className={cn(
-            'font-medium truncate transition-colors text-sm',
-            isActive ? 'text-[var(--soft-text-primary)]' : 'text-[var(--soft-text-secondary)]'
-          )}>
-            {agent.name}
+        {/* Badge dot */}
+        {item.badge && (
+          <div
+            className={cn(
+              'absolute -top-1 -right-1 min-w-[14px] h-[14px] px-0.5 rounded-full flex items-center justify-center',
+              'text-[8px] font-bold text-white',
+              item.badgeColor || 'bg-violet-500'
+            )}
+          >
+            {item.badge}
           </div>
-          {/* Hand Agent Badge */}
-          {isHand && (
-            <span className="shrink-0 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 border border-amber-200 dark:border-amber-800">
-              <Hand className="w-2.5 h-2.5" />
-              SOP
-            </span>
-          )}
-        </div>
-        <div className="text-[11px] text-[var(--soft-text-muted)] truncate">
-          {agent.description || agent.profile || 'Agent'}
-        </div>
+        )}
       </div>
 
-      {/* Chat icon on active */}
-      <motion.div
-        initial={false}
-        animate={{ opacity: isActive ? 1 : 0, x: isActive ? 0 : -5 }}
-        className="text-[var(--soft-blue)]"
+      {/* Label */}
+      <span
+        className={cn(
+          'text-[10px] font-medium transition-colors duration-200',
+          isActive ? 'text-violet-700' : 'text-gray-400 group-hover:text-violet-500'
+        )}
       >
-        <MessageSquare className="w-3.5 h-3.5" />
-      </motion.div>
+        {item.label}
+      </span>
     </motion.button>
   )
 }
 
-// Theme toggle button component - Soft UI compact
+// ============================================
+// THEME TOGGLE - Compact Claymorphism Style
+// ============================================
 function ThemeToggle() {
   const { t } = useTranslation()
   const { resolvedTheme, toggleTheme } = useTheme()
@@ -192,7 +120,13 @@ function ThemeToggle() {
   return (
     <motion.button
       onClick={toggleTheme}
-      className="flex items-center justify-center w-8 h-8 rounded-lg bg-[var(--soft-surface)] shadow-[var(--soft-shadow-sm)] text-[var(--soft-text-secondary)] hover:text-[var(--soft-blue)] hover:shadow-[var(--soft-shadow-md)] transition-all duration-200"
+      className={cn(
+        'flex items-center justify-center w-8 h-8 rounded-lg',
+        'bg-white border-2 border-white',
+        'shadow-[0_2px_8px_rgba(139,92,246,0.15),inset_0_1px_3px_rgba(255,255,255,0.8)]',
+        'text-violet-500 hover:text-violet-600',
+        'transition-all duration-200'
+      )}
       whileHover={{ scale: 1.05 }}
       whileTap={{ scale: 0.95 }}
       aria-label={resolvedTheme === 'dark' ? t('layout.theme.light') : t('layout.theme.dark')}
@@ -201,9 +135,9 @@ function ThemeToggle() {
         {resolvedTheme === 'dark' ? (
           <motion.div
             key="sun"
-            initial={{ y: -10, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            exit={{ y: 10, opacity: 0 }}
+            initial={{ y: -10, opacity: 0, rotate: -90 }}
+            animate={{ y: 0, opacity: 1, rotate: 0 }}
+            exit={{ y: 10, opacity: 0, rotate: 90 }}
             transition={{ duration: 0.2 }}
           >
             <Sun className="w-4 h-4" />
@@ -211,9 +145,9 @@ function ThemeToggle() {
         ) : (
           <motion.div
             key="moon"
-            initial={{ y: -10, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            exit={{ y: 10, opacity: 0 }}
+            initial={{ y: -10, opacity: 0, rotate: -90 }}
+            animate={{ y: 0, opacity: 1, rotate: 0 }}
+            exit={{ y: 10, opacity: 0, rotate: 90 }}
             transition={{ duration: 0.2 }}
           >
             <Moon className="w-4 h-4" />
@@ -224,13 +158,21 @@ function ThemeToggle() {
   )
 }
 
-// Settings button component - Soft UI compact
+// ============================================
+// SETTINGS BUTTON - Compact Claymorphism Style
+// ============================================
 function SettingsButton() {
   const { t } = useTranslation()
   return (
     <Link to="/settings">
       <motion.button
-        className="flex items-center justify-center w-8 h-8 rounded-lg bg-[var(--soft-surface)] shadow-[var(--soft-shadow-sm)] text-[var(--soft-text-secondary)] hover:text-[var(--soft-blue)] hover:shadow-[var(--soft-shadow-md)] transition-all duration-200"
+        className={cn(
+          'flex items-center justify-center w-8 h-8 rounded-lg',
+          'bg-white border-2 border-white',
+          'shadow-[0_2px_8px_rgba(139,92,246,0.15),inset_0_1px_3px_rgba(255,255,255,0.8)]',
+          'text-violet-500 hover:text-violet-600',
+          'transition-all duration-200'
+        )}
         whileHover={{ scale: 1.05 }}
         whileTap={{ scale: 0.95 }}
         aria-label={t('layout.settings')}
@@ -241,13 +183,14 @@ function SettingsButton() {
   )
 }
 
-// Language switcher component - Soft UI compact with flag images
+// ============================================
+// LANGUAGE SWITCHER - Claymorphism Style
+// ============================================
 function LanguageSwitcher() {
   const { t, i18n } = useTranslation()
   const [isOpen, setIsOpen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
 
-  // Close dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
@@ -265,13 +208,18 @@ function LanguageSwitcher() {
     { code: 'ja', flag: '/flags/ja.png', name: t('languages.ja') },
   ]
 
-  const currentLang = languages.find(l => l.code === i18n.language) || languages[2]
+  const currentLang = languages.find((l) => l.code === i18n.language) || languages[2]
 
   return (
     <div ref={containerRef} className="relative">
       <motion.button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center justify-center w-8 h-8 rounded-lg bg-[var(--soft-surface)] shadow-[var(--soft-shadow-sm)] hover:shadow-[var(--soft-shadow-md)] transition-all duration-200"
+        className={cn(
+          'flex items-center justify-center w-8 h-8 rounded-lg',
+          'bg-white border-2 border-white',
+          'shadow-[0_2px_8px_rgba(139,92,246,0.15),inset_0_1px_3px_rgba(255,255,255,0.8)]',
+          'transition-all duration-200'
+        )}
         whileHover={{ scale: 1.05 }}
         whileTap={{ scale: 0.95 }}
         aria-label={t('settings.system.language')}
@@ -279,7 +227,7 @@ function LanguageSwitcher() {
         <img
           src={currentLang.flag}
           alt={currentLang.name}
-          className="w-5 h-5 rounded object-contain"
+          className="w-4 h-4 rounded object-contain"
         />
       </motion.button>
 
@@ -290,7 +238,11 @@ function LanguageSwitcher() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 8, scale: 0.95 }}
             transition={{ duration: 0.15 }}
-            className="absolute bottom-full left-0 mb-2 w-40 rounded-xl bg-[var(--soft-surface)] shadow-[var(--soft-shadow-lg)] border border-[var(--soft-divider)] overflow-hidden z-50"
+            className={cn(
+              'absolute bottom-full left-0 mb-2 w-40 rounded-2xl overflow-hidden z-50',
+              'bg-white border-[3px] border-white',
+              'shadow-[0_8px_24px_rgba(139,92,246,0.25)]'
+            )}
           >
             {languages.map((lang) => (
               <button
@@ -302,8 +254,8 @@ function LanguageSwitcher() {
                 className={cn(
                   'w-full flex items-center justify-between px-3 py-2.5 text-sm transition-colors',
                   i18n.language === lang.code
-                    ? 'bg-[var(--soft-blue)]/10 text-[var(--soft-blue)]'
-                    : 'text-[var(--soft-text-secondary)] hover:bg-[var(--soft-surface-hover)] hover:text-[var(--soft-text-primary)]'
+                    ? 'bg-violet-100 text-violet-700'
+                    : 'text-gray-600 hover:bg-violet-50 hover:text-violet-600'
                 )}
               >
                 <span className="flex items-center gap-3">
@@ -324,195 +276,131 @@ function LanguageSwitcher() {
   )
 }
 
-// Create agent button - Soft UI compact style
-function CreateAgentButton({ onClick }: { onClick: () => void }) {
-  const { t } = useTranslation()
-  return (
-    <motion.button
-      onClick={onClick}
-      className="w-full flex items-center gap-2 px-3 py-2 rounded-lg bg-[var(--soft-blue)] text-white text-sm font-medium shadow-[var(--soft-shadow-sm)] hover:shadow-[var(--soft-shadow-md)] hover:brightness-105 transition-all duration-200"
-      whileHover={{ scale: 1.01 }}
-      whileTap={{ scale: 0.98 }}
-    >
-      <div className="w-6 h-6 rounded-md bg-white/20 flex items-center justify-center">
-        <Plus className="w-4 h-4 text-white" />
-      </div>
-      <span>{t('layout.newAgent')}</span>
-    </motion.button>
-  )
-}
-
+// ============================================
+// MAIN LAYOUT - Claymorphism Style
+// ============================================
 export function Layout() {
   const { t } = useTranslation()
   const location = useLocation()
   const navigate = useNavigate()
 
-  // Get current agent from URL (single source of truth)
-  const searchParams = new URLSearchParams(location.search)
-  const selectedAgentId = searchParams.get('agent')
+  // Navigation items - 5 main sections
+  const navItems: NavItem[] = [
+    {
+      id: 'chat',
+      icon: MessageSquare,
+      label: 'Chat',
+      path: '/chat',
+    },
+    {
+      id: 'sop',
+      icon: Hand,
+      label: 'SOP',
+      path: '/hands',
+      badge: '3',
+      badgeColor: 'bg-amber-500',
+    },
+    {
+      id: 'workflow',
+      icon: Workflow,
+      label: 'Flow',
+      path: '/workflows',
+    },
+    {
+      id: 'skills',
+      icon: Puzzle,
+      label: 'Skills',
+      path: '/skills',
+    },
+    {
+      id: 'channel',
+      icon: Blocks,
+      label: 'Channel',
+      path: '/channels',
+    },
+  ]
 
-  // Fetch agents list
-  const { data: agentsData, isLoading } = useQuery({
-    queryKey: ['agents'],
-    queryFn: () => api.listAgents(),
-    refetchInterval: 5000,
-  })
-  const agents = agentsData ?? []
+  // Get current active nav based on pathname
+  const getActiveNavId = () => {
+    const path = location.pathname
+    if (path.startsWith('/chat')) return 'chat'
+    if (path.startsWith('/hands')) return 'sop'
+    if (path.startsWith('/workflows')) return 'workflow'
+    if (path.startsWith('/skills')) return 'skills'
+    if (path.startsWith('/channels')) return 'channel'
+    return 'chat'
+  }
 
-  // Fetch active hands to identify Hand agents
-  const { data: handsData } = useQuery({
-    queryKey: ['hands', 'active'],
-    queryFn: () => api.getActiveHands(),
-    refetchInterval: 5000,
-  })
-
-  // Build a Set of Hand agent IDs for quick lookup
-  const handAgentIds = new Set<string>(
-    (handsData?.instances?.map((instance) => instance.agent_id).filter(Boolean) as string[]) ?? []
-  )
-
-  // Handle agent click - navigate to chat with agent
-  const handleAgentClick = useCallback((agent: Agent) => {
-    navigate(`/chat?agent=${agent.id}`)
-  }, [navigate])
-
-  // Handle create agent - navigate to agents page
-  const handleCreateAgent = useCallback(() => {
-    navigate('/agents')
-  }, [navigate])
+  const activeNavId = getActiveNavId()
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[var(--soft-bg)]">
-      {/* Soft gradient background */}
-      <div className="fixed inset-0 -z-10 bg-gradient-to-br from-[var(--soft-gradient-from)] via-[var(--soft-bg)] to-[var(--soft-gradient-to)]" />
+    <div className="flex h-screen overflow-hidden bg-gradient-to-br from-gray-50 via-violet-50/30 to-purple-50/20 gap-3 pr-3">
+      {/* Background decoration */}
+      <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
+        <div className="absolute top-0 left-0 w-96 h-96 bg-purple-200/30 rounded-full blur-3xl" />
+        <div className="absolute bottom-0 right-0 w-[500px] h-[500px] bg-violet-200/20 rounded-full blur-3xl" />
+      </div>
 
-      {/* Sidebar - Soft UI Evolution: compact, no margin, distinct background */}
-      <aside className="w-64 flex flex-col bg-[var(--soft-sidebar)] shadow-[var(--soft-shadow-sidebar)]">
-        {/* Logo section - compact */}
-        <div className="p-3 border-b border-[var(--soft-divider)]">
-          <Link to="/" className="flex items-center gap-3 group">
+      {/* ============================================
+          SIDEBAR - Edge-to-edge, attached to left/top/bottom
+          Fixed width: 96px (w-24)
+          No border-radius, no shadow (part of background layer)
+          ============================================ */}
+      <aside className="w-24 flex flex-col bg-white/80 backdrop-blur-xl z-20 h-full">
+        {/* Logo - Attached to top */}
+        <div className="p-2 border-b border-gray-100/50">
+          <Link to="/" className="flex justify-center group">
             <motion.div
-              className="w-8 h-8 rounded-lg flex items-center justify-center relative overflow-hidden bg-gradient-to-br from-[var(--soft-blue)] to-[var(--soft-blue-dark)]"
+              className={cn(
+                'w-10 h-10 rounded-xl flex items-center justify-center',
+                'bg-gradient-to-br from-violet-500 to-purple-600',
+                'border-2 border-white',
+                'shadow-[0_4px_12px_rgba(139,92,246,0.35),inset_0_1px_3px_rgba(255,255,255,0.3)]'
+              )}
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
             >
-              <Bot className="w-5 h-5 text-white relative z-10" />
+              <Bot className="w-5 h-5 text-white" />
             </motion.div>
-
-            <span className="text-base font-semibold text-[var(--soft-text-primary)] tracking-tight">
-              Enterprise
-              <span className="text-[var(--soft-blue-dark)]">Claw</span>
-            </span>
           </Link>
         </div>
 
-        {/* Create Agent Button - compact */}
-        <div className="p-2">
-          <CreateAgentButton onClick={handleCreateAgent} />
-        </div>
-
-        {/* Agents List - compact */}
-        <nav className="flex-1 overflow-y-auto px-2 pb-2 no-scrollbar">
-          {/* Agents */}
-          {isLoading ? (
-            <div className="space-y-1.5 p-2">
-              {[1, 2, 3].map((i) => (
-                <div key={i} className="flex items-center gap-2 animate-pulse">
-                  <div className="w-8 h-8 rounded-lg bg-[var(--soft-surface)]" />
-                  <div className="flex-1 space-y-1">
-                    <div className="h-3 w-20 rounded bg-[var(--soft-surface)]" />
-                    <div className="h-2 w-12 rounded bg-[var(--soft-surface)]" />
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : agents.length === 0 ? (
-            <div className="p-3 text-center">
-              <Bot className="w-7 h-7 mx-auto mb-1.5 text-[var(--soft-text-muted)]" />
-              <p className="text-xs text-[var(--soft-text-muted)]">{t('layout.noAgents')}</p>
-              <p className="text-[10px] text-[var(--soft-text-tertiary)] mt-0.5">
-                {t('layout.noAgentsHint')}
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {/* Hand Agents Group */}
-              {agents.filter(a => handAgentIds.has(a.id)).length > 0 && (
-                <div>
-                  <div className="flex items-center gap-2 px-2 py-1 mb-1">
-                    <Hand className="w-3.5 h-3.5 text-amber-500" />
-                    <span className="text-[10px] font-semibold text-[var(--soft-text-muted)] uppercase tracking-wider">
-                      SOP
-                    </span>
-                    <span className="ml-auto text-[9px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
-                      {agents.filter(a => handAgentIds.has(a.id)).length}
-                    </span>
-                  </div>
-                  <div className="space-y-0.5">
-                    {agents.filter(a => handAgentIds.has(a.id)).map((agent) => (
-                      <AgentItem
-                        key={agent.id}
-                        agent={agent}
-                        isActive={selectedAgentId === agent.id}
-                        onClick={() => handleAgentClick(agent)}
-                        isHand={true}
-                      />
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Regular Agents Group */}
-              {agents.filter(a => !handAgentIds.has(a.id)).length > 0 && (
-                <div>
-                  <div className="flex items-center gap-2 px-2 py-1 mb-1">
-                    <Bot className="w-3.5 h-3.5 text-[var(--soft-text-muted)]" />
-                    <span className="text-[10px] font-semibold text-[var(--soft-text-muted)] uppercase tracking-wider">
-                      Agents
-                    </span>
-                    <span className="ml-auto text-[9px] px-1.5 py-0.5 rounded-full bg-[var(--soft-surface)] text-[var(--soft-text-muted)]">
-                      {agents.filter(a => !handAgentIds.has(a.id)).length}
-                    </span>
-                  </div>
-                  <div className="space-y-0.5">
-                    {agents.filter(a => !handAgentIds.has(a.id)).map((agent) => (
-                      <AgentItem
-                        key={agent.id}
-                        agent={agent}
-                        isActive={selectedAgentId === agent.id}
-                        onClick={() => handleAgentClick(agent)}
-                        isHand={false}
-                      />
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
+        {/* Main Navigation - 5 Items */}
+        <nav className="flex-1 overflow-y-auto px-2 py-2 no-scrollbar space-y-2">
+          {navItems.map((item) => (
+            <NavItemButton
+              key={item.id}
+              item={item}
+              isActive={activeNavId === item.id}
+              onClick={() => navigate(item.path)}
+            />
+          ))}
         </nav>
 
-        {/* Bottom Actions - compact */}
-        <div className="p-2 border-t border-[var(--soft-divider)] space-y-2">
-          {/* Quick Actions Row */}
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <ThemeToggle />
-              <LanguageSwitcher />
-            </div>
+        {/* Bottom Actions - Attached to bottom */}
+        <div className="p-2 border-t border-gray-100/50 space-y-2">
+          {/* Quick Actions Grid */}
+          <div className="grid grid-cols-2 gap-1.5">
+            <ThemeToggle />
+            <LanguageSwitcher />
+          </div>
+          <div className="flex justify-center">
             <SettingsButton />
           </div>
 
           {/* Version */}
-          <div className="text-[9px] text-[var(--soft-text-muted)] text-center font-medium">
+          <div className="text-[8px] text-violet-400 text-center font-medium">
             {t('app.version')}
           </div>
         </div>
       </aside>
 
-      {/* Main content - Soft UI: distinct background, no padding/gap */}
-      <main className="flex-1 flex flex-col overflow-hidden bg-[var(--soft-main)]">
+      {/* ============================================
+          MAIN CONTENT AREA - Bento Card Style
+          Floating card with rounded corners and shadow
+          ============================================ */}
+      <main className="flex-1 flex flex-col overflow-hidden rounded-3xl bg-white shadow-[0_8px_32px_rgba(139,92,246,0.08)] border border-white/50 my-3">
         <div className="flex-1 overflow-hidden relative">
-
           {/* Content with page transition */}
           <AnimatePresence mode="popLayout" initial={false}>
             <motion.div

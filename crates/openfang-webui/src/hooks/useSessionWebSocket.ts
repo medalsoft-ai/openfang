@@ -138,9 +138,12 @@ export function useSessionWebSocket(options: UseSessionWebSocketOptions): UseSes
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
         const connection = sessionConnectionManager.getExistingConnection(agentId, sessionId);
-        if (connection && connection.getConnectionState() === 'disconnected') {
-          // Attempt to reconnect when page becomes visible
-          connection.connect().catch((err) => {
+        const currentState = connection?.getConnectionState();
+
+        // Reconnect if disconnected or in error state
+        if (!connection || currentState === 'disconnected') {
+          console.log('[useSessionWebSocket] Page visible, reconnecting...');
+          sessionConnectionManager.reconnectSession(agentId, sessionId).catch((err) => {
             console.error('[useSessionWebSocket] Failed to reconnect on visibility change:', err);
           });
         }

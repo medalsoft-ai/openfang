@@ -180,6 +180,8 @@ export interface HandDashboardMetric {
 }
 
 export interface HandAgentConfig {
+  name?: string;
+  description?: string;
   provider?: string;
   model?: string;
 }

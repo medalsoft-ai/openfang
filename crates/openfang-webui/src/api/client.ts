@@ -66,10 +66,11 @@ class APIClient {
       },
     });
 
-    // Request interceptor
+    // Request interceptor - always read fresh token from localStorage
     this.client.interceptors.request.use((config) => {
-      if (this.authToken) {
-        config.headers.Authorization = `Bearer ${this.authToken}`;
+      const token = this.authToken || localStorage.getItem('openfang-api-key');
+      if (token) {
+        config.headers.Authorization = `Bearer ${token}`;
       }
       return config;
     });

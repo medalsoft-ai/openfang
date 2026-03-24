@@ -88,15 +88,22 @@ export function MarkdownContent({ content, className, searchQuery }: MarkdownCon
         remarkPlugins={[remarkGfm]}
         components={{
           // Code blocks with syntax highlighting
-          code({ className: codeClassName, children }) {
+          code({ className: codeClassName, children, inline }) {
             const match = /language-(\w+)/.exec(codeClassName || '');
             const code = String(children).replace(/\n$/, '');
 
-            // Check if this is an inline code block by checking if there's no language and no newlines
-            const isInline = !match && !code.includes('\n') && code.length < 50;
-
-            if (!isInline && match) {
+            // CRITICAL: Inline code must NEVER return a div - only block code can
+            // The 'inline' prop is true for `code` and false for ```fenced blocks```
+            if (inline || !match) {
               return (
+                <code className="px-1.5 py-0.5 rounded bg-[var(--surface-tertiary)] text-[var(--neon-cyan)] font-mono text-sm">
+                  {children}
+                </code>
+              );
+            }
+
+            // Block code (fenced code blocks only)
+            return (
                 <div className="relative group my-4">
                   <div className="absolute -top-3 left-3 px-2 py-0.5 text-[10px] font-mono uppercase tracking-wider bg-[var(--surface-tertiary)] text-[var(--neon-cyan)] border border-[var(--border-default)] rounded">
                     {match[1]}
@@ -113,14 +120,6 @@ export function MarkdownContent({ content, className, searchQuery }: MarkdownCon
                   </SyntaxHighlighter>
                 </div>
               );
-            }
-
-            // Inline code
-            return (
-              <code className="px-1.5 py-0.5 rounded bg-[var(--surface-tertiary)] text-[var(--neon-cyan)] font-mono text-sm">
-                {children}
-              </code>
-            );
           },
 
           // Headings

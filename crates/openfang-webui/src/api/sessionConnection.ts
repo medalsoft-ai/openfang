@@ -35,6 +35,10 @@ const DEFAULT_INACTIVE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 const MAX_RECONNECT_ATTEMPTS = 5;
 const RECONNECT_DELAYS = [1000, 2000, 4000, 8000, 10000];
 
+// Heartbeat configuration - keep connection alive to prevent 30min timeout
+const HEARTBEAT_INTERVAL_MS = 60 * 1000; // 1 minute
+const HEARTBEAT_TIMEOUT_MS = 30 * 1000; // 30 seconds
+
 // Generate unique IDs
 const generateId = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 11)}`;
 
@@ -62,6 +66,11 @@ export class SessionConnection {
   private intentionalDisconnect = false;
   private connectionId: string = '';
   private connectingPromise: Promise<void> | null = null;
+
+  // Heartbeat
+  private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  private heartbeatTimeoutTimer: ReturnType<typeof setTimeout> | null = null;
+  private lastPongReceived = 0;
 
   constructor(config: SessionConnectionConfig) {
     this.agentId = config.agentId;
@@ -187,11 +196,18 @@ export class SessionConnection {
           console.log(`[SessionConnection:${this.getSessionKey()}] Connected`);
           this.reconnectAttempts = 0;
           this.setConnectionState('connected');
+          this.startHeartbeat();
           resolve();
         };
 
         this.ws!.onmessage = (event) => {
           if (myConnectionId !== this.connectionId) {
+            return;
+          }
+          // Handle pong messages for heartbeat
+          if (event.data === 'pong' || (typeof event.data === 'string' && event.data.includes('"type":"pong"'))) {
+            this.lastPongReceived = Date.now();
+            this.clearHeartbeatTimeout();
             return;
           }
           this.handleMessage(event.data);
@@ -209,6 +225,7 @@ export class SessionConnection {
           if (myConnectionId !== this.connectionId) {
             return;
           }
+          this.stopHeartbeat();
           this.handleClose(event);
         };
 
@@ -232,6 +249,15 @@ export class SessionConnection {
     try {
       const message = JSON.parse(data) as WebSocketMessage;
 
+      // Check for backend inactivity timeout error
+      if (message.type === 'error' && typeof message.payload === 'string' &&
+          message.payload.includes('Connection closed due to inactivity')) {
+        console.warn(`[SessionConnection:${this.getSessionKey()}] Backend timeout detected, will reconnect`);
+        // Close current connection and trigger reconnect
+        this.ws?.close();
+        return;
+      }
+
       // Add to buffer with metadata
       const bufferedMessage: BufferedMessage = {
         ...message,
@@ -253,28 +279,56 @@ export class SessionConnection {
   }
 
   private handleClose(event: CloseEvent) {
-    console.log(`[SessionConnection:${this.getSessionKey()}] Closed, code:`, event.code);
+    console.log(`[SessionConnection:${this.getSessionKey()}] Closed, code:`, event.code, 'reason:', event.reason);
     this.ws = null;
 
-    // Don't reconnect if intentional disconnect or normal close
-    if (this.intentionalDisconnect || event.code === 1000) {
+    // Don't reconnect if intentional disconnect
+    if (this.intentionalDisconnect) {
       this.setConnectionState('disconnected');
       return;
     }
 
-    // Attempt reconnection
-    if (this.reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
-      this.reconnectAttempts++;
-      this.setConnectionState('reconnecting');
-
-      const delay = RECONNECT_DELAYS[Math.min(this.reconnectAttempts - 1, RECONNECT_DELAYS.length - 1)];
-      this.reconnectTimer = setTimeout(() => {
-        console.log(`[SessionConnection:${this.getSessionKey()}] Reconnecting ${this.reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS}`);
-        this.connect();
-      }, delay);
-    } else {
+    // Always attempt reconnection for unexpected closes (including backend timeout)
+    // event.code 1000 = Normal closure (intentional)
+    // event.code 1001 = Going away (backend timeout, server restart)
+    // event.code 1006 = Abnormal closure (network issue)
+    if (event.code === 1000) {
       this.setConnectionState('disconnected');
+      return;
     }
+
+    // Attempt reconnection with backoff
+    this.scheduleReconnect();
+  }
+
+  /**
+   * Schedule a reconnection attempt with exponential backoff
+   */
+  private scheduleReconnect() {
+    if (this.reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+      console.error(`[SessionConnection:${this.getSessionKey()}] Max reconnect attempts reached`);
+      this.setConnectionState('disconnected');
+      return;
+    }
+
+    this.reconnectAttempts++;
+    this.setConnectionState('reconnecting');
+
+    const delay = RECONNECT_DELAYS[Math.min(this.reconnectAttempts - 1, RECONNECT_DELAYS.length - 1)];
+    console.log(`[SessionConnection:${this.getSessionKey()}] Reconnecting ${this.reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS} in ${delay}ms`);
+
+    this.reconnectTimer = setTimeout(() => {
+      // Only reconnect if we still have subscribers (someone cares about this connection)
+      if (this.callbacks.size > 0) {
+        this.connect().catch((err) => {
+          console.error(`[SessionConnection:${this.getSessionKey()}] Reconnect failed:`, err);
+          // Will retry on next schedule if attempts remain
+        });
+      } else {
+        console.log(`[SessionConnection:${this.getSessionKey()}] Skipping reconnect - no subscribers`);
+        this.setConnectionState('disconnected');
+      }
+    }, delay);
   }
 
   private setConnectionState(state: ConnectionState) {
@@ -301,6 +355,8 @@ export class SessionConnection {
     this.intentionalDisconnect = true;
     this.connectionId = ''; // Invalidate current connection
 
+    this.stopHeartbeat();
+
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
@@ -322,6 +378,52 @@ export class SessionConnection {
       this.inactiveTimer = setTimeout(() => {
         // This will be checked by SessionConnectionManager for cleanup
       }, this.inactiveTimeoutMs);
+    }
+  }
+
+  /**
+   * Start heartbeat to keep connection alive
+   */
+  private startHeartbeat() {
+    this.stopHeartbeat();
+    this.lastPongReceived = Date.now();
+
+    // Send ping every HEARTBEAT_INTERVAL_MS
+    this.heartbeatTimer = setInterval(() => {
+      if (this.ws?.readyState === WebSocket.OPEN) {
+        // Send a lightweight ping message
+        this.ws.send(JSON.stringify({ type: 'ping' }));
+
+        // Set timeout to detect if pong is not received
+        this.heartbeatTimeoutTimer = setTimeout(() => {
+          const timeSinceLastPong = Date.now() - this.lastPongReceived;
+          if (timeSinceLastPong > HEARTBEAT_TIMEOUT_MS + 5000) {
+            console.warn(`[SessionConnection:${this.getSessionKey()}] Heartbeat timeout, closing connection`);
+            this.ws?.close();
+          }
+        }, HEARTBEAT_TIMEOUT_MS);
+      }
+    }, HEARTBEAT_INTERVAL_MS);
+  }
+
+  /**
+   * Stop heartbeat
+   */
+  private stopHeartbeat() {
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
+    }
+    this.clearHeartbeatTimeout();
+  }
+
+  /**
+   * Clear heartbeat timeout
+   */
+  private clearHeartbeatTimeout() {
+    if (this.heartbeatTimeoutTimer) {
+      clearTimeout(this.heartbeatTimeoutTimer);
+      this.heartbeatTimeoutTimer = null;
     }
   }
 
@@ -351,12 +453,38 @@ class SessionConnectionManager {
   private connections: Map<string, SessionConnection> = new Map();
   private authToken: string = '';
   private cleanupInterval: ReturnType<typeof setInterval> | null = null;
+  private onlineHandler: (() => void) | null = null;
 
   constructor() {
     // Start periodic cleanup of inactive connections
     this.cleanupInterval = setInterval(() => {
       this.cleanupInactiveConnections();
     }, 60000); // Every minute
+
+    // Setup network status monitoring for automatic reconnect
+    this.setupNetworkMonitoring();
+  }
+
+  /**
+   * Setup network status monitoring to reconnect when coming back online
+   */
+  private setupNetworkMonitoring() {
+    if (typeof window === 'undefined') return;
+
+    this.onlineHandler = () => {
+      console.log('[SessionConnectionManager] Network is back online, checking connections...');
+      this.connections.forEach((connection, key) => {
+        // Only reconnect if there are subscribers and currently disconnected
+        if (connection.getConnectionState() === 'disconnected') {
+          console.log(`[SessionConnectionManager] Auto-reconnecting ${key}`);
+          connection.connect().catch((err) => {
+            console.error(`[SessionConnectionManager] Auto-reconnect failed for ${key}:`, err);
+          });
+        }
+      });
+    };
+
+    window.addEventListener('online', this.onlineHandler);
   }
 
   setAuthToken(token: string) {
@@ -525,6 +653,12 @@ class SessionConnectionManager {
    * Destroy manager and cleanup all connections
    */
   destroy() {
+    // Remove network listener
+    if (this.onlineHandler && typeof window !== 'undefined') {
+      window.removeEventListener('online', this.onlineHandler);
+      this.onlineHandler = null;
+    }
+
     if (this.cleanupInterval) {
       clearInterval(this.cleanupInterval);
       this.cleanupInterval = null;

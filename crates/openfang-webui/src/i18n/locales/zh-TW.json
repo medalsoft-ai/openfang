@@ -66,8 +66,17 @@
     "offline": "離線",
     "connecting": "連線中...",
     "online": "線上",
+    "connected": "已連線",
+    "disconnected": "已斷線",
+    "reconnecting": "重連中...",
     "disclaimer": "AI 生成的內容可能不準確",
     "selectAgent": "選擇智慧體",
+    "model": "模型",
+    "switchModel": "切換模型",
+    "models": "模型",
+    "selectModel": "選擇模型",
+    "modelChanged": "模型已切換",
+    "modelChangeFailed": "模型切換失敗",
     "noMessages": "暫無訊息",
     "startConversation": "開始對話",
     "copy": "複製",
@@ -185,7 +194,8 @@
     "activated": "SOP \"{{name}}\" 已啟用",
     "deactivated": "SOP 已停用",
     "alreadyActive": "SOP 已在執行。切換到活躍標籤頁。",
-    "requirementsNotMet": "未滿足要求。請先安裝缺少的相依項目。"
+    "requirementsNotMet": "未滿足要求。請先安裝缺少的相依項目。",
+    "noFlow": "未定義流程"
   },
   "languages": {
     "zh-CN": "简体中文",

@@ -1,1622 +1,951 @@
-// Hands - Multi-tab with Setup Wizard and Active Instances
-import { useState, useEffect, useCallback, useMemo } from 'react';
+// SOP (Hands) Page - Claymorphism Design
+// Left: Grouped SOP List | Right: Steps, Flowchart, Edit Form
+
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
+import {
+  ReactFlow,
+  Background,
+  Controls,
+  MiniMap,
+  useNodesState,
+  useEdgesState,
+  Position,
+  Handle,
+  type Node,
+  type Edge,
+  type NodeTypes,
+} from '@xyflow/react';
+import '@xyflow/react/dist/style.css';
 import { api } from '@/api/client';
-import type { HandInstance, HandStats, HandBrowserState, Hand, HandRequirement, HandSetting, InstallDepResult } from '@/api/types';
-import { NeonText } from '@/components/motion/NeonText';
-import { SpotlightCard } from '@/components/motion/SpotlightCard';
+import type { Hand, HandInstance, HandRequirement, HandSetting } from '@/api/types';
 import { toaster } from '@/lib/toast';
-import {
-  HandIcon, Check, X, AlertCircle, Loader2, RefreshCw,
-  ChevronRight, ExternalLink, Terminal, Shield, Settings,
-  Play, Pause, Square, BarChart3, Globe, Package, ChevronLeft,
-  Apple, Monitor, Server, TerminalSquare, Eye, Clock, Copy,
-  CheckCircle2, Info, TrendingUp, TrendingDown, DollarSign,
-  Activity, PieChart, Target
-} from 'lucide-react';
-import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  BarChart, Bar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar,
-  Area, AreaChart, Cell
-} from 'recharts';
 import { cn } from '@/lib/utils';
+import { toggleFullscreen, isFullscreen } from '@/lib/tauri';
+import { useTranslation } from 'react-i18next';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import {
+  HandIcon,
+  Check,
+  X,
+  AlertCircle,
+  Loader2,
+  RefreshCw,
+  ChevronRight,
+  Play,
+  Pause,
+  Square,
+  Settings,
+  Plus,
+  Minus,
+  Edit3,
+  Save,
+  RotateCcw,
+  List,
+  GitBranch,
+  Layout,
+  Zap,
+  Package,
+  ChevronDown,
+  ChevronUp,
+  Maximize2,
+  Minimize2,
+} from 'lucide-react';
 
-// Detect platform
-function getPlatform(): 'macos' | 'windows' | 'linux' {
-  const ua = navigator.userAgent.toLowerCase();
-  if (ua.includes('mac') || ua.includes('darwin')) return 'macos';
-  if (ua.includes('win')) return 'windows';
-  return 'linux';
+// ============================================
+// TYPES
+// ============================================
+
+interface SOPStep {
+  id: string;
+  order: number;
+  title: string;
+  description?: string;
+  tool?: string;
+  input?: Record<string, unknown>;
+  output?: Record<string, unknown>;
 }
 
-// Format metric value (from Alpine.js formatMetric)
-function formatMetric(m: { value: unknown; format?: string } | null | undefined): string {
-  if (!m || m.value === null || m.value === undefined) return '-';
-  if (m.format === 'duration') {
-    const secs = parseInt(String(m.value), 10);
-    if (isNaN(secs)) return String(m.value);
-    const h = Math.floor(secs / 3600);
-    const min = Math.floor((secs % 3600) / 60);
-    const s = secs % 60;
-    if (h > 0) return `${h}h ${min}m`;
-    if (min > 0) return `${min}m ${s}s`;
-    return `${s}s`;
+interface SOPFlow {
+  id: string;
+  from: string;
+  to: string;
+  condition?: string;
+}
+
+// ============================================
+// GROUPED LIST COMPONENT
+// ============================================
+
+function GroupedSOPList({
+  hands,
+  selectedHand,
+  onSelect,
+  activeInstances,
+}: {
+  hands: Hand[];
+  selectedHand: Hand | null;
+  onSelect: (hand: Hand) => void;
+  activeInstances: HandInstance[];
+}) {
+  const { t } = useTranslation();
+
+  // Group hands by category
+  const groupedHands = useMemo(() => {
+    const groups: Record<string, Hand[]> = {};
+    hands.forEach((hand) => {
+      const category = hand.category || 'General';
+      if (!groups[category]) {
+        groups[category] = [];
+      }
+      groups[category].push(hand);
+    });
+    return groups;
+  }, [hands]);
+
+  // Sort categories alphabetically
+  const sortedCategories = useMemo(() => {
+    return Object.keys(groupedHands).sort();
+  }, [groupedHands]);
+
+  // Category color mapping
+  const categoryColors: Record<string, string> = {
+    'Development': 'bg-blue-500',
+    'DevOps': 'bg-orange-500',
+    'Data': 'bg-emerald-500',
+    'Research': 'bg-purple-500',
+    'Automation': 'bg-pink-500',
+    'General': 'bg-violet-500',
+  };
+
+  return (
+    <div className="h-full flex flex-col">
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100/50">
+        <h2 className="text-sm font-semibold text-gray-700">{t('sop.title', 'SOP')}</h2>
+        <span className="text-xs text-violet-500 font-medium bg-violet-50 px-2 py-0.5 rounded-full">
+          {hands.length}
+        </span>
+      </div>
+
+      {/* List */}
+      <ScrollArea className="flex-1">
+        <div className="p-3 space-y-4">
+          {sortedCategories.map((category) => (
+            <div key={category} className="space-y-1">
+              {/* Category Header */}
+              <div className="flex items-center gap-2 px-2 py-1.5">
+                <div
+                  className={cn(
+                    'w-2 h-2 rounded-full',
+                    categoryColors[category] || 'bg-gray-400'
+                  )}
+                />
+                <span className="text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  {category}
+                </span>
+                <div className="flex-1 h-px bg-gray-200 ml-2" />
+              </div>
+
+              {/* SOP Items */}
+              {groupedHands[category].map((hand) => {
+                const isActive = activeInstances.some((inst) => inst.hand_id === hand.id);
+                const isSelected = selectedHand?.id === hand.id;
+                const allSatisfied = hand.requirements?.every((r) => r.satisfied) ?? true;
+
+                return (
+                  <motion.button
+                    key={hand.id}
+                    onClick={() => onSelect(hand)}
+                    whileHover={{ scale: 1.01 }}
+                    whileTap={{ scale: 0.99 }}
+                    className={cn(
+                      'w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all duration-200',
+                      isSelected
+                        ? 'bg-violet-100 border border-violet-200 shadow-sm'
+                        : 'bg-white/50 hover:bg-white border border-transparent hover:shadow-sm'
+                    )}
+                  >
+                    {/* Icon */}
+                    <div
+                      className={cn(
+                        'w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 text-lg',
+                        isSelected
+                          ? 'bg-gradient-to-br from-violet-500 to-purple-600'
+                          : 'bg-gradient-to-br from-gray-100 to-gray-200'
+                      )}
+                    >
+                      {hand.icon ? (
+                        <span>{hand.icon}</span>
+                      ) : (
+                        <HandIcon
+                          className={cn(
+                            'w-4 h-4',
+                            isSelected ? 'text-white' : 'text-gray-500'
+                          )}
+                        />
+                      )}
+                    </div>
+
+                    {/* Info */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p
+                          className={cn(
+                            'text-sm font-medium truncate',
+                            isSelected ? 'text-violet-900' : 'text-gray-700'
+                          )}
+                        >
+                          {hand.display_name || hand.name}
+                        </p>
+                        {isActive && (
+                          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                        )}
+                      </div>
+                      <p className="text-xs text-gray-400 truncate">
+                        {hand.tools?.length || 0} {t('sop.tools', 'tools')}
+                      </p>
+                    </div>
+
+                    {/* Status */}
+                    <div
+                      className={cn(
+                        'w-2 h-2 rounded-full flex-shrink-0',
+                        allSatisfied ? 'bg-emerald-400' : 'bg-amber-400'
+                      )}
+                      title={allSatisfied ? 'Ready' : 'Setup needed'}
+                    />
+                  </motion.button>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+      </ScrollArea>
+    </div>
+  );
+}
+
+// ============================================
+// STEPS DIAGRAM COMPONENT
+// ============================================
+
+function StepsDiagram({ steps }: { steps: SOPStep[] }) {
+  if (!steps || steps.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12 text-gray-400">
+        <List className="w-10 h-10 mb-3 opacity-50" />
+        <p className="text-sm">No steps defined</p>
+      </div>
+    );
   }
-  if (m.format === 'number') {
-    const n = parseFloat(String(m.value));
-    if (isNaN(n)) return String(m.value);
-    return n.toLocaleString();
+
+  return (
+    <div className="space-y-3">
+      {steps
+        .sort((a, b) => a.order - b.order)
+        .map((step, index) => (
+          <motion.div
+            key={step.id}
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: index * 0.05 }}
+            className="relative"
+          >
+            {/* Connector Line */}
+            {index < steps.length - 1 && (
+              <div className="absolute left-5 top-10 w-0.5 h-6 bg-violet-200" />
+            )}
+
+            {/* Step Card */}
+            <div className="flex gap-3">
+              {/* Step Number */}
+              <div className="flex-shrink-0 w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center text-white font-bold text-sm shadow-lg shadow-violet-500/20">
+                {step.order}
+              </div>
+
+              {/* Step Content */}
+              <div className="flex-1 p-3 rounded-xl bg-white/80 border border-violet-100 shadow-sm">
+                <h4 className="text-sm font-medium text-gray-800">{step.title}</h4>
+                {step.description && (
+                  <p className="text-xs text-gray-500 mt-1">{step.description}</p>
+                )}
+                {step.tool && (
+                  <div className="flex items-center gap-1.5 mt-2">
+                    <Zap className="w-3 h-3 text-violet-500" />
+                    <span className="text-xs text-violet-600 font-medium">
+                      {step.tool}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+          </motion.div>
+        ))}
+    </div>
+  );
+}
+
+// ============================================
+// REACT FLOW CUSTOM NODE
+// ============================================
+
+function FlowStepNode({ data }: { data: { label: string; description?: string; order: number; isFirst: boolean; isLast: boolean } }) {
+  return (
+    <>
+      <Handle type="target" position={Position.Left} className="!w-2 !h-2 !bg-gray-400" />
+      <div
+        className={cn(
+          'px-4 py-3 rounded-xl border-2 min-w-[140px] text-center shadow-sm transition-all hover:shadow-md',
+          data.isFirst
+            ? 'bg-emerald-50 border-emerald-300'
+            : data.isLast
+            ? 'bg-violet-50 border-violet-300'
+            : 'bg-white border-gray-200'
+        )}
+      >
+        <span
+          className={cn(
+            'text-xs font-medium block truncate',
+            data.isFirst ? 'text-emerald-700' : data.isLast ? 'text-violet-700' : 'text-gray-700'
+          )}
+        >
+          {data.label}
+        </span>
+        {data.description && (
+          <span className="text-[10px] text-gray-500 mt-1 block truncate">{data.description}</span>
+        )}
+      </div>
+      <Handle type="source" position={Position.Right} className="!w-2 !h-2 !bg-gray-400" />
+    </>
+  );
+}
+
+const nodeTypes: NodeTypes = {
+  flowStep: FlowStepNode,
+};
+
+// ============================================
+// FLOWCHART COMPONENT (React Flow)
+// ============================================
+
+function FlowchartDiagram({ steps }: { steps: SOPStep[]; flows?: SOPFlow[] }) {
+  const { t } = useTranslation();
+  const [isFs, setIsFs] = useState(false);
+
+  // Build nodes and edges from steps - Vertical layout (top to bottom)
+  const initialNodes: Node[] = useMemo(() => {
+    if (!steps || steps.length === 0) return [];
+
+    const sortedSteps = [...steps].sort((a, b) => a.order - b.order);
+    const nodeWidth = 160;
+    const nodeHeight = 80;
+    const verticalGap = 50;
+    const centerX = 100; // Center point for horizontal alignment
+
+    return sortedSteps.map((step, index) => ({
+      id: step.id,
+      type: 'flowStep',
+      position: {
+        x: centerX - nodeWidth / 2, // Center the node
+        y: 20 + index * (nodeHeight + verticalGap), // Stack vertically
+      },
+      data: {
+        label: step.title,
+        description: step.tool,
+        order: step.order,
+        isFirst: index === 0,
+        isLast: index === sortedSteps.length - 1,
+      },
+    }));
+  }, [steps]);
+
+  const initialEdges: Edge[] = useMemo(() => {
+    if (!steps || steps.length < 2) return [];
+
+    const sortedSteps = [...steps].sort((a, b) => a.order - b.order);
+    return sortedSteps.slice(0, -1).map((step, index) => ({
+      id: `e${step.id}-${sortedSteps[index + 1].id}`,
+      source: step.id,
+      target: sortedSteps[index + 1].id,
+      type: 'smoothstep',
+      animated: true,
+      style: { stroke: '#A78BFA', strokeWidth: 2 },
+    }));
+  }, [steps]);
+
+  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
+  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+
+  // Update when steps change
+  useMemo(() => {
+    setNodes(initialNodes);
+    setEdges(initialEdges);
+  }, [initialNodes, initialEdges, setNodes, setEdges]);
+
+  // Handle fullscreen toggle
+  const handleToggleFullscreen = useCallback(async () => {
+    const newState = await toggleFullscreen();
+    setIsFs(newState);
+  }, []);
+
+  // Listen for fullscreen change events (for ESC key handling)
+  useEffect(() => {
+    const handleFullscreenChange = async () => {
+      const fsState = await isFullscreen();
+      setIsFs(fsState);
+    };
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, []);
+
+  if (!steps || steps.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full min-h-[200px] text-gray-400">
+        <GitBranch className="w-10 h-10 mb-3 opacity-50" />
+        <p className="text-sm">{t('sop.noFlow', 'No flow defined')}</p>
+      </div>
+    );
   }
-  return String(m.value);
+
+  return (
+    <div
+      className={cn(
+        'rounded-xl overflow-hidden border border-gray-200 bg-white transition-all duration-300',
+        isFs
+          ? 'fixed inset-0 z-50 w-screen h-screen rounded-none border-0'
+          : 'h-full min-h-[280px] w-full'
+      )}
+    >
+      <ReactFlow
+        nodes={nodes}
+        edges={edges}
+        onNodesChange={onNodesChange}
+        onEdgesChange={onEdgesChange}
+        nodeTypes={nodeTypes}
+        fitView
+        fitViewOptions={{ padding: 0.2 }}
+        attributionPosition="bottom-right"
+        proOptions={{ hideAttribution: true }}
+      >
+        <Background color="#E5E7EB" gap={16} size={1} />
+        <Controls className="!bg-white !border-gray-200 !shadow-sm" />
+        {/* Fullscreen Toggle Button */}
+        <div className="absolute top-3 right-3 z-10">
+          <motion.button
+            onClick={handleToggleFullscreen}
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            className="flex items-center justify-center w-8 h-8 bg-white border border-gray-200 rounded-lg shadow-sm hover:bg-gray-50 hover:border-gray-300 transition-colors"
+            title={isFs ? t('sop.exitFullscreen', 'Exit fullscreen') : t('sop.enterFullscreen', 'Enter fullscreen')}
+          >
+            {isFs ? (
+              <Minimize2 className="w-4 h-4 text-gray-600" />
+            ) : (
+              <Maximize2 className="w-4 h-4 text-gray-600" />
+            )}
+          </motion.button>
+        </div>
+      </ReactFlow>
+    </div>
+  );
 }
 
-// Get install command for requirement and platform
-function getInstallCmd(req: HandRequirement, platform: string): string | null {
-  if (!req?.install) return null;
-  const inst = req.install;
-  if (platform === 'macos' && inst.macos) return inst.macos;
-  if (platform === 'windows' && inst.windows) return inst.windows;
-  if (platform === 'linux') {
-    return inst.linux_apt || inst.linux_dnf || inst.linux_pacman || inst.pip || null;
-  }
-  if (platform === 'pip') return inst.pip || null;
-  return inst.pip || inst.macos || inst.windows || inst.linux_apt || null;
-}
+// ============================================
+// SOP EDITOR COMPONENT
+// ============================================
 
-// Get Linux variants for requirement
-function getLinuxVariants(req: HandRequirement): Array<{ label: string; cmd: string }> | null {
-  if (!req?.install) return null;
-  const inst = req.install;
-  const variants: Array<{ label: string; cmd: string }> = [];
-  if (inst.linux_apt) variants.push({ label: 'apt', cmd: inst.linux_apt });
-  if (inst.linux_dnf) variants.push({ label: 'dnf', cmd: inst.linux_dnf });
-  if (inst.linux_pacman) variants.push({ label: 'pacman', cmd: inst.linux_pacman });
-  if (inst.pip) variants.push({ label: 'pip', cmd: inst.pip });
-  return variants.length > 0 ? variants : null;
-}
-
-// ==================== Components ====================
-
-// Hand Card Component
-function HandCard({
-  hand, onActivate, onDetail, isActive
+function SOPEditor({
+  hand,
+  onSave,
+  isSaving,
 }: {
   hand: Hand;
-  onActivate: () => void;
-  onDetail: () => void;
-  isActive?: boolean;
+  onSave: (updates: Partial<Hand>) => void;
+  isSaving: boolean;
 }) {
-  const allSatisfied = hand.requirements?.every((r) => r.satisfied) ?? true;
-  const satisfiedCount = hand.requirements?.filter((r) => r.satisfied).length ?? 0;
+  const { t } = useTranslation();
+  const [activeTab, setActiveTab] = useState<'basic' | 'steps' | 'config'>('basic');
+  const [editedHand, setEditedHand] = useState<Hand>(hand);
+
+  // Generate mock steps from hand data
+  const mockSteps: SOPStep[] = useMemo(() => {
+    const steps: SOPStep[] = [];
+    if (hand.tools) {
+      hand.tools.forEach((tool, index) => {
+        steps.push({
+          id: `step-${index}`,
+          order: index + 1,
+          title: `Execute ${tool}`,
+          description: `Call ${tool} tool`,
+          tool: tool,
+        });
+      });
+    }
+    return steps;
+  }, [hand]);
+
+  const handleSave = () => {
+    onSave({
+      display_name: editedHand.display_name,
+      description: editedHand.description,
+    });
+  };
 
   return (
-    <motion.div layout initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }}>
-      <div className="card">
-        <div className="flex justify-between items-center mb-2">
-          <div className="flex items-center gap-2">
-            <span style={{ fontSize: '1.4rem' }}>{hand.icon}</span>
-            <div className="card-header" style={{ margin: 0 }}>{hand.display_name || hand.name}</div>
-          </div>
-          <span className={cn('badge', isActive ? 'badge-success' : allSatisfied ? 'badge-success' : 'badge-dim')}>
-            {isActive ? 'Running' : allSatisfied ? 'Ready' : 'Setup needed'}
-          </span>
-        </div>
-        <div className="card-meta">{hand.description}</div>
-
-        {/* Requirements */}
-        {hand.requirements?.length > 0 && (
-          <div className="mt-3">
-            <div className="text-xs text-dim mb-1" style={{ letterSpacing: '0.5px' }}>REQUIREMENTS</div>
-            {hand.requirements.map((req) => (
-              <div key={req.key} className="flex items-center gap-2 text-xs" style={{ padding: '2px 0' }}>
-                <span style={{ color: req.satisfied ? 'var(--success)' : 'var(--danger)' }}>
-                  {req.satisfied ? '✓' : '✗'}
-                </span>
-                <span>{req.label}</span>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Tools & Metrics */}
-        <div className="mt-2">
-          <span className="text-xs text-dim">{hand.tools?.length || 0} tool(s)</span>
-          <span className="text-xs text-dim" style={{ marginLeft: '8px' }}>{hand.dashboard_metrics || 0} metric(s)</span>
-          {hand.category && (
-            <span className="category-badge" style={{ marginLeft: '8px', fontSize: '0.65rem' }}>{hand.category}</span>
-          )}
-        </div>
-
-        {/* Actions */}
-        <div className="flex justify-between items-center mt-3">
-          <button className="btn btn-ghost btn-sm" onClick={onDetail}>Details</button>
-          {isActive ? (
-            <button
-              className="btn btn-success btn-sm"
-              onClick={onActivate}
-              title="This hand is already running. Click to view active instances."
-            >
-              View Active
-            </button>
-          ) : (
-            <button
-              className="btn btn-primary btn-sm"
-              onClick={onActivate}
-              disabled={!allSatisfied}
-            >
-              Activate
-            </button>
-          )}
-        </div>
-      </div>
-    </motion.div>
-  );
-}
-
-// Detail Modal Component
-function DetailModal({
-  hand, onClose, onActivate
-}: {
-  hand: Hand | null;
-  onClose: () => void;
-  onActivate: (hand: Hand) => void;
-}) {
-  if (!hand) return null;
-
-  return (
-    <div className="modal-overlay" onClick={onClose}>
-      <motion.div
-        initial={{ scale: 0.95, opacity: 0 }}
-        animate={{ scale: 1, opacity: 1 }}
-        exit={{ scale: 0.95, opacity: 0 }}
-        className="modal"
-        style={{ maxWidth: '600px' }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="modal-header">
-          <h3><span>{hand.icon}</span> <span>{hand.display_name || hand.name}</span></h3>
-          <button className="modal-close" onClick={onClose}>×</button>
-        </div>
-
-        <div className="mb-3">
-          <p>{hand.description}</p>
-        </div>
-
-        {/* Agent Config */}
-        <div className="mb-3">
-          <div className="text-xs text-dim mb-1" style={{ letterSpacing: '0.5px' }}>AGENT CONFIG</div>
-          {hand.agent ? (
-            <div className="text-sm">
-              <div className="flex justify-between" style={{ padding: '2px 0' }}>
-                <span className="text-dim">Provider</span>
-                <span>{hand.agent.provider || 'default'}</span>
-              </div>
-              <div className="flex justify-between" style={{ padding: '2px 0' }}>
-                <span className="text-dim">Model</span>
-                <span>{hand.agent.model || 'default'}</span>
-              </div>
-            </div>
-          ) : (
-            <p className="text-sm text-dim">No agent config</p>
-          )}
-        </div>
-
-        {/* Requirements */}
-        <div className="mb-3">
-          <div className="text-xs text-dim mb-1" style={{ letterSpacing: '0.5px' }}>REQUIREMENTS</div>
-          {(hand.requirements || []).map((req) => (
-            <div key={req.key} className="flex items-center gap-2 text-sm" style={{ padding: '3px 0' }}>
-              <span style={{ color: req.satisfied ? 'var(--success)' : 'var(--danger)' }}>
-                {req.satisfied ? '✓' : '✗'}
-              </span>
-              <span>{req.label}</span>
-              {req.check_value && (
-                <code className="text-xs text-dim" style={{ marginLeft: 'auto' }}>{req.check_value}</code>
-              )}
-            </div>
-          ))}
-        </div>
-
-        {/* Tools */}
-        <div className="mb-3">
-          <div className="text-xs text-dim mb-1" style={{ letterSpacing: '0.5px' }}>TOOLS</div>
-          <div className="flex flex-wrap gap-1">
-            {(hand.tools || []).map((tool) => (
-              <span key={tool} className="category-badge" style={{ fontSize: '0.7rem' }}>{tool}</span>
-            ))}
-          </div>
-        </div>
-
-        {/* Dashboard Metrics */}
-        {hand.dashboard && hand.dashboard.length > 0 && (
-          <div className="mb-3">
-            <div className="text-xs text-dim mb-1" style={{ letterSpacing: '0.5px' }}>DASHBOARD METRICS</div>
-            {hand.dashboard.map((m) => (
-              <div key={m.memory_key} className="text-sm" style={{ padding: '2px 0' }}>
-                <span>{m.label}</span> <code className="text-xs text-dim">({m.format})</code>
-              </div>
-            ))}
-          </div>
-        )}
-
-        <div className="flex gap-2">
+    <div className="h-full flex flex-col">
+      {/* Tabs */}
+      <div className="flex gap-1 p-1 bg-gray-100/50 rounded-xl mb-4">
+        {[
+          { id: 'basic', label: t('sop.basic', 'Basic'), icon: Layout },
+          { id: 'steps', label: t('sop.steps', 'Steps'), icon: List },
+          { id: 'config', label: t('sop.config', 'Config'), icon: Settings },
+        ].map((tab) => (
           <button
-            className="btn btn-primary btn-block"
-            onClick={() => { onClose(); onActivate(hand); }}
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id as typeof activeTab)}
+            className={cn(
+              'flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all',
+              activeTab === tab.id
+                ? 'bg-white text-violet-600 shadow-sm'
+                : 'text-gray-500 hover:text-gray-700'
+            )}
           >
-            Activate
+            <tab.icon className="w-4 h-4" />
+            {tab.label}
           </button>
-        </div>
-      </motion.div>
-    </div>
-  );
-}
-
-// Install Progress Panel Component
-function InstallProgressPanel({
-  progress
-}: {
-  progress: {
-    status: 'installing' | 'done' | 'error';
-    current: number;
-    total: number;
-    currentLabel?: string;
-    results: InstallDepResult[];
-    error?: string | null;
-  } | null;
-}) {
-  if (!progress) return null;
-
-  const getResultIcon = (status: string) => {
-    if (status === 'installed' || status === 'already_installed') return '✓';
-    if (status === 'error' || status === 'timeout') return '✗';
-    return '•';
-  };
-
-  const getResultClass = (status: string) => {
-    if (status === 'installed' || status === 'already_installed') return 'dep-met';
-    if (status === 'error' || status === 'timeout') return 'dep-missing';
-    return '';
-  };
-
-  return (
-    <div className="install-progress-panel" style={{
-      background: 'var(--surface-secondary)',
-      borderRadius: '8px',
-      padding: '16px',
-      marginTop: '16px',
-      border: '1px solid var(--border-subtle)'
-    }}>
-      {/* Header */}
-      <div className="install-progress-header" style={{ marginBottom: '12px' }}>
-        {progress.status === 'installing' && (
-          <div className="flex items-center gap-2">
-            <Loader2 className="w-4 h-4 animate-spin" />
-            <span className="text-sm font-bold">Installing dependencies...</span>
-          </div>
-        )}
-        {progress.status === 'done' && !progress.error && (
-          <div className="flex items-center gap-2">
-            <span style={{ color: 'var(--green)', fontSize: '16px' }}>✓</span>
-            <span className="text-sm font-bold" style={{ color: 'var(--green)' }}>Installation complete!</span>
-          </div>
-        )}
-        {progress.error && (
-          <div className="flex items-center gap-2">
-            <span style={{ color: 'var(--red)', fontSize: '16px' }}>✗</span>
-            <span className="text-sm" style={{ color: 'var(--red)' }}>{progress.error}</span>
-          </div>
-        )}
+        ))}
       </div>
 
-      {/* Results */}
-      {progress.results.length > 0 && (
-        <div className="install-results-list">
-          {progress.results.map((r) => (
-            <div
-              key={r.key}
-              className={cn('install-result-row', getResultClass(r.status))}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                padding: '6px 0',
-                borderBottom: '1px solid var(--border-subtle)'
-              }}
+      {/* Content */}
+      <div className="flex-1 overflow-auto">
+        <AnimatePresence mode="wait">
+          {activeTab === 'basic' && (
+            <motion.div
+              key="basic"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="space-y-4"
             >
-              <span className="install-result-icon">{getResultIcon(r.status)}</span>
-              <span className="text-sm">{r.key}</span>
-              {r.message && (
-                <span className="text-xs text-dim" style={{ marginLeft: 'auto' }}>{r.message}</span>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// Setup Wizard Modal Component
-function SetupWizardModal({
-  hand, platform, onClose, onActivate, onInstallDeps
-}: {
-  hand: Hand | null;
-  platform: string;
-  onClose: () => void;
-  onActivate: (hand: Hand, settings: Record<string, string>) => void;
-  onInstallDeps: (handId: string) => Promise<{
-    results?: InstallDepResult[];
-    requirements?: HandRequirement[];
-    requirements_met?: boolean;
-  }>;
-}) {
-  const [step, setStep] = useState(1);
-  const [settings, setSettings] = useState<Record<string, string>>({});
-  const [installing, setInstalling] = useState(false);
-  const [checking, setChecking] = useState(false);
-  const [activating, setActivating] = useState(false);
-  const [currentHand, setCurrentHand] = useState<Hand | null>(hand);
-  const [installProgress, setInstallProgress] = useState<{
-    status: 'installing' | 'done' | 'error';
-    current: number;
-    total: number;
-    results: InstallDepResult[];
-    error?: string | null;
-  } | null>(null);
-  const [installPlatforms, setInstallPlatforms] = useState<Record<string, string>>({});
-  const [clipboardMsg, setClipboardMsg] = useState<string | null>(null);
-
-  // Initialize settings with defaults and platform
-  useEffect(() => {
-    if (hand) {
-      setCurrentHand(hand);
-      const defaults: Record<string, string> = {};
-      hand.settings?.forEach((s) => {
-        if (s.default) defaults[s.key] = s.default;
-      });
-      setSettings(defaults);
-
-      // Initialize platform selections for each requirement
-      const platforms: Record<string, string> = {};
-      hand.requirements?.forEach((r) => {
-        platforms[r.key] = platform;
-      });
-      setInstallPlatforms(platforms);
-
-      // Set initial step
-      const hasReqs = hand.requirements && hand.requirements.length > 0;
-      setStep(hasReqs ? 1 : 2);
-    }
-  }, [hand, platform]);
-
-  if (!currentHand) return null;
-
-  const hasReqs = currentHand.requirements?.length > 0;
-  const hasSettings = currentHand.settings && currentHand.settings.length > 0;
-  const allReqsMet = currentHand.requirements?.every((r) => r.satisfied) ?? true;
-  const reqsMetCount = currentHand.requirements?.filter((r) => r.satisfied).length ?? 0;
-  const reqsTotal = currentHand.requirements?.length ?? 0;
-
-  // Step navigation
-  const goNext = () => {
-    if (step === 1 && hasSettings) {
-      setStep(2);
-    } else if (step === 1) {
-      setStep(3);
-    } else if (step === 2) {
-      setStep(3);
-    }
-  };
-
-  const goBack = () => {
-    if (step === 3 && hasSettings) {
-      setStep(2);
-    } else if (step === 3) {
-      setStep(hasReqs ? 1 : 2);
-    } else if (step === 2 && hasReqs) {
-      setStep(1);
-    }
-  };
-
-  // Install dependencies
-  const handleInstall = async () => {
-    setInstalling(true);
-    setInstallProgress({
-      status: 'installing',
-      current: 0,
-      total: reqsTotal - reqsMetCount,
-      results: []
-    });
-
-    try {
-      const data = await onInstallDeps(currentHand.id);
-      const results = data.results || [];
-
-      setInstallProgress({
-        status: 'done',
-        current: results.length,
-        total: reqsTotal - reqsMetCount,
-        results
-      });
-
-      // Update requirements from server response
-      if (data.requirements) {
-        setCurrentHand({
-          ...currentHand,
-          requirements: data.requirements,
-          requirements_met: data.requirements_met ?? false
-        });
-      }
-
-      // Auto-advance after delay if all satisfied
-      if (data.requirements_met) {
-        setTimeout(() => {
-          setInstallProgress(null);
-          goNext();
-        }, 1500);
-      }
-    } catch (err) {
-      setInstallProgress({
-        status: 'error',
-        current: 0,
-        total: reqsTotal - reqsMetCount,
-        results: [],
-        error: (err as Error).message || 'Installation failed'
-      });
-    } finally {
-      setInstalling(false);
-    }
-  };
-
-  // Recheck dependencies
-  const handleRecheck = async () => {
-    setChecking(true);
-    try {
-      const data = await api.checkHandDeps(currentHand.id);
-      if (data.requirements) {
-        setCurrentHand({
-          ...currentHand,
-          requirements: data.requirements.map((r, i) => ({
-            ...currentHand.requirements[i],
-            satisfied: r.satisfied
-          })),
-          requirements_met: data.requirements.every((r) => r.satisfied)
-        });
-      }
-    } catch (err) {
-      toaster.error('Check failed: ' + (err as Error).message);
-    } finally {
-      setChecking(false);
-    }
-  };
-
-  // Copy to clipboard
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text).then(() => {
-      setClipboardMsg(text);
-      setTimeout(() => setClipboardMsg(null), 2000);
-    });
-  };
-
-  // Get setting display value for summary
-  const getSettingDisplayValue = (setting: HandSetting): string => {
-    const val = settings[setting.key] || setting.default || '';
-    if (setting.setting_type === 'toggle') {
-      return val === 'true' ? 'Enabled' : 'Disabled';
-    }
-    if (setting.setting_type === 'select' && setting.options) {
-      const opt = setting.options.find((o) => o.value === val);
-      return opt?.label || val || '-';
-    }
-    return val || '-';
-  };
-
-  // Step titles
-  const stepTitles = ['Dependencies', 'Configure', 'Launch'];
-  const actualStepTitle = step === 1 && !hasReqs ? stepTitles[1] :
-                          step === 2 && !hasReqs ? stepTitles[2] :
-                          stepTitles[step - 1];
-
-  return (
-    <div className="modal-overlay" onClick={onClose}>
-      <motion.div
-        initial={{ scale: 0.95, opacity: 0 }}
-        animate={{ scale: 1, opacity: 1 }}
-        exit={{ scale: 0.95, opacity: 0 }}
-        className="hand-wizard"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div className="hand-wizard-header">
-          <span className="wizard-icon">{currentHand.icon}</span>
-          <div>
-            <div className="wizard-title">Set up {currentHand.display_name || currentHand.name}</div>
-            <div className="wizard-subtitle">{currentHand.description}</div>
-          </div>
-          <button className="wizard-close" onClick={onClose}>×</button>
-        </div>
-
-        {/* Step Indicators */}
-        <div className="hand-steps">
-          {hasReqs && (
-            <>
-              <div className={cn('hand-step-item', { active: step === 1, done: step > 1 })}>
-                <div className="hand-step-num">{step > 1 ? '✓' : '1'}</div>
-                <div className="hand-step-label">Dependencies</div>
+              {/* Name */}
+              <div>
+                <label className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-1.5 block">
+                  {t('sop.name', 'Name')}
+                </label>
+                <input
+                  type="text"
+                  value={editedHand.display_name || editedHand.name}
+                  onChange={(e) =>
+                    setEditedHand({ ...editedHand, display_name: e.target.value })
+                  }
+                  className="w-full px-3 py-2 rounded-xl bg-white border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500"
+                />
               </div>
-              <div className={cn('hand-step-line', { done: step > 1 })} />
-            </>
+
+              {/* Description */}
+              <div>
+                <label className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-1.5 block">
+                  {t('sop.description', 'Description')}
+                </label>
+                <textarea
+                  value={editedHand.description || ''}
+                  onChange={(e) =>
+                    setEditedHand({ ...editedHand, description: e.target.value })
+                  }
+                  rows={3}
+                  className="w-full px-3 py-2 rounded-xl bg-white border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500 resize-none"
+                />
+              </div>
+
+              {/* Category */}
+              <div>
+                <label className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-1.5 block">
+                  {t('sop.category', 'Category')}
+                </label>
+                <input
+                  type="text"
+                  value={editedHand.category || 'General'}
+                  disabled
+                  className="w-full px-3 py-2 rounded-xl bg-gray-50 border border-gray-200 text-sm text-gray-500"
+                />
+              </div>
+
+              {/* Tools */}
+              <div>
+                <label className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-1.5 block">
+                  {t('sop.tools', 'Tools')} ({editedHand.tools?.length || 0})
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  {editedHand.tools?.map((tool) => (
+                    <span
+                      key={tool}
+                      className="px-2.5 py-1 rounded-lg bg-violet-50 text-violet-600 text-xs font-medium"
+                    >
+                      {tool}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </motion.div>
           )}
-          <div className={cn('hand-step-item', { active: step === (hasReqs ? 2 : 1), done: step > (hasReqs ? 2 : 1) })}>
-            <div className="hand-step-num">{step > (hasReqs ? 2 : 1) ? '✓' : (hasReqs ? '2' : '1')}</div>
-            <div className="hand-step-label">Configure</div>
-          </div>
-          <div className={cn('hand-step-line', { done: step > (hasReqs ? 2 : 1) })} />
-          <div className={cn('hand-step-item', { active: step === (hasReqs ? 3 : 2) })}>
-            <div className="hand-step-num">{hasReqs ? '3' : '2'}</div>
-            <div className="hand-step-label">Launch</div>
-          </div>
-        </div>
 
-        {/* Step 1: Dependencies */}
-        {step === 1 && hasReqs && (
-          <div className="hand-wizard-body">
-            {(currentHand.requirements || []).map((req) => {
-              const reqPlatform = installPlatforms[req.key] || platform;
-              const installCmd = getInstallCmd(req, reqPlatform);
-              const linuxVariants = getLinuxVariants(req);
+          {activeTab === 'steps' && (
+            <motion.div
+              key="steps"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="space-y-6"
+            >
+              {/* Steps Diagram */}
+              <div>
+                <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-3">
+                  {t('sop.stepsDiagram', 'Steps Diagram')}
+                </h4>
+                <div className="p-4 rounded-2xl bg-gradient-to-br from-violet-50/50 to-purple-50/30 border border-violet-100">
+                  <StepsDiagram steps={mockSteps} />
+                </div>
+              </div>
 
-              return (
-                <div key={req.key} className={cn('dep-card', req.satisfied ? 'dep-met' : 'dep-missing')} style={{
-                  border: '1px solid var(--border-subtle)',
-                  borderRadius: '8px',
-                  padding: '12px',
-                  marginBottom: '12px',
-                  background: req.satisfied ? 'rgba(0, 255, 127, 0.05)' : 'var(--surface-secondary)'
-                }}>
-                  <div className="dep-card-header" style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                    <div className={cn('dep-status-icon', req.satisfied ? 'met' : 'missing', checking ? 'checking' : '')} style={{
-                      width: '24px',
-                      height: '24px',
-                      borderRadius: '50%',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      background: req.satisfied ? 'var(--success)' : 'var(--danger)',
-                      color: 'white',
-                      fontSize: '12px'
-                    }}>
-                      {req.satisfied ? '✓' : '✗'}
-                    </div>
-                    <span className="dep-card-title font-medium">{req.label}</span>
-                    {req.install?.estimated_time && (
-                      <span className="dep-time-badge text-xs text-dim" style={{ marginLeft: 'auto' }}>{req.install.estimated_time}</span>
-                    )}
-                  </div>
+              {/* Flowchart */}
+              <div>
+                <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-3">
+                  {t('sop.flowchart', 'Flowchart')}
+                </h4>
+                <div className="p-4 rounded-2xl bg-white border border-gray-200">
+                  <FlowchartDiagram steps={mockSteps} />
+                </div>
+              </div>
+            </motion.div>
+          )}
 
-                  {req.description && (
-                    <div className="dep-card-desc text-xs text-dim" style={{ marginBottom: '8px' }}>{req.description}</div>
-                  )}
-
-                  {/* Satisfied */}
-                  {req.satisfied && (
-                    <div className="dep-met-msg text-sm" style={{ color: 'var(--success)' }}>✓ Detected on your system</div>
-                  )}
-
-                  {/* Not satisfied */}
-                  {!req.satisfied && (
+          {activeTab === 'config' && (
+            <motion.div
+              key="config"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="space-y-6"
+            >
+              {/* Agent Config */}
+              {hand.agent && (
+                <div className="p-4 rounded-xl bg-gradient-to-br from-violet-50/50 to-purple-50/30 border border-violet-100">
+                  <h4 className="text-xs font-medium text-violet-600 uppercase tracking-wider mb-4 flex items-center gap-2">
+                    <Zap className="w-3.5 h-3.5" />
+                    {t('sop.agentConfig', 'Agent Configuration')}
+                  </h4>
+                  <div className="grid grid-cols-2 gap-3">
                     <div>
-                      {/* Binary/EnvVar install commands */}
-                      {req.type !== 'ApiKey' && req.install && (req.install.macos || req.install.windows || req.install.linux_apt) && (
-                        <div className="install-block" style={{ marginTop: '8px' }}>
-                          {/* Platform pills */}
-                          <div className="install-platform-pills" style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
-                            {req.install.macos && (
-                              <button
-                                className={cn('install-platform-pill', { active: reqPlatform === 'macos' })}
-                                onClick={() => setInstallPlatforms({ ...installPlatforms, [req.key]: 'macos' })}
-                                style={{
-                                  padding: '4px 12px',
-                                  borderRadius: '4px',
-                                  border: '1px solid var(--border-subtle)',
-                                  background: reqPlatform === 'macos' ? 'var(--accent)' : 'transparent'
-                                }}
-                              >
-                                macOS
-                              </button>
-                            )}
-                            {req.install.windows && (
-                              <button
-                                className={cn('install-platform-pill', { active: reqPlatform === 'windows' })}
-                                onClick={() => setInstallPlatforms({ ...installPlatforms, [req.key]: 'windows' })}
-                                style={{
-                                  padding: '4px 12px',
-                                  borderRadius: '4px',
-                                  border: '1px solid var(--border-subtle)',
-                                  background: reqPlatform === 'windows' ? 'var(--accent)' : 'transparent'
-                                }}
-                              >
-                                Windows
-                              </button>
-                            )}
-                            {(req.install.linux_apt || req.install.linux_dnf || req.install.linux_pacman) && (
-                              <button
-                                className={cn('install-platform-pill', { active: reqPlatform === 'linux' })}
-                                onClick={() => setInstallPlatforms({ ...installPlatforms, [req.key]: 'linux' })}
-                                style={{
-                                  padding: '4px 12px',
-                                  borderRadius: '4px',
-                                  border: '1px solid var(--border-subtle)',
-                                  background: reqPlatform === 'linux' ? 'var(--accent)' : 'transparent'
-                                }}
-                              >
-                                Linux
-                              </button>
-                            )}
-                            {req.install.pip && !req.install.macos && (
-                              <button
-                                className={cn('install-platform-pill', { active: reqPlatform === 'pip' })}
-                                onClick={() => setInstallPlatforms({ ...installPlatforms, [req.key]: 'pip' })}
-                                style={{
-                                  padding: '4px 12px',
-                                  borderRadius: '4px',
-                                  border: '1px solid var(--border-subtle)',
-                                  background: reqPlatform === 'pip' ? 'var(--accent)' : 'transparent'
-                                }}
-                              >
-                                pip
-                              </button>
-                            )}
-                          </div>
+                      <label className="text-xs text-gray-500 mb-1.5 block">{t('sop.provider', 'Provider')}</label>
+                      <input
+                        type="text"
+                        value={hand.agent.provider || ''}
+                        disabled
+                        className="w-full px-3 py-2 rounded-lg bg-white border border-gray-200 text-sm text-gray-700"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-gray-500 mb-1.5 block">{t('sop.model', 'Model')}</label>
+                      <input
+                        type="text"
+                        value={hand.agent.model || ''}
+                        disabled
+                        className="w-full px-3 py-2 rounded-lg bg-white border border-gray-200 text-sm text-gray-700"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
 
-                          {/* Install command */}
-                          {installCmd && (
-                            <div className="install-cmd" style={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '8px',
-                              background: 'var(--void)',
-                              padding: '8px 12px',
-                              borderRadius: '4px',
-                              fontFamily: 'monospace',
-                              fontSize: '12px'
-                            }}>
-                              <code style={{ flex: 1, overflow: 'auto' }}>{installCmd}</code>
-                              <button
-                                className={cn('copy-btn', { copied: clipboardMsg === installCmd })}
-                                onClick={() => copyToClipboard(installCmd)}
-                                style={{
-                                  padding: '4px 8px',
-                                  borderRadius: '4px',
-                                  border: '1px solid var(--border-subtle)',
-                                  background: clipboardMsg === installCmd ? 'var(--success)' : 'transparent'
-                                }}
-                              >
-                                {clipboardMsg === installCmd ? 'Copied!' : 'Copy'}
-                              </button>
-                            </div>
-                          )}
+              {/* Requirements */}
+              <div>
+                <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
+                  <Check className="w-3.5 h-3.5 text-emerald-500" />
+                  {t('sop.requirements', 'Requirements')}
+                </h4>
+                <div className="space-y-2">
+                  {hand.requirements?.map((req) => (
+                    <div
+                      key={req.key}
+                      className={cn(
+                        'flex items-start gap-3 p-3 rounded-xl border transition-all',
+                        req.satisfied
+                          ? 'bg-emerald-50/30 border-emerald-100'
+                          : 'bg-amber-50/30 border-amber-200'
+                      )}
+                    >
+                      <div
+                        className={cn(
+                          'w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5',
+                          req.satisfied ? 'bg-emerald-100' : 'bg-amber-100'
+                        )}
+                      >
+                        {req.satisfied ? (
+                          <Check className="w-4 h-4 text-emerald-600" />
+                        ) : (
+                          <AlertCircle className="w-4 h-4 text-amber-600" />
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between">
+                          <p className="text-sm font-medium text-gray-700">
+                            {req.label}
+                          </p>
+                          <span className={cn(
+                            'text-[10px] px-1.5 py-0.5 rounded-full font-medium',
+                            req.satisfied
+                              ? 'bg-emerald-100 text-emerald-600'
+                              : 'bg-amber-100 text-amber-600'
+                          )}>
+                            {req.type || 'Binary'}
+                          </span>
                         </div>
-                      )}
-
-                      {/* Install steps */}
-                      {req.install?.steps && req.install.steps.length > 0 && req.type !== 'ApiKey' && (
-                        <ol className="api-key-steps" style={{ marginTop: '8px', paddingLeft: '20px' }}>
-                          {req.install.steps.map((step, i) => (
-                            <li key={i} className="text-xs text-dim">{step}</li>
-                          ))}
-                        </ol>
-                      )}
-
-                      {/* API Key type */}
-                      {req.type === 'ApiKey' && req.install && (
-                        <div>
-                          {req.install.steps && req.install.steps.length > 0 && (
-                            <ol className="api-key-steps" style={{ paddingLeft: '20px' }}>
-                              {req.install.steps.map((step, i) => (
-                                <li key={i} className="text-xs text-dim">{step}</li>
-                              ))}
-                            </ol>
-                          )}
-                          {req.install?.env_example && (
-                            <div className="install-block" style={{ marginTop: '8px' }}>
-                              <div className="install-cmd" style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '8px',
-                                background: 'var(--void)',
-                                padding: '8px 12px',
-                                borderRadius: '4px',
-                                fontFamily: 'monospace',
-                                fontSize: '12px'
-                              }}>
-                                <code style={{ flex: 1, overflow: 'auto' }}>{req.install.env_example}</code>
-                                <button
-                                  className={cn('copy-btn', { copied: clipboardMsg === req.install.env_example })}
-                                  onClick={() => req.install?.env_example && copyToClipboard(req.install.env_example)}
-                                  style={{
-                                    padding: '4px 8px',
-                                    borderRadius: '4px',
-                                    border: '1px solid var(--border-subtle)',
-                                    background: clipboardMsg === req.install.env_example ? 'var(--success)' : 'transparent'
-                                  }}
-                                >
-                                  {clipboardMsg === req.install.env_example ? 'Copied!' : 'Copy'}
-                                </button>
-                              </div>
-                            </div>
-                          )}
-                          <div className="flex gap-2 mt-2">
-                            {req.install.signup_url && (
-                              <a
-                                href={req.install.signup_url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="btn btn-primary btn-sm"
-                              >
-                                Get API Key →
-                              </a>
-                            )}
+                        {req.description && (
+                          <p className="text-xs text-gray-400 mt-1">{req.description}</p>
+                        )}
+                        {req.check_value && (
+                          <p className="text-[10px] text-gray-400 mt-1 font-mono">{req.check_value}</p>
+                        )}
+                        {/* Install Actions */}
+                        {!req.satisfied && req.install && (
+                          <div className="flex flex-wrap gap-2 mt-3">
                             {req.install.docs_url && (
                               <a
                                 href={req.install.docs_url}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="btn btn-ghost btn-sm"
+                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white border border-gray-200 text-xs text-gray-600 hover:bg-gray-50 transition-colors"
                               >
-                                Docs
+                                <span>📖</span> {t('sop.docs', 'Docs')}
                               </a>
                             )}
+                            {req.install.signup_url && (
+                              <a
+                                href={req.install.signup_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-violet-50 border border-violet-200 text-xs text-violet-600 hover:bg-violet-100 transition-colors"
+                              >
+                                <span>🚀</span> {t('sop.signup', 'Sign Up')}
+                              </a>
+                            )}
+                            {(req.install.macos || req.install.windows || req.install.linux_apt) && (
+                              <button className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-200 text-xs text-emerald-600 hover:bg-emerald-100 transition-colors">
+                                <span>📦</span> {t('sop.install', 'Install')}
+                              </button>
+                            )}
                           </div>
-                        </div>
-                      )}
-
-                      {/* Manual download link */}
-                      {req.install?.manual_url && req.type !== 'ApiKey' && (
-                        <div style={{ marginTop: '6px' }}>
-                          <a
-                            href={req.install.manual_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-xs"
-                            style={{ color: 'var(--accent)' }}
-                          >
-                            Manual download →
-                          </a>
-                        </div>
-                      )}
+                        )}
+                      </div>
                     </div>
-                  )}
+                  ))}
                 </div>
-              );
-            })}
-
-            {/* Install Progress */}
-            <InstallProgressPanel progress={installProgress} />
-
-            {/* Progress bar */}
-            <div className="dep-progress" style={{ marginTop: '16px' }}>
-              <div className="dep-progress-label" style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '4px' }}>
-                <span>{reqsMetCount} of {reqsTotal} ready</span>
-                <span className="text-dim">{allReqsMet ? 'All set!' : 'Install missing dependencies above'}</span>
               </div>
-              <div className="dep-progress-bar" style={{
-                height: '4px',
-                background: 'var(--surface-elevated)',
-                borderRadius: '2px',
-                overflow: 'hidden'
-              }}>
-                <div
-                  className="dep-progress-fill"
-                  style={{
-                    width: `${reqsTotal ? Math.round((reqsMetCount / reqsTotal) * 100) : 0}%`,
-                    height: '100%',
-                    background: 'var(--success)',
-                    transition: 'width 0.3s ease'
-                  }}
-                />
-              </div>
-            </div>
-          </div>
-        )}
 
-        {/* Step 2: Configure */}
-        {((step === 2 && hasReqs) || (step === 1 && !hasReqs)) && (
-          <div className="hand-wizard-body">
-            {!hasSettings ? (
-              <div className="text-sm text-dim" style={{ textAlign: 'center', padding: '20px 0' }}>
-                No configuration needed for this hand. Click Next to continue.
-              </div>
-            ) : (
-              (currentHand.settings || []).map((setting) => (
-                <div key={setting.key} className="mb-4">
-                  <div className="text-xs text-dim mb-1" style={{ letterSpacing: '0.5px', textTransform: 'uppercase' }}>{setting.label}</div>
-                  {setting.description && (
-                    <div className="text-xs text-dim mb-2">{setting.description}</div>
-                  )}
-
-                  {/* Select type: option cards */}
-                  {setting.setting_type === 'select' && setting.options && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                      {setting.options.map((opt) => (
-                        <div
-                          key={opt.value}
-                          className={cn('setting-option-card', { 'setting-option-selected': settings[setting.key] === opt.value })}
-                          onClick={() => setSettings({ ...settings, [setting.key]: opt.value })}
-                          style={{
-                            display: 'flex',
-                            justifyContent: 'space-between',
-                            alignItems: 'center',
-                            padding: '8px 12px',
-                            border: `1px solid ${settings[setting.key] === opt.value ? 'var(--accent)' : 'var(--border-subtle)'}`,
-                            borderRadius: '6px',
-                            cursor: 'pointer',
-                            transition: 'all 0.15s',
-                            background: settings[setting.key] === opt.value ? 'rgba(0, 240, 255, 0.1)' : 'transparent'
-                          }}
-                        >
-                          <div>
-                            <div className="text-sm">{opt.label}</div>
-                            {opt.provider_env && (
-                              <div className="text-xs text-dim">{opt.provider_env}</div>
-                            )}
-                            {opt.binary && (
-                              <div className="text-xs text-dim">Requires: {opt.binary}</div>
-                            )}
-                          </div>
-                          <span className={cn('badge', opt.available ? 'badge-success' : 'badge-dim')} style={{ fontSize: '0.65rem' }}>
-                            {opt.available ? 'Ready' : 'Missing'}
+              {/* Settings */}
+              {hand.settings && hand.settings.length > 0 && (
+                <div>
+                  <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
+                    <Settings className="w-3.5 h-3.5 text-violet-500" />
+                    {t('sop.settings', 'Settings')} ({hand.settings.length})
+                  </h4>
+                  <div className="space-y-3">
+                    {hand.settings.map((setting) => (
+                      <div
+                        key={setting.key}
+                        className="p-3 rounded-xl bg-white border border-gray-200"
+                      >
+                        <div className="flex items-center justify-between mb-2">
+                          <p className="text-sm font-medium text-gray-700">
+                            {setting.label}
+                          </p>
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500 font-medium">
+                            {setting.setting_type}
                           </span>
                         </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Toggle type */}
-                  {setting.setting_type === 'toggle' && (
-                    <label className="flex items-center gap-2" style={{ cursor: 'pointer' }}>
-                      <input
-                        type="checkbox"
-                        checked={settings[setting.key] === 'true'}
-                        onChange={(e) => setSettings({ ...settings, [setting.key]: e.target.checked ? 'true' : 'false' })}
-                      />
-                      <span className="text-sm">{settings[setting.key] === 'true' ? 'Enabled' : 'Disabled'}</span>
-                    </label>
-                  )}
-
-                  {/* Text type */}
-                  {setting.setting_type === 'text' && (
-                    <input
-                      type="text"
-                      className="form-input"
-                      value={settings[setting.key] || ''}
-                      onChange={(e) => setSettings({ ...settings, [setting.key]: e.target.value })}
-                      placeholder={setting.label}
-                      style={{ width: '100%', padding: '8px 12px', borderRadius: '4px', border: '1px solid var(--border-subtle)', background: 'var(--surface-secondary)' }}
-                    />
-                  )}
+                        {setting.description && (
+                          <p className="text-xs text-gray-400 mb-2">{setting.description}</p>
+                        )}
+                        {/* Setting Input based on type */}
+                        <div className="mt-2">
+                          {setting.setting_type === 'select' && setting.options ? (
+                            <select
+                              defaultValue={setting.default || ''}
+                              className="w-full px-3 py-2 rounded-lg bg-gray-50 border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500"
+                            >
+                              {setting.options.map((opt) => (
+                                <option key={opt.value} value={opt.value}>
+                                  {opt.label}
+                                  {opt.available === false ? ' (unavailable)' : ''}
+                                </option>
+                              ))}
+                            </select>
+                          ) : setting.setting_type === 'toggle' ? (
+                            <label className="flex items-center gap-2 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                defaultChecked={setting.default === 'true'}
+                                className="w-4 h-4 rounded border-gray-300 text-violet-600 focus:ring-violet-500"
+                              />
+                              <span className="text-xs text-gray-500">
+                                {setting.default === 'true' ? t('sop.enabled', 'Enabled') : t('sop.disabled', 'Disabled')}
+                              </span>
+                            </label>
+                          ) : (
+                            <input
+                              type="text"
+                              defaultValue={setting.default || ''}
+                              placeholder={t('sop.enterValue', 'Enter value...')}
+                              className="w-full px-3 py-2 rounded-lg bg-gray-50 border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500"
+                            />
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              ))
-            )}
-          </div>
-        )}
+              )}
 
-        {/* Step 3: Launch */}
-        {((step === 3 && hasReqs) || (step === 2 && !hasReqs)) && (
-          <div className="hand-wizard-body">
-            <div className="launch-summary" style={{
-              textAlign: 'center',
-              padding: '20px',
-              background: 'var(--surface-secondary)',
-              borderRadius: '8px'
-            }}>
-              <div className="launch-summary-icon" style={{ fontSize: '2rem', marginBottom: '8px' }}>{currentHand.icon}</div>
-              <div className="launch-summary-title font-bold" style={{ marginBottom: '16px' }}>{currentHand.display_name || currentHand.name}</div>
-
-              <div className="launch-summary-rows" style={{ textAlign: 'left' }}>
-                {/* Dependencies summary */}
-                {hasReqs && (
-                  <div className="launch-summary-row flex justify-between text-sm" style={{ padding: '4px 0' }}>
-                    <span className="row-label text-dim">Dependencies</span>
-                    <span className="row-check" style={{ color: 'var(--success)' }}>{reqsMetCount}/{reqsTotal} ✓</span>
+              {/* Dashboard Metrics */}
+              {hand.dashboard && hand.dashboard.length > 0 && (
+                <div>
+                  <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
+                    <Layout className="w-3.5 h-3.5 text-blue-500" />
+                    {t('sop.dashboardMetrics', 'Dashboard Metrics')}
+                  </h4>
+                  <div className="grid grid-cols-2 gap-2">
+                    {hand.dashboard.map((metric) => (
+                      <div
+                        key={metric.memory_key}
+                        className="p-2.5 rounded-lg bg-blue-50/50 border border-blue-100"
+                      >
+                        <p className="text-xs font-medium text-blue-700">{metric.label}</p>
+                        <p className="text-[10px] text-blue-400 font-mono">{metric.memory_key}</p>
+                        <p className="text-[10px] text-blue-400">{metric.format}</p>
+                      </div>
+                    ))}
                   </div>
-                )}
+                </div>
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
 
-                {/* Settings summary */}
-                {(currentHand.settings || []).map((setting) => (
-                  <div key={setting.key} className="launch-summary-row flex justify-between text-sm" style={{ padding: '4px 0' }}>
-                    <span className="row-label text-dim">{setting.label}</span>
-                    <span className="row-value">{getSettingDisplayValue(setting)}</span>
-                  </div>
-                ))}
-
-                {/* Provider / Model */}
-                {currentHand.agent && (
-                  <div className="launch-summary-row flex justify-between text-sm" style={{ padding: '4px 0' }}>
-                    <span className="row-label text-dim">Model</span>
-                    <span className="row-value">{(currentHand.agent.provider || 'default')} / {(currentHand.agent.model || 'default')}</span>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Navigation */}
-        <div className="hand-wizard-nav" style={{ display: 'flex', justifyContent: 'space-between', marginTop: '16px', paddingTop: '16px', borderTop: '1px solid var(--border-subtle)' }}>
-          <div>
-            <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
-            {(step > 1 || (step === 2 && !hasReqs)) && (
-              <button className="btn btn-ghost" onClick={goBack} style={{ marginLeft: '4px' }}>Back</button>
-            )}
-          </div>
-          <div className="flex gap-2">
-            {/* Step 1: Install + Verify + Next */}
-            {step === 1 && hasReqs && (
-              <>
-                {!allReqsMet && (
-                  <button
-                    className="btn btn-success"
-                    onClick={handleInstall}
-                    disabled={installing}
-                  >
-                    {installing ? 'Installing...' : 'Install All'}
-                  </button>
-                )}
-                <button
-                  className="btn btn-ghost"
-                  onClick={handleRecheck}
-                  disabled={checking}
-                >
-                  {checking ? 'Checking...' : 'Verify'}
-                </button>
-                <button
-                  className="btn btn-primary"
-                  onClick={goNext}
-                  disabled={!allReqsMet}
-                >
-                  Next
-                </button>
-              </>
-            )}
-
-            {/* Step 2: Next */}
-            {((step === 2 && hasReqs) || (step === 1 && !hasReqs)) && (
-              <button className="btn btn-primary" onClick={goNext}>Next</button>
-            )}
-
-            {/* Step 3: Activate */}
-            {((step === 3 && hasReqs) || (step === 2 && !hasReqs)) && (
-              <button
-                className="btn btn-success btn-launch"
-                onClick={() => {
-                  setActivating(true);
-                  onActivate(currentHand, settings);
-                }}
-                disabled={activating || !allReqsMet}
-              >
-                {activating ? 'Activating...' : `Activate ${currentHand.name}`}
-              </button>
-            )}
-          </div>
-        </div>
-      </motion.div>
+      {/* Save Button */}
+      <div className="pt-4 border-t border-gray-100">
+        <button
+          onClick={handleSave}
+          disabled={isSaving}
+          className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-violet-500 to-purple-600 text-white text-sm font-medium shadow-lg shadow-violet-500/25 hover:shadow-violet-500/40 disabled:opacity-50 transition-all"
+        >
+          {isSaving ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : (
+            <Save className="w-4 h-4" />
+          )}
+          {t('sop.save', 'Save Changes')}
+        </button>
+      </div>
     </div>
   );
 }
 
-// Instance Card Component
-function InstanceCard({
-  instance, hands, onPause, onResume, onDeactivate, onViewBrowser, onViewDashboard
+// ============================================
+// ACTIVE INSTANCE CARD
+// ============================================
+
+function ActiveInstanceCard({
+  instance,
+  hand,
+  onPause,
+  onResume,
+  onDeactivate,
 }: {
   instance: HandInstance;
-  hands: Hand[];
+  hand?: Hand;
   onPause: () => void;
   onResume: () => void;
   onDeactivate: () => void;
-  onViewBrowser?: () => void;
-  onViewDashboard?: () => void;
 }) {
-  const [stats, setStats] = useState<HandStats | null>(null);
-  const [loadingStats, setLoadingStats] = useState(false);
-
-  const isBrowserHand = instance.hand_id === 'browser';
-  const isTraderHand = instance.hand_id === 'trader' || instance.hand_id.includes('trade');
-  const hand = hands.find((h) => h.id === instance.hand_id);
-  const handIcon = hand?.icon || '🖐️';
-
-  const loadStats = async () => {
-    if (loadingStats || stats) return;
-    setLoadingStats(true);
-    try {
-      const data = await api.getHandInstanceStats(instance.instance_id);
-      setStats(data);
-    } catch (err) {
-      setStats({ error: (err as Error).message || 'Could not load stats' } as HandStats);
-    } finally {
-      setLoadingStats(false);
-    }
-  };
+  const isActive = instance.status === 'Active';
 
   return (
-    <motion.div layout initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }}>
-      <div className="card">
-        <div className="flex justify-between items-center mb-2">
-          <div className="flex items-center gap-2">
-            <span style={{ fontSize: '1.4rem' }}>{handIcon}</span>
-            <div className="card-header" style={{ margin: 0 }}>{instance.agent_name || instance.hand_id}</div>
+    <div className="p-4 rounded-xl bg-white border border-gray-200 shadow-sm">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center text-lg">
+            {hand?.icon || '🖐️'}
           </div>
-          <span className={cn('badge',
-            instance.status === 'Active' ? 'badge-success' :
-            instance.status === 'Paused' ? 'badge-dim' :
-            instance.status?.startsWith('Error') ? 'badge-warn' :
-            'badge-info'
-          )}>
+          <div>
+            <p className="text-sm font-medium text-gray-800">
+              {instance.agent_name || hand?.display_name || instance.hand_id}
+            </p>
+            <p className="text-xs text-gray-400">
+              {new Date(instance.activated_at).toLocaleString()}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <span
+            className={cn(
+              'px-2 py-1 rounded-lg text-xs font-medium',
+              isActive
+                ? 'bg-emerald-100 text-emerald-600'
+                : 'bg-amber-100 text-amber-600'
+            )}
+          >
             {instance.status}
           </span>
         </div>
-
-        <div className="text-xs text-dim">Activated: {new Date(instance.activated_at).toLocaleString()}</div>
-        {instance.agent_id && (
-          <div className="text-xs text-dim">Agent: {instance.agent_id}</div>
-        )}
-
-        {/* Stats (loaded on demand) */}
-        {stats && !('error' in stats) && (
-          <div className="mt-3">
-            {Object.entries(stats).filter(([k]) => !k.startsWith('_')).map(([label, val]) => {
-              const metricValue = formatMetric(val as { value: unknown; format?: string });
-              return (
-                <div key={label} className="flex justify-between text-xs" style={{ padding: '2px 0' }}>
-                  <span className="text-dim">{label}</span>
-                  <span>{metricValue}</span>
-                </div>
-              );
-            })}
-          </div>
-        )}
-        {stats && 'error' in stats && (
-          <div className="mt-3 text-xs text-dim">Error loading stats</div>
-        )}
-
-        {/* Actions */}
-        <div className="flex gap-2 mt-3">
-          <button className="btn btn-ghost btn-sm" onClick={loadStats} disabled={loadingStats}>
-            {loadingStats ? 'Loading...' : stats ? 'Hide Stats' : 'Stats'}
-          </button>
-          {isBrowserHand && onViewBrowser && (
-            <button className="btn btn-ghost btn-sm" onClick={onViewBrowser}>View Browser</button>
-          )}
-          {isTraderHand && onViewDashboard && (
-            <button
-              className="btn btn-ghost btn-sm"
-              onClick={onViewDashboard}
-              style={{ color: 'var(--neon-green)' }}
-            >
-              <BarChart3 className="w-4 h-4 mr-1" />
-              Dashboard
-            </button>
-          )}
-          {instance.status === 'Active' ? (
-            <button className="btn btn-ghost btn-sm" onClick={onPause}>Pause</button>
-          ) : (
-            <button className="btn btn-ghost btn-sm" onClick={onResume}>Resume</button>
-          )}
-          {instance.status?.startsWith('Error') && (
-            <span className="text-xs text-dim">Error — deactivate and reactivate</span>
-          )}
-          <button className="btn btn-danger btn-sm" onClick={onDeactivate}>Deactivate</button>
-        </div>
       </div>
-    </motion.div>
-  );
-}
 
-// Browser Modal Component
-function BrowserModal({
-  instance, browserState, onRefresh, onClose
-}: {
-  instance: HandInstance | null;
-  browserState: HandBrowserState | null;
-  onRefresh: () => void;
-  onClose: () => void;
-}) {
-  if (!instance) return null;
-
-  return (
-    <div className="modal-overlay" onClick={onClose}>
-      <motion.div
-        initial={{ scale: 0.95, opacity: 0 }}
-        animate={{ scale: 1, opacity: 1 }}
-        exit={{ scale: 0.95, opacity: 0 }}
-        className="browser-viewer"
-        style={{
-          width: '90vw',
-          maxWidth: '1200px',
-          height: '80vh',
-          background: 'var(--surface-primary)',
-          borderRadius: '8px',
-          overflow: 'hidden',
-          display: 'flex',
-          flexDirection: 'column'
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div className="browser-viewer-header" style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '12px',
-          padding: '12px 16px',
-          borderBottom: '1px solid var(--border-subtle)',
-          background: 'var(--surface-secondary)'
-        }}>
-          <div className="browser-url-bar" style={{
-            flex: 1,
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            background: 'var(--void)',
-            padding: '6px 12px',
-            borderRadius: '4px'
-          }}>
-            <span className="browser-dot red" style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#ff5f56' }} />
-            <span className="browser-dot yellow" style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#ffbd2e' }} />
-            <span className="browser-dot green" style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#27c93f' }} />
-            <span className="browser-url text-sm text-dim" style={{ marginLeft: '8px' }}>
-              {browserState?.url || 'about:blank'}
-            </span>
-          </div>
-          <button className="btn btn-ghost btn-sm" onClick={onRefresh}>Refresh</button>
-          <button className="btn btn-ghost btn-sm" onClick={onClose}>Close</button>
-        </div>
-
-        {/* Body */}
-        <div className="browser-viewer-body" style={{
-          flex: 1,
-          overflow: 'auto',
-          padding: '16px',
-          background: 'var(--void)'
-        }}>
-          {/* Loading */}
-          {!browserState && (
-            <div className="text-center text-dim" style={{ padding: '40px' }}>
-              <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2" />
-              Loading browser state...
-            </div>
-          )}
-
-          {/* Error */}
-          {browserState && !browserState.screenshot && !browserState.content && (
-            <div className="text-center" style={{ padding: '40px', color: 'var(--error)' }}>
-              <div style={{ fontSize: '2rem', marginBottom: '8px' }}>!</div>
-              <span>No active browser session</span>
-            </div>
-          )}
-
-          {/* Screenshot */}
-          {browserState?.screenshot && (
-            <div className="browser-screenshot">
-              <img
-                src={`data:image/png;base64,${browserState.screenshot}`}
-                alt="Browser screenshot"
-                style={{ maxWidth: '100%', borderRadius: '4px', display: 'block' }}
-              />
-            </div>
-          )}
-
-          {/* Content */}
-          {browserState?.content && !browserState.screenshot && (
-            <div className="browser-content" style={{
-              background: 'white',
-              color: 'black',
-              padding: '16px',
-              borderRadius: '4px',
-              fontFamily: 'monospace',
-              fontSize: '12px',
-              whiteSpace: 'pre-wrap'
-            }}>
-              {browserState.content}
-            </div>
-          )}
-
-          {/* Page info */}
-          {browserState && (
-            <div className="browser-info mt-4">
-              <div className="text-dim text-sm">Title: {browserState.title || '-'}</div>
-              {browserState.timestamp && (
-                <div className="text-dim text-xs mt-1">
-                  Updated: {new Date(browserState.timestamp).toLocaleTimeString()}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      </motion.div>
-    </div>
-  );
-}
-
-// Trader Dashboard Data Type
-interface TraderDashboardData {
-  equity_curve?: Array<{ date: string; value: number }>;
-  daily_pnl?: Array<{ date: string; pnl: number }>;
-  signal_radar?: Array<{ name: string; value: number; max: number }>;
-  metrics?: {
-    total_return?: number;
-    win_rate?: number;
-    sharpe_ratio?: number;
-    max_drawdown?: number;
-    total_trades?: number;
-    profitable_trades?: number;
-  };
-}
-
-// Trader Dashboard Modal Component
-function TraderDashboardModal({
-  instance,
-  dashboardData,
-  onClose
-}: {
-  instance: HandInstance | null;
-  dashboardData: TraderDashboardData | null;
-  onClose: () => void;
-}) {
-  if (!instance) return null;
-
-  const equityData = dashboardData?.equity_curve || [];
-  const pnlData = dashboardData?.daily_pnl || [];
-  const radarData = dashboardData?.signal_radar || [];
-  const metrics = dashboardData?.metrics || {};
-
-  // Calculate P&L stats
-  const totalPnL = pnlData.reduce((sum, d) => sum + d.pnl, 0);
-  const positiveDays = pnlData.filter(d => d.pnl > 0).length;
-  const negativeDays = pnlData.filter(d => d.pnl < 0).length;
-
-  // Neon colors for charts
-  const neonCyan = '#00f0ff';
-  const neonGreen = '#00ff7f';
-  const neonMagenta = '#ff00ff';
-  const neonAmber = '#ffbf00';
-
-  return (
-    <div className="modal-overlay" onClick={onClose}>
-      <motion.div
-        initial={{ scale: 0.95, opacity: 0 }}
-        animate={{ scale: 1, opacity: 1 }}
-        exit={{ scale: 0.95, opacity: 0 }}
-        className="trader-dashboard"
-        style={{
-          width: '90vw',
-          maxWidth: '1200px',
-          height: '85vh',
-          background: 'var(--surface-primary)',
-          borderRadius: '12px',
-          overflow: 'hidden',
-          display: 'flex',
-          flexDirection: 'column'
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '16px 24px',
-          borderBottom: '1px solid var(--border-subtle)',
-          background: 'var(--surface-secondary)'
-        }}>
-          <div>
-            <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <TrendingUp className="w-6 h-6" style={{ color: neonGreen }} />
-              <NeonText color="green">{instance.agent_name || 'Trader'} Dashboard</NeonText>
-            </h2>
-            <p style={{ margin: '4px 0 0', fontSize: '12px', color: 'var(--text-muted)' }}>
-              Real-time trading analytics and performance metrics
-            </p>
-          </div>
+      {/* Actions */}
+      <div className="flex gap-2 mt-3 pt-3 border-t border-gray-100">
+        {isActive ? (
           <button
-            className="btn btn-ghost btn-sm"
-            onClick={onClose}
-            style={{ borderRadius: '8px' }}
+            onClick={onPause}
+            className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-gray-100 text-gray-600 text-xs font-medium hover:bg-gray-200 transition-colors"
           >
-            <X className="w-5 h-5" />
+            <Pause className="w-3.5 h-3.5" />
+            Pause
           </button>
-        </div>
-
-        {/* Dashboard Content */}
-        <div style={{
-          flex: 1,
-          overflow: 'auto',
-          padding: '24px',
-          background: 'var(--void)'
-        }}>
-          {!dashboardData ? (
-            <div style={{
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
-              height: '100%',
-              color: 'var(--text-muted)'
-            }}>
-              <Loader2 className="w-8 h-8 animate-spin mb-4" />
-              <p>Loading dashboard data...</p>
-            </div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-              {/* Metrics Cards */}
-              <div style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
-                gap: '16px'
-              }}>
-                <SpotlightCard glowColor="rgba(0, 255, 127, 0.15)" className="p-4">
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                    <DollarSign className="w-5 h-5" style={{ color: neonGreen }} />
-                    <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Total Return</span>
-                  </div>
-                  <div style={{
-                    fontSize: '24px',
-                    fontWeight: 'bold',
-                    color: (metrics.total_return || 0) >= 0 ? neonGreen : '#ff5f56'
-                  }}>
-                    {(metrics.total_return || 0) >= 0 ? '+' : ''}
-                    {((metrics.total_return || 0) * 100).toFixed(2)}%
-                  </div>
-                </SpotlightCard>
-
-                <SpotlightCard glowColor="rgba(0, 240, 255, 0.15)" className="p-4">
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                    <Target className="w-5 h-5" style={{ color: neonCyan }} />
-                    <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Win Rate</span>
-                  </div>
-                  <div style={{ fontSize: '24px', fontWeight: 'bold', color: neonCyan }}>
-                    {((metrics.win_rate || 0) * 100).toFixed(1)}%
-                  </div>
-                </SpotlightCard>
-
-                <SpotlightCard glowColor="rgba(255, 191, 0, 0.15)" className="p-4">
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                    <Activity className="w-5 h-5" style={{ color: neonAmber }} />
-                    <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Sharpe Ratio</span>
-                  </div>
-                  <div style={{ fontSize: '24px', fontWeight: 'bold', color: neonAmber }}>
-                    {(metrics.sharpe_ratio || 0).toFixed(2)}
-                  </div>
-                </SpotlightCard>
-
-                <SpotlightCard glowColor="rgba(255, 0, 255, 0.15)" className="p-4">
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                    <TrendingDown className="w-5 h-5" style={{ color: neonMagenta }} />
-                    <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Max Drawdown</span>
-                  </div>
-                  <div style={{ fontSize: '24px', fontWeight: 'bold', color: neonMagenta }}>
-                    -{((metrics.max_drawdown || 0) * 100).toFixed(2)}%
-                  </div>
-                </SpotlightCard>
-              </div>
-
-              {/* Charts Row 1: Equity Curve */}
-              {equityData.length > 0 && (
-                <SpotlightCard glowColor="rgba(0, 255, 127, 0.1)" className="p-4">
-                  <h3 style={{
-                    margin: '0 0 16px',
-                    fontSize: '16px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px'
-                  }}>
-                    <TrendingUp className="w-5 h-5" style={{ color: neonGreen }} />
-                    Equity Curve
-                  </h3>
-                  <div style={{ height: '250px' }}>
-                    <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart data={equityData}>
-                        <defs>
-                          <linearGradient id="equityGradient" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor={neonGreen} stopOpacity={0.3}/>
-                            <stop offset="95%" stopColor={neonGreen} stopOpacity={0}/>
-                          </linearGradient>
-                        </defs>
-                        <CartesianGrid strokeDasharray="3 3" stroke="var(--border-subtle)" />
-                        <XAxis
-                          dataKey="date"
-                          tick={{ fill: 'var(--text-muted)', fontSize: 11 }}
-                          tickFormatter={(value) => new Date(value).toLocaleDateString()}
-                          stroke="var(--border-subtle)"
-                        />
-                        <YAxis
-                          tick={{ fill: 'var(--text-muted)', fontSize: 11 }}
-                          stroke="var(--border-subtle)"
-                          tickFormatter={(value) => `$${value.toLocaleString()}`}
-                        />
-                        <Tooltip
-                          contentStyle={{
-                            background: 'var(--surface-secondary)',
-                            border: '1px solid var(--border-subtle)',
-                            borderRadius: '8px'
-                          }}
-                          labelFormatter={(label) => new Date(label).toLocaleDateString()}
-                          formatter={(value: number) => [`$${value.toLocaleString()}`, 'Equity']}
-                        />
-                        <Area
-                          type="monotone"
-                          dataKey="value"
-                          stroke={neonGreen}
-                          strokeWidth={2}
-                          fillOpacity={1}
-                          fill="url(#equityGradient)"
-                        />
-                      </AreaChart>
-                    </ResponsiveContainer>
-                  </div>
-                </SpotlightCard>
-              )}
-
-              {/* Charts Row 2: Daily P&L and Signal Radar */}
-              <div style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))',
-                gap: '24px'
-              }}>
-                {/* Daily P&L */}
-                {pnlData.length > 0 && (
-                  <SpotlightCard glowColor="rgba(0, 240, 255, 0.1)" className="p-4">
-                    <h3 style={{
-                      margin: '0 0 16px',
-                      fontSize: '16px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '8px'
-                    }}>
-                      <BarChart3 className="w-5 h-5" style={{ color: neonCyan }} />
-                      Daily P&L
-                      <span style={{
-                        marginLeft: 'auto',
-                        fontSize: '12px',
-                        color: totalPnL >= 0 ? neonGreen : '#ff5f56'
-                      }}>
-                        Total: {totalPnL >= 0 ? '+' : ''}${totalPnL.toFixed(2)}
-                      </span>
-                    </h3>
-                    <div style={{ height: '220px' }}>
-                      <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={pnlData}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="var(--border-subtle)" />
-                          <XAxis
-                            dataKey="date"
-                            tick={{ fill: 'var(--text-muted)', fontSize: 10 }}
-                            tickFormatter={(value) => new Date(value).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
-                            stroke="var(--border-subtle)"
-                          />
-                          <YAxis
-                            tick={{ fill: 'var(--text-muted)', fontSize: 11 }}
-                            stroke="var(--border-subtle)"
-                            tickFormatter={(value) => `$${value.toLocaleString()}`}
-                          />
-                          <Tooltip
-                            contentStyle={{
-                              background: 'var(--surface-secondary)',
-                              border: '1px solid var(--border-subtle)',
-                              borderRadius: '8px'
-                            }}
-                            labelFormatter={(label) => new Date(label).toLocaleDateString()}
-                            formatter={(value: number) => [`$${value.toFixed(2)}`, 'P&L']}
-                          />
-                          <Bar dataKey="pnl" radius={[4, 4, 0, 0]}>
-                            {pnlData.map((entry, index) => (
-                              <Cell
-                                key={`cell-${index}`}
-                                fill={entry.pnl >= 0 ? neonGreen : '#ff5f56'}
-                              />
-                            ))}
-                          </Bar>
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </div>
-                    <div style={{
-                      display: 'flex',
-                      justifyContent: 'center',
-                      gap: '24px',
-                      marginTop: '12px',
-                      fontSize: '12px'
-                    }}>
-                      <span style={{ color: neonGreen }}>● {positiveDays} Up days</span>
-                      <span style={{ color: '#ff5f56' }}>● {negativeDays} Down days</span>
-                    </div>
-                  </SpotlightCard>
-                )}
-
-                {/* Signal Radar */}
-                {radarData.length > 0 && (
-                  <SpotlightCard glowColor="rgba(255, 0, 255, 0.1)" className="p-4">
-                    <h3 style={{
-                      margin: '0 0 16px',
-                      fontSize: '16px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '8px'
-                    }}>
-                      <PieChart className="w-5 h-5" style={{ color: neonMagenta }} />
-                      Signal Radar
-                    </h3>
-                    <div style={{ height: '220px' }}>
-                      <ResponsiveContainer width="100%" height="100%">
-                        <RadarChart data={radarData}>
-                          <PolarGrid stroke="var(--border-subtle)" />
-                          <PolarAngleAxis
-                            dataKey="name"
-                            tick={{ fill: 'var(--text-muted)', fontSize: 10 }}
-                          />
-                          <PolarRadiusAxis
-                            tick={{ fill: 'var(--text-muted)', fontSize: 9 }}
-                            stroke="var(--border-subtle)"
-                          />
-                          <Radar
-                            name="Signals"
-                            dataKey="value"
-                            stroke={neonMagenta}
-                            strokeWidth={2}
-                            fill={neonMagenta}
-                            fillOpacity={0.3}
-                          />
-                          <Tooltip
-                            contentStyle={{
-                              background: 'var(--surface-secondary)',
-                              border: '1px solid var(--border-subtle)',
-                              borderRadius: '8px'
-                            }}
-                          />
-                        </RadarChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </SpotlightCard>
-                )}
-              </div>
-
-              {/* Empty State */}
-              {equityData.length === 0 && pnlData.length === 0 && radarData.length === 0 && (
-                <div style={{
-                  textAlign: 'center',
-                  padding: '60px',
-                  color: 'var(--text-muted)'
-                }}>
-                  <BarChart3 className="w-16 h-16 mx-auto mb-4" style={{ opacity: 0.3 }} />
-                  <h3>No trading data available yet</h3>
-                  <p style={{ fontSize: '14px', marginTop: '8px' }}>
-                    Trading metrics will appear once the trader hand starts recording activity.
-                  </p>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      </motion.div>
+        ) : (
+          <button
+            onClick={onResume}
+            className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-100 text-emerald-600 text-xs font-medium hover:bg-emerald-200 transition-colors"
+          >
+            <Play className="w-3.5 h-3.5" />
+            Resume
+          </button>
+        )}
+        <button
+          onClick={onDeactivate}
+          className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-red-50 text-red-600 text-xs font-medium hover:bg-red-100 transition-colors"
+        >
+          <Square className="w-3.5 h-3.5" />
+          Stop
+        </button>
+      </div>
     </div>
   );
 }
 
-// ==================== Main Component ====================
+// ============================================
+// MAIN COMPONENT
+// ============================================
 
 export function Hands() {
-  const [activeTab, setActiveTab] = useState<'available' | 'active'>('available');
-  const [platform] = useState(getPlatform());
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
+  const [selectedHand, setSelectedHand] = useState<Hand | null>(null);
+  const [showEditor, setShowEditor] = useState(false);
 
-  // Modals state
-  const [detailHand, setDetailHand] = useState<Hand | null>(null);
-  const [setupHand, setSetupHand] = useState<Hand | null>(null);
-  const [browserInstance, setBrowserInstance] = useState<HandInstance | null>(null);
-  const [browserState, setBrowserState] = useState<HandBrowserState | null>(null);
-  const [dashboardInstance, setDashboardInstance] = useState<HandInstance | null>(null);
-  const [dashboardData, setDashboardData] = useState<TraderDashboardData | null>(null);
-
-  // Fetch available hands
+  // Fetch hands
   const { data: hands = [], isLoading, error, refetch } = useQuery<Hand[]>({
     queryKey: ['hands'],
     queryFn: async () => {
@@ -1625,6 +954,20 @@ export function Hands() {
     },
   });
 
+  // Fetch full hand details when a hand is selected
+  const { data: handDetail, isLoading: isDetailLoading } = useQuery<Hand>({
+    queryKey: ['hand-detail', selectedHand?.id],
+    queryFn: async () => {
+      if (!selectedHand?.id) throw new Error('No hand selected');
+      return api.getHandDetail(selectedHand.id);
+    },
+    enabled: !!selectedHand?.id,
+    staleTime: 30000, // Cache for 30 seconds
+  });
+
+  // Use detailed hand data if available, otherwise fall back to list data
+  const displayHand = handDetail || selectedHand;
+
   // Fetch active instances
   const { data: activeInstances = [], refetch: refetchActive } = useQuery<HandInstance[]>({
     queryKey: ['hands-active'],
@@ -1632,316 +975,367 @@ export function Hands() {
       const res = await api.getActiveHands();
       return res.instances || [];
     },
-    refetchInterval: activeTab === 'active' ? 5000 : false,
+    refetchInterval: 5000,
   });
 
-  // Install dependencies
-  const handleInstallDeps = useCallback(async (handId: string) => {
-    return await api.installHandDeps(handId);
-  }, []);
-
-  // Activate hand
-  const handleActivate = useCallback(async (hand: Hand, settings: Record<string, string>) => {
-    try {
-      await api.activateHand(hand.id, settings);
-      toaster.success(`SOP "${hand.name}" activated`);
-      setSetupHand(null);
-      setActiveTab('active');
+  // Mutations
+  const activateMutation = useMutation({
+    mutationFn: (handId: string) => api.activateHand(handId, {}),
+    onSuccess: (_, handId) => {
+      toaster.success(t('sop.activated', 'SOP activated'));
       refetchActive();
-    } catch (err) {
-      const errorMsg = (err as Error).message || '';
+      const hand = hands.find((h) => h.id === handId);
+      if (hand) setSelectedHand(hand);
+    },
+    onError: (err) => {
+      toaster.error((err as Error).message);
+    },
+  });
 
-      // Handle specific error cases with user-friendly messages
-      if (errorMsg.includes('Hand already active') || errorMsg.includes('SOP already active')) {
-        const handName = errorMsg.split(':').pop()?.trim() || hand.name;
-        toaster.error(`${handName} is already running. Switching to Active tab.`);
-        setSetupHand(null);
-        setActiveTab('active');
-        refetchActive();
-      } else if (errorMsg.includes('requirements not met')) {
-        toaster.error('Requirements not met. Please install missing dependencies first.');
-      } else if (errorMsg.includes('config')) {
-        toaster.error(`Configuration error: ${errorMsg}`);
-      } else {
-        // Generic error
-        toaster.error(`Activation failed: ${errorMsg}`);
-      }
-    }
-  }, [refetchActive]);
-
-  // Pause instance
-  const handlePause = useCallback(async (id: string) => {
-    try {
-      await api.pauseHandInstance(id);
-      toaster.success('Instance paused');
+  const pauseMutation = useMutation({
+    mutationFn: (instanceId: string) => api.pauseHandInstance(instanceId),
+    onSuccess: () => {
+      toaster.success(t('sop.paused', 'SOP paused'));
       refetchActive();
-    } catch (err) {
-      toaster.error('Failed to pause: ' + (err as Error).message);
-    }
-  }, [refetchActive]);
+    },
+  });
 
-  // Resume instance
-  const handleResume = useCallback(async (id: string) => {
-    try {
-      await api.resumeHandInstance(id);
-      toaster.success('Instance resumed');
+  const resumeMutation = useMutation({
+    mutationFn: (instanceId: string) => api.resumeHandInstance(instanceId),
+    onSuccess: () => {
+      toaster.success(t('sop.resumed', 'SOP resumed'));
       refetchActive();
-    } catch (err) {
-      toaster.error('Failed to resume: ' + (err as Error).message);
-    }
-  }, [refetchActive]);
+    },
+  });
 
-  // Deactivate instance
-  const handleDeactivate = useCallback(async (id: string, name: string) => {
-    if (!confirm(`Deactivate hand "${name}"? This will kill its agent.`)) return;
-    try {
-      await api.deactivateHandInstance(id);
-      toaster.success('SOP deactivated');
+  const deactivateMutation = useMutation({
+    mutationFn: (instanceId: string) => api.deactivateHandInstance(instanceId),
+    onSuccess: () => {
+      toaster.success(t('sop.deactivated', 'SOP deactivated'));
       refetchActive();
-    } catch (err) {
-      toaster.error('Failed to deactivate: ' + (err as Error).message);
-    }
-  }, [refetchActive]);
+    },
+  });
 
-  // View browser
-  const handleViewBrowser = useCallback(async (instance: HandInstance) => {
-    setBrowserInstance(instance);
-    setBrowserState(null);
-    try {
-      const state = await api.getHandInstanceBrowser(instance.instance_id);
-      setBrowserState(state);
-    } catch (err) {
-      toaster.error('Failed to load browser state');
-    }
-  }, []);
+  const saveMutation = useMutation({
+    mutationFn: async (updates: { handId: string; data: Partial<Hand> }) => {
+      // Mock save - replace with actual API call when available
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      return updates.data;
+    },
+    onSuccess: () => {
+      toaster.success(t('sop.saved', 'Changes saved'));
+      refetch();
+    },
+  });
 
-  // Refresh browser view
-  const handleRefreshBrowser = useCallback(async () => {
-    if (!browserInstance) return;
-    try {
-      const state = await api.getHandInstanceBrowser(browserInstance.instance_id);
-      setBrowserState(state);
-    } catch (err) {
-      toaster.error('Failed to refresh browser');
-    }
-  }, [browserInstance]);
+  // Get active instance for selected hand
+  const activeInstance = useMemo(() => {
+    if (!displayHand) return null;
+    return activeInstances.find((inst) => inst.hand_id === displayHand.id);
+  }, [displayHand, activeInstances]);
 
-  // Poll browser state
-  useEffect(() => {
-    if (!browserInstance) return;
-    const interval = setInterval(() => {
-      handleRefreshBrowser();
-    }, 3000);
-    return () => clearInterval(interval);
-  }, [browserInstance, handleRefreshBrowser]);
-
-  // View trader dashboard
-  const handleViewDashboard = useCallback(async (instance: HandInstance) => {
-    setDashboardInstance(instance);
-    setDashboardData(null);
-    try {
-      // Fetch dashboard data from KV/memory via API
-      const stats = await api.getHandInstanceStats(instance.instance_id) as Record<string, { value?: number; format?: string } | unknown>;
-      // Transform stats into dashboard format
-      const data: TraderDashboardData = {
-        equity_curve: (stats.equity_curve as { date: string; value: number }[]) || [],
-        daily_pnl: (stats.daily_pnl as { date: string; pnl: number }[]) || [],
-        signal_radar: (stats.signal_radar as { name: string; value: number; max: number }[]) || [],
-        metrics: {
-          total_return: (stats.total_return as { value?: number })?.value || 0,
-          win_rate: (stats.win_rate as { value?: number })?.value || 0,
-          sharpe_ratio: (stats.sharpe_ratio as { value?: number })?.value || 0,
-          max_drawdown: (stats.max_drawdown as { value?: number })?.value || 0,
-          total_trades: (stats.total_trades as { value?: number })?.value || 0,
-          profitable_trades: (stats.profitable_trades as { value?: number })?.value || 0,
-        }
-      };
-      setDashboardData(data);
-    } catch (err) {
-      toaster.error('Failed to load dashboard data');
+  // Select first hand on load
+  useMemo(() => {
+    if (hands.length > 0 && !selectedHand) {
+      setSelectedHand(hands[0]);
     }
-  }, []);
+  }, [hands, selectedHand]);
+
+  const handleActivate = () => {
+    if (displayHand) {
+      activateMutation.mutate(displayHand.id);
+    }
+  };
 
   return (
-    <div className="h-full overflow-auto p-6">
-      <div className="max-w-6xl mx-auto">
-        {/* Info Card */}
-        <div className="info-card mb-6">
-          <h4>SOP — Standard Operating Procedures</h4>
-          <p>SOPs are pre-configured AI agents that autonomously handle specific tasks. Each SOP includes a tuned system prompt, required tools, and a dashboard for tracking work.</p>
-        </div>
+    <div className="flex h-full gap-3 p-3">
+      {/* Left Panel: Grouped SOP List */}
+      <aside className="w-72 flex flex-col rounded-2xl bg-white shadow-[0_8px_32px_rgba(139,92,246,0.08)] border border-white/50 overflow-hidden">
+        <GroupedSOPList
+          hands={hands}
+          selectedHand={selectedHand}
+          onSelect={(hand) => {
+            setSelectedHand(hand);
+            setShowEditor(false);
+          }}
+          activeInstances={activeInstances}
+        />
+      </aside>
 
-        {/* Header */}
-        <motion.div className="flex items-center justify-between mb-8" initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}>
-          <div>
-            <h1 className="text-3xl font-bold">
-              <NeonText color="cyan">SOP</NeonText>
-            </h1>
-            <p className="text-[var(--text-muted)] mt-1">
-              {hands.length} available • {activeInstances.length} active
+      {/* Right Panel: Detail View */}
+      <main className="flex-1 flex flex-col gap-3 min-w-0">
+        {displayHand ? (
+          <>
+            {/* Header Card */}
+            <div className="flex items-center justify-between px-5 py-3 rounded-2xl bg-white shadow-[0_4px_20px_rgba(139,92,246,0.06)] border border-white/50">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center text-lg shadow-lg shadow-violet-500/20">
+                  {displayHand.icon || '🖐️'}
+                </div>
+                <div>
+                  <h1 className="text-base font-semibold text-gray-800 flex items-center gap-2">
+                    {displayHand.display_name || displayHand.name}
+                    {isDetailLoading && <Loader2 className="w-3.5 h-3.5 animate-spin text-violet-500" />}
+                  </h1>
+                  <p className="text-xs text-gray-500">
+                    {displayHand.category || 'General'} • {displayHand.tools?.length || 0} tools
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                {/* Active Badge */}
+                {activeInstance && (
+                  <span className="px-2.5 py-1 rounded-lg bg-emerald-100 text-emerald-600 text-xs font-medium flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                    {t('sop.running', 'Running')}
+                  </span>
+                )}
+
+                {/* Edit Button */}
+                <button
+                  onClick={() => setShowEditor(!showEditor)}
+                  className={cn(
+                    'p-2 rounded-lg transition-colors',
+                    showEditor
+                      ? 'bg-violet-100 text-violet-600'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  )}
+                >
+                  <Edit3 className="w-4 h-4" />
+                </button>
+
+                {/* Activate/Stop Button */}
+                {activeInstance ? (
+                  <button
+                    onClick={() => deactivateMutation.mutate(activeInstance.instance_id)}
+                    disabled={deactivateMutation.isPending}
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-red-50 text-red-600 text-xs font-medium hover:bg-red-100 disabled:opacity-50 transition-colors"
+                  >
+                    <Square className="w-3.5 h-3.5" />
+                    {t('sop.stop', 'Stop')}
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleActivate}
+                    disabled={
+                      activateMutation.isPending ||
+                      !displayHand.requirements?.every((r) => r.satisfied)
+                    }
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-gradient-to-r from-violet-500 to-purple-600 text-white text-xs font-medium shadow-lg shadow-violet-500/25 hover:shadow-violet-500/40 disabled:opacity-50 disabled:shadow-none transition-all"
+                  >
+                    {activateMutation.isPending ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Play className="w-3.5 h-3.5" />
+                    )}
+                    {t('sop.activate', 'Activate')}
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Main Content Area */}
+            <div className="flex-1 flex gap-3 min-h-0">
+              {/* Left: Steps & Flowchart */}
+              <div className="flex-1 flex flex-col gap-3 min-w-0">
+                {/* Description Card */}
+                <div className="p-4 rounded-2xl bg-white shadow-[0_4px_20px_rgba(139,92,246,0.06)] border border-white/50">
+                  <p className="text-sm text-gray-600">
+                    {displayHand.description || t('sop.noDescription', 'No description')}
+                  </p>
+                </div>
+
+                {/* Editor or View Mode */}
+                {showEditor ? (
+                  <div className="flex-1 p-5 rounded-2xl bg-white shadow-[0_4px_20px_rgba(139,92,246,0.06)] border border-white/50 overflow-hidden">
+                    <SOPEditor
+                      hand={displayHand}
+                      onSave={(updates) =>
+                        saveMutation.mutate({ handId: displayHand.id, data: updates })
+                      }
+                      isSaving={saveMutation.isPending}
+                    />
+                  </div>
+                ) : (
+                  <>
+                    {/* Steps & Flowchart - Side by Side Layout */}
+                    <div className="flex-1 flex gap-4 min-h-0">
+                      {/* Left: Steps List */}
+                      <div className="w-1/2 p-5 rounded-2xl bg-gradient-to-br from-violet-50/50 to-purple-50/30 border border-violet-100 overflow-auto">
+                        <h3 className="text-sm font-semibold text-gray-700 mb-4 flex items-center gap-2">
+                          <List className="w-4 h-4 text-violet-500" />
+                          {t('sop.executionSteps', 'Execution Steps')}
+                        </h3>
+                        <StepsDiagram
+                          steps={displayHand.tools?.map((tool, index) => ({
+                            id: `step-${index}`,
+                            order: index + 1,
+                            title: `Execute ${tool}`,
+                            description: `Call ${tool} tool`,
+                            tool: tool,
+                          })) || []}
+                        />
+                      </div>
+
+                      {/* Right: Flowchart */}
+                      <div className="w-1/2 p-5 rounded-2xl bg-white shadow-[0_4px_20px_rgba(139,92,246,0.06)] border border-white/50 flex flex-col">
+                        <h3 className="text-sm font-semibold text-gray-700 mb-4 flex items-center gap-2">
+                          <GitBranch className="w-4 h-4 text-violet-500" />
+                          {t('sop.processFlow', 'Process Flow')}
+                        </h3>
+                        <div className="flex-1 min-h-0">
+                          <FlowchartDiagram
+                            steps={displayHand.tools?.map((tool, index) => ({
+                              id: `step-${index}`,
+                              order: index + 1,
+                              title: tool,
+                              tool: tool,
+                            })) || []}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {/* Right: Active Instance & Info */}
+              <aside className="w-80 flex flex-col gap-3">
+                {/* Active Instance Card */}
+                {activeInstance && (
+                  <ActiveInstanceCard
+                    instance={activeInstance}
+                    hand={displayHand}
+                    onPause={() => pauseMutation.mutate(activeInstance.instance_id)}
+                    onResume={() => resumeMutation.mutate(activeInstance.instance_id)}
+                    onDeactivate={() =>
+                      deactivateMutation.mutate(activeInstance.instance_id)
+                    }
+                  />
+                )}
+
+                {/* Requirements Card */}
+                <div className="flex-1 p-4 rounded-2xl bg-white shadow-[0_4px_20px_rgba(139,92,246,0.06)] border border-white/50 overflow-hidden">
+                  <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                    <Check className="w-4 h-4 text-violet-500" />
+                    {t('sop.requirements', 'Requirements')}
+                  </h3>
+                  <ScrollArea className="h-full">
+                    <div className="space-y-2 pr-3">
+                      {displayHand.requirements?.map((req) => (
+                        <div
+                          key={req.key}
+                          className={cn(
+                            'flex items-start gap-2.5 p-2.5 rounded-xl border transition-all',
+                            req.satisfied
+                              ? 'bg-emerald-50/30 border-emerald-100'
+                              : 'bg-amber-50/30 border-amber-200'
+                          )}
+                        >
+                          <div
+                            className={cn(
+                              'w-5 h-5 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5',
+                              req.satisfied ? 'bg-emerald-100' : 'bg-amber-100'
+                            )}
+                          >
+                            {req.satisfied ? (
+                              <Check className="w-3 h-3 text-emerald-600" />
+                            ) : (
+                              <AlertCircle className="w-3 h-3 text-amber-600" />
+                            )}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between">
+                              <p className="text-xs font-medium text-gray-700">
+                                {req.label}
+                              </p>
+                              <span className={cn(
+                                'text-[9px] px-1 py-0.5 rounded-full font-medium',
+                                req.satisfied
+                                  ? 'bg-emerald-100 text-emerald-600'
+                                  : 'bg-amber-100 text-amber-600'
+                              )}>
+                                {req.type || 'Binary'}
+                              </span>
+                            </div>
+                            {req.description && (
+                              <p className="text-[10px] text-gray-400 mt-0.5">
+                                {req.description}
+                              </p>
+                            )}
+                            {/* Install Actions for unsatisfied requirements */}
+                            {!req.satisfied && req.install && (
+                              <div className="flex flex-wrap gap-1.5 mt-2">
+                                {req.install.docs_url && (
+                                  <a
+                                    href={req.install.docs_url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-white border border-gray-200 text-[10px] text-gray-600 hover:bg-gray-50 transition-colors"
+                                  >
+                                    <span>📖</span> {t('sop.docs', 'Docs')}
+                                  </a>
+                                )}
+                                {req.install.signup_url && (
+                                  <a
+                                    href={req.install.signup_url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-violet-50 border border-violet-200 text-[10px] text-violet-600 hover:bg-violet-100 transition-colors"
+                                  >
+                                    <span>🚀</span> {t('sop.signup', 'Sign Up')}
+                                  </a>
+                                )}
+                                {(req.install.macos || req.install.windows || req.install.linux_apt) && (
+                                  <button className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-emerald-50 border border-emerald-200 text-[10px] text-emerald-600 hover:bg-emerald-100 transition-colors">
+                                    <span>📦</span> {t('sop.install', 'Install')}
+                                  </button>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </ScrollArea>
+                </div>
+
+                {/* Tools Card */}
+                <div className="p-4 rounded-2xl bg-white shadow-[0_4px_20px_rgba(139,92,246,0.06)] border border-white/50">
+                  <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                    <Package className="w-4 h-4 text-violet-500" />
+                    {t('sop.tools', 'Tools')} ({displayHand.tools?.length || 0})
+                  </h3>
+                  <div className="flex flex-wrap gap-1.5">
+                    {displayHand.tools?.map((tool) => (
+                      <span
+                        key={tool}
+                        className="px-2 py-1 rounded-lg bg-violet-50 text-violet-600 text-[10px] font-medium"
+                      >
+                        {tool}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </aside>
+            </div>
+          </>
+        ) : (
+          /* Empty State */
+          <div className="flex-1 flex flex-col items-center justify-center rounded-2xl bg-white shadow-[0_4px_20px_rgba(139,92,246,0.06)] border border-white/50">
+            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-violet-100 to-purple-100 flex items-center justify-center mb-4">
+              <HandIcon className="w-8 h-8 text-violet-500" />
+            </div>
+            <h3 className="text-lg font-semibold text-gray-700 mb-1">
+              {t('sop.selectSOP', 'Select a SOP')}
+            </h3>
+            <p className="text-sm text-gray-400">
+              {t('sop.selectSOPDesc', 'Choose a SOP from the list to view details')}
             </p>
           </div>
-
-          <div className="flex items-center gap-3">
-            <div className="flex bg-[var(--surface-secondary)] rounded-lg p-1">
-              <button
-                onClick={() => setActiveTab('available')}
-                className={cn(
-                  'px-4 py-2 rounded-md text-sm font-medium transition-colors',
-                  activeTab === 'available'
-                    ? 'bg-[var(--neon-cyan)]/20 text-[var(--neon-cyan)]'
-                    : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
-                )}
-              >
-                Available
-              </button>
-              <button
-                onClick={() => setActiveTab('active')}
-                className={cn(
-                  'px-4 py-2 rounded-md text-sm font-medium transition-colors',
-                  activeTab === 'active'
-                    ? 'bg-[var(--neon-green)]/20 text-[var(--neon-green)]'
-                    : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
-                )}
-              >
-                Active ({activeInstances.length})
-              </button>
-            </div>
-            <motion.button
-              onClick={() => refetch()}
-              disabled={isLoading}
-              className="p-2 rounded-lg bg-[var(--surface-secondary)] text-[var(--text-secondary)] hover:bg-[var(--surface-tertiary)]"
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-            >
-              <RefreshCw className={cn('w-5 h-5', isLoading && 'animate-spin')} />
-            </motion.button>
-          </div>
-        </motion.div>
-
-        {/* Available Tab */}
-        {activeTab === 'available' && (
-          <>
-            {isLoading ? (
-              <div className="loading-state">
-                <div className="spinner" />
-                <span>Loading SOPs...</span>
-              </div>
-            ) : error ? (
-              <motion.div className="error-state" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-                <span className="error-icon">!</span>
-                <p>{(error as Error).message || 'Could not load SOPs.'}</p>
-                <button className="btn btn-ghost btn-sm" onClick={() => refetch()}>Retry</button>
-              </motion.div>
-            ) : hands.length === 0 ? (
-              <motion.div className="empty-state" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-                <div className="empty-state-icon">
-                  <HandIcon className="w-10 h-10 text-[var(--text-muted)]" />
-                </div>
-                <h3>No SOPs available</h3>
-                <p>SOPs are curated AI capability packages. They will appear once the kernel loads bundled SOPs.</p>
-              </motion.div>
-            ) : (
-              <motion.div className="card-grid" layout>
-                <AnimatePresence mode="popLayout">
-                  {hands.map((hand) => {
-                    const isActive = activeInstances.some(inst => inst.hand_id === hand.id);
-                    return (
-                      <HandCard
-                        key={hand.id}
-                        hand={hand}
-                        onActivate={() => isActive ? setActiveTab('active') : setSetupHand(hand)}
-                        onDetail={() => setDetailHand(hand)}
-                        isActive={isActive}
-                      />
-                    );
-                  })}
-                </AnimatePresence>
-              </motion.div>
-            )}
-          </>
         )}
-
-        {/* Active Tab */}
-        {activeTab === 'active' && (
-          <>
-            {activeInstances.length === 0 ? (
-              <motion.div className="empty-state" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-                <div className="empty-state-icon">
-                  <HandIcon className="w-10 h-10 text-[var(--text-muted)]" />
-                </div>
-                <h4>No active SOPs</h4>
-                <p className="hint">Activate a SOP from the Available tab to get started. Each SOP spawns a dedicated agent.</p>
-                <button className="btn btn-primary mt-4" onClick={() => setActiveTab('available')}>Browse SOPs</button>
-              </motion.div>
-            ) : (
-              <motion.div className="card-grid" layout>
-                <AnimatePresence mode="popLayout">
-                  {activeInstances.map((instance) => (
-                    <InstanceCard
-                      key={instance.instance_id}
-                      instance={instance}
-                      hands={hands}
-                      onPause={() => handlePause(instance.instance_id)}
-                      onResume={() => handleResume(instance.instance_id)}
-                      onDeactivate={() => handleDeactivate(instance.instance_id, instance.agent_name || instance.hand_id)}
-                      onViewBrowser={instance.hand_id === 'browser' ? () => handleViewBrowser(instance) : undefined}
-                      onViewDashboard={(instance.hand_id === 'trader' || instance.hand_id.includes('trade')) ? () => handleViewDashboard(instance) : undefined}
-                    />
-                  ))}
-                </AnimatePresence>
-              </motion.div>
-            )}
-          </>
-        )}
-      </div>
-
-      {/* Detail Modal */}
-      <AnimatePresence>
-        {detailHand && (
-          <DetailModal
-            hand={detailHand}
-            onClose={() => setDetailHand(null)}
-            onActivate={(h) => { setDetailHand(null); setSetupHand(h); }}
-          />
-        )}
-      </AnimatePresence>
-
-      {/* Setup Wizard Modal */}
-      <AnimatePresence>
-        {setupHand && (
-          <SetupWizardModal
-            hand={setupHand}
-            platform={platform}
-            onClose={() => setSetupHand(null)}
-            onActivate={handleActivate}
-            onInstallDeps={handleInstallDeps}
-          />
-        )}
-      </AnimatePresence>
-
-      {/* Browser Modal */}
-      <AnimatePresence>
-        {browserInstance && (
-          <BrowserModal
-            instance={browserInstance}
-            browserState={browserState}
-            onRefresh={handleRefreshBrowser}
-            onClose={() => { setBrowserInstance(null); setBrowserState(null); }}
-          />
-        )}
-      </AnimatePresence>
-
-      {/* Trader Dashboard Modal */}
-      <AnimatePresence>
-        {dashboardInstance && (
-          <TraderDashboardModal
-            instance={dashboardInstance}
-            dashboardData={dashboardData}
-            onClose={() => { setDashboardInstance(null); setDashboardData(null); }}
-          />
-        )}
-      </AnimatePresence>
+      </main>
     </div>
   );
 }
