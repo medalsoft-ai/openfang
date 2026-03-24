@@ -44,7 +44,7 @@
 
 **Tasks**:
 1. [x] Task 1.1: Define Step Types in openfang-hands (Data Model) — **Complete**
-2. [ ] Task 1.2: Implement Steps API Endpoints (GET/PUT)
+2. [x] Task 1.2: Implement Steps API Endpoints (GET/PUT) — **Complete**
 3. [ ] Task 1.3: Create Agent Tools (hand_create, hand_update_steps)
 4. [x] Task 1.4: Add TypeScript Types for Steps — **Complete**
 5. [ ] Task 1.5: Implement React Flow Visualization
@@ -143,7 +143,7 @@
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Core Foundation | 2/6 | Wave 1 Complete | 01-01, 01-02 done |
+| 1. Core Foundation | 3/6 | Wave 2 Complete | 01-01, 01-02, 01-03 done |
 | 2. Dual Editor | 0/1 | Not started | - |
 | 3. Execution Engine | 0/1 | Not started | - |
 | 4. Session to Hand | 0/1 | Not started | - |
