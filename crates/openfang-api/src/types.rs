@@ -107,3 +107,26 @@ pub struct ClawHubInstallRequest {
     /// ClawHub skill slug (e.g., "github-helper").
     pub slug: String,
 }
+
+// --- Hand Steps API Types ---
+
+use openfang_hands::steps::HandStep;
+
+/// Response for GET /api/hands/{id}/steps
+#[derive(Debug, Serialize)]
+pub struct GetHandStepsResponse {
+    pub steps: Vec<HandStep>,
+}
+
+/// Request for PUT /api/hands/{id}/steps
+#[derive(Debug, Deserialize)]
+pub struct UpdateHandStepsRequest {
+    pub steps: Vec<HandStep>,
+}
+
+/// Error response for step validation failures
+#[derive(Debug, Serialize)]
+pub struct StepValidationError {
+    pub field: String,
+    pub message: String,
+}
