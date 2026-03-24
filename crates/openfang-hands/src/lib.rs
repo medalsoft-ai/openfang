@@ -6,12 +6,15 @@
 
 pub mod bundled;
 pub mod registry;
+pub mod steps;
 
 use chrono::{DateTime, Utc};
 use openfang_types::agent::AgentId;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use uuid::Uuid;
+
+use steps::HandStep;
 
 // ─── Error types ─────────────────────────────────────────────────────────────
 
@@ -354,6 +357,9 @@ pub struct HandDefinition {
     /// Dashboard metrics schema.
     #[serde(default)]
     pub dashboard: HandDashboard,
+    /// Workflow steps for this Hand.
+    #[serde(default)]
+    pub steps: Vec<HandStep>,
     /// Bundled skill content (populated at load time, not in TOML).
     #[serde(skip)]
     pub skill_content: Option<String>,
@@ -432,6 +438,7 @@ pub struct ActivateHandRequest {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::steps::{HandStep, StepType};
 
     #[test]
     fn hand_category_display() {
@@ -857,5 +864,128 @@ metrics = []
         assert_eq!(def.id, "test");
         assert_eq!(def.name, "Test Hand");
         assert_eq!(def.agent.name, "test-hand");
+    }
+
+    #[test]
+    fn hand_definition_with_steps_roundtrip() {
+        let toml_str = r#"
+id = "test"
+name = "Test Hand"
+description = "A test hand"
+category = "content"
+tools = ["shell_exec"]
+
+[[steps]]
+id = "step1"
+name = "Wait for User"
+next_steps = ["step2"]
+
+[steps.step_type]
+type = "wait-for-input"
+prompt = "Please enter your query"
+timeout_secs = 60
+
+[[steps]]
+id = "step2"
+name = "Execute Tool"
+
+[steps.step_type]
+type = "execute-tool"
+tool_name = "web_search"
+
+[agent]
+name = "test-hand"
+description = "Test agent"
+system_prompt = "You are a test agent."
+
+[dashboard]
+metrics = []
+"#;
+        let def: HandDefinition = toml::from_str(toml_str).unwrap();
+        assert_eq!(def.steps.len(), 2);
+        assert_eq!(def.steps[0].id, "step1");
+        assert_eq!(def.steps[0].name, "Wait for User");
+        assert_eq!(def.steps[0].next_steps, vec!["step2"]);
+
+        match &def.steps[0].step_type {
+            StepType::WaitForInput { prompt, timeout_secs } => {
+                assert_eq!(prompt, "Please enter your query");
+                assert_eq!(*timeout_secs, Some(60));
+            }
+            _ => panic!("Expected WaitForInput step type"),
+        }
+
+        assert_eq!(def.steps[1].id, "step2");
+        match &def.steps[1].step_type {
+            StepType::ExecuteTool { tool_name, input } => {
+                assert_eq!(tool_name, "web_search");
+                assert!(input.is_null() || input.is_object());
+            }
+            _ => panic!("Expected ExecuteTool step type"),
+        }
+    }
+
+    #[test]
+    fn hand_definition_steps_backward_compat() {
+        // Hand without steps should still parse (backward compatibility)
+        let toml_str = r#"
+id = "test"
+name = "Test Hand"
+description = "A test hand"
+category = "content"
+tools = ["shell_exec"]
+
+[agent]
+name = "test-hand"
+description = "Test agent"
+system_prompt = "You are a test agent."
+
+[dashboard]
+metrics = []
+"#;
+        let def: HandDefinition = toml::from_str(toml_str).unwrap();
+        assert!(def.steps.is_empty());
+    }
+
+    #[test]
+    fn hand_definition_steps_serialize_to_toml() {
+        let hand = HandDefinition {
+            id: "test".to_string(),
+            name: "Test Hand".to_string(),
+            description: "A test".to_string(),
+            category: HandCategory::Content,
+            icon: "T".to_string(),
+            tools: vec![],
+            skills: vec![],
+            mcp_servers: vec![],
+            requires: vec![],
+            settings: vec![],
+            agent: HandAgentConfig {
+                name: "test-agent".to_string(),
+                description: "Test".to_string(),
+                module: "builtin:chat".to_string(),
+                provider: "anthropic".to_string(),
+                model: "claude-sonnet-4-20250514".to_string(),
+                api_key_env: None,
+                base_url: None,
+                max_tokens: 4096,
+                temperature: 0.7,
+                system_prompt: "Test".to_string(),
+                max_iterations: None,
+            },
+            dashboard: HandDashboard::default(),
+            steps: vec![
+                HandStep::new("step1", "Start", StepType::WaitForInput {
+                    prompt: "Begin?".to_string(),
+                    timeout_secs: Some(30),
+                }),
+            ],
+            skill_content: None,
+        };
+
+        let toml_str = toml::to_string(&hand).unwrap();
+        // Should contain the steps array
+        assert!(toml_str.contains("[[steps]]"));
+        assert!(toml_str.contains("\"step1\""));
     }
 }
