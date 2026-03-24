@@ -4775,6 +4775,266 @@ pub async fn hand_instance_browser(
     )
 }
 
+/// GET /api/hands/{id}/steps - Get steps for a Hand
+pub async fn get_hand_steps(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
+    match state.kernel.hand_registry.get_definition(&id) {
+        Some(def) => {
+            let response = crate::types::GetHandStepsResponse {
+                steps: def.steps,
+            };
+            (StatusCode::OK, Json(serde_json::json!(response)))
+        }
+        None => (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({"error": format!("Hand not found: {id}")})),
+        ),
+    }
+}
+
+/// PUT /api/hands/{id}/steps - Update steps for a Hand
+pub async fn update_hand_steps(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Json(request): Json<crate::types::UpdateHandStepsRequest>,
+) -> impl IntoResponse {
+    // Validate step graph
+    if let Err(errors) = validate_step_graph(&request.steps) {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({
+                "error": "Validation failed",
+                "details": errors
+            })),
+        );
+    }
+
+    // Get the existing definition
+    let mut def = match state.kernel.hand_registry.get_definition(&id) {
+        Some(d) => d,
+        None => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({"error": "Hand not found"})),
+            );
+        }
+    };
+
+    // Update steps
+    def.steps = request.steps;
+
+    // Save to file by serializing to TOML and writing back
+    let toml_content = match toml::to_string(&def) {
+        Ok(content) => content,
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "error": "Failed to serialize hand definition",
+                    "details": e.to_string()
+                })),
+            );
+        }
+    };
+
+    // Determine the file path for this hand
+    // Hands can be in ~/.openfang/hands/ or bundled
+    let hands_dir = state.kernel.config.home_dir.join("hands");
+    let hand_path = hands_dir.join(&id);
+    let toml_path = hand_path.join("HAND.toml");
+
+    // Create directory if it doesn't exist
+    if let Err(e) = std::fs::create_dir_all(&hand_path) {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({
+                "error": "Failed to create hand directory",
+                "details": e.to_string()
+            })),
+        );
+    }
+
+    // Write the TOML file
+    if let Err(e) = std::fs::write(&toml_path, &toml_content) {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({
+                "error": "Failed to write hand definition",
+                "details": e.to_string()
+            })),
+        );
+    }
+
+    // Update the in-memory definition
+    // We use upsert_from_content to reload the definition
+    let skill_path = hand_path.join("SKILL.md");
+    let skill_content = std::fs::read_to_string(&skill_path).unwrap_or_default();
+
+    if let Err(e) = state.kernel.hand_registry.upsert_from_content(&toml_content, &skill_content) {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({
+                "error": "Failed to update hand registry",
+                "details": e.to_string()
+            })),
+        );
+    }
+
+    (StatusCode::NO_CONTENT, Json(serde_json::json!({})))
+}
+
+/// Validate the step graph for cycles and connectivity
+fn validate_step_graph(steps: &[openfang_hands::steps::HandStep]) -> Result<(), Vec<String>> {
+    let mut errors = Vec::new();
+
+    if steps.is_empty() {
+        return Ok(());
+    }
+
+    // Build step ID set for quick lookup
+    let step_ids: std::collections::HashSet<&str> = steps.iter().map(|s| s.id.as_str()).collect();
+
+    // Check all next_steps references exist
+    for step in steps {
+        for next_id in &step.next_steps {
+            if !step_ids.contains(next_id.as_str()) {
+                errors.push(format!(
+                    "Step '{}' references non-existent step '{}'",
+                    step.id, next_id
+                ));
+            }
+        }
+    }
+
+    // Check for cycles using DFS
+    if let Err(cycle) = detect_cycle(steps) {
+        errors.push(format!("Cycle detected in step graph: {}", cycle));
+    }
+
+    // Check for unreachable steps (optional warning)
+    let unreachable = find_unreachable_steps(steps);
+    if !unreachable.is_empty() {
+        errors.push(format!(
+            "Unreachable steps detected: {}",
+            unreachable.join(", ")
+        ));
+    }
+
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors)
+    }
+}
+
+/// Detect cycles in the step graph using DFS
+fn detect_cycle(steps: &[openfang_hands::steps::HandStep]) -> Result<(), String> {
+    let step_map: std::collections::HashMap<&str, &openfang_hands::steps::HandStep> =
+        steps.iter().map(|s| (s.id.as_str(), s)).collect();
+
+    let mut visiting = std::collections::HashSet::new();
+    let mut visited = std::collections::HashSet::new();
+
+    fn dfs<'a>(
+        step_id: &'a str,
+        step_map: &std::collections::HashMap<&'a str, &'a openfang_hands::steps::HandStep>,
+        visiting: &mut std::collections::HashSet<&'a str>,
+        visited: &mut std::collections::HashSet<&'a str>,
+        path: &mut Vec<&'a str>,
+    ) -> Result<(), String> {
+        if visited.contains(step_id) {
+            return Ok(());
+        }
+        if visiting.contains(step_id) {
+            let cycle_start = path.iter().position(|&id| id == step_id).unwrap();
+            let cycle: Vec<_> = path[cycle_start..].iter().chain(&[step_id]).copied().collect();
+            return Err(cycle.join(" -> "));
+        }
+
+        visiting.insert(step_id);
+        path.push(step_id);
+
+        if let Some(step) = step_map.get(step_id) {
+            for next_id in &step.next_steps {
+                dfs(next_id.as_str(), step_map, visiting, visited, path)?;
+            }
+        }
+
+        path.pop();
+        visiting.remove(step_id);
+        visited.insert(step_id);
+        Ok(())
+    }
+
+    // Start DFS from all steps to catch all cycles
+    for step in steps {
+        if !visited.contains(step.id.as_str()) {
+            let mut path = Vec::new();
+            dfs(
+                step.id.as_str(),
+                &step_map,
+                &mut visiting,
+                &mut visited,
+                &mut path,
+            )?;
+        }
+    }
+
+    Ok(())
+}
+
+/// Find steps that are unreachable from any entry point
+fn find_unreachable_steps(steps: &[openfang_hands::steps::HandStep]) -> Vec<String> {
+    if steps.is_empty() {
+        return Vec::new();
+    }
+
+    let step_map: std::collections::HashMap<&str, &openfang_hands::steps::HandStep> =
+        steps.iter().map(|s| (s.id.as_str(), s)).collect();
+
+    // Find entry points (steps not targeted by any other step)
+    let all_targets: std::collections::HashSet<&str> = steps
+        .iter()
+        .flat_map(|s| s.next_steps.iter().map(|id| id.as_str()))
+        .collect();
+
+    let entry_points: Vec<&str> = steps
+        .iter()
+        .map(|s| s.id.as_str())
+        .filter(|id| !all_targets.contains(*id))
+        .collect();
+
+    // If no clear entry points, use the first step as entry
+    let entry_points = if entry_points.is_empty() && !steps.is_empty() {
+        vec![steps[0].id.as_str()]
+    } else {
+        entry_points
+    };
+
+    // BFS to find all reachable steps
+    let mut reachable = std::collections::HashSet::new();
+    let mut queue: Vec<&str> = entry_points;
+
+    while let Some(current) = queue.pop() {
+        if reachable.insert(current) {
+            if let Some(step) = step_map.get(current) {
+                for next_id in &step.next_steps {
+                    queue.push(next_id.as_str());
+                }
+            }
+        }
+    }
+
+    // Return unreachable step IDs
+    steps
+        .iter()
+        .map(|s| s.id.clone())
+        .filter(|id| !reachable.contains(id.as_str()))
+        .collect()
+}
+
 // ---------------------------------------------------------------------------
 // MCP server endpoints
 // ---------------------------------------------------------------------------
