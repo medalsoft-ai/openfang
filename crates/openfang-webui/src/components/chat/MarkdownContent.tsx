@@ -88,9 +88,11 @@ export function MarkdownContent({ content, className, searchQuery }: MarkdownCon
         remarkPlugins={[remarkGfm]}
         components={{
           // Code blocks with syntax highlighting
-          code({ className: codeClassName, children, inline }) {
+          code({ className: codeClassName, children, ...props }) {
             const match = /language-(\w+)/.exec(codeClassName || '');
             const code = String(children).replace(/\n$/, '');
+            // inline is a react-markdown specific prop
+            const { inline } = props as { inline?: boolean };
 
             // CRITICAL: Inline code must NEVER return a div - only block code can
             // The 'inline' prop is true for `code` and false for ```fenced blocks```
