@@ -30,6 +30,11 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import remarkGfm from 'remark-gfm';
 
+// Reduced motion preference check (module level for component access)
+const prefersReducedMotion = typeof window !== 'undefined'
+  ? window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  : false;
+
 // Extended Tool interface for UI state
 interface ExtendedTool {
   id: string;
@@ -104,75 +109,48 @@ function WelcomeScreen({
       animate={{ opacity: 1, y: 0 }}
       className="flex-1 flex flex-col items-center justify-center p-8"
     >
-      {/* Agent Avatar */}
+      {/* Icon Container with Sparkles */}
       <motion.div
         initial={{ scale: 0.8, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         transition={{ delay: 0.1, type: 'spring', stiffness: 200 }}
-        className={cn(
-          'w-20 h-20 rounded-2xl flex items-center justify-center mb-6',
-          'bg-gradient-to-br shadow-lg',
-          gradient
-        )}
+        className="w-16 h-16 rounded-2xl bg-gradient-to-br from-violet-100 to-purple-100 flex items-center justify-center mb-4 shadow-[0_4px_12px_rgba(139,92,246,0.15)]"
       >
-        <Bot className="w-10 h-10 text-white" />
+        <Sparkles className="w-8 h-8 text-violet-500" />
       </motion.div>
 
       {/* Title */}
-      <motion.h2
+      <motion.h3
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.2 }}
-        className="text-2xl font-semibold text-[var(--soft-text-primary)] mb-2"
+        className="text-lg font-semibold text-gray-800 mb-2"
       >
-        {agent.name}
-      </motion.h2>
+        {t('chat.startConversation')}
+      </motion.h3>
 
-      {/* Description */}
+      {/* Subtitle */}
       <motion.p
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.3 }}
-        className="text-[var(--soft-text-muted)] text-center max-w-md mb-8"
+        className="text-sm text-gray-500 max-w-xs text-center mb-8"
       >
-        {agent.description || agent.profile || t('chat.startConversation')}
+        {agent.description || agent.profile || t('chat.noMessages')}
       </motion.p>
-
-      {/* Quick Actions */}
-      <motion.div
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.4 }}
-        className="flex flex-wrap gap-3 justify-center max-w-lg"
-      >
-        {['What can you do?', 'Help me get started', 'Explain your capabilities'].map((suggestion, i) => (
-          <motion.button
-            key={suggestion}
-            onClick={() => onStartChat()}
-            className="px-4 py-2 rounded-xl bg-[var(--soft-surface)] text-[var(--soft-text-secondary)] text-sm font-medium hover:bg-[var(--soft-surface-hover)] hover:text-[var(--soft-text-primary)] transition-colors"
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.4 + i * 0.05 }}
-          >
-            {suggestion}
-          </motion.button>
-        ))}
-      </motion.div>
 
       {/* Start Button */}
       <motion.button
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.5 }}
+        transition={{ delay: 0.4 }}
         onClick={onStartChat}
         className={cn(
-          'mt-8 px-6 py-3 rounded-xl text-white font-medium flex items-center gap-2',
-          'bg-gradient-to-r shadow-lg hover:shadow-xl transition-shadow',
-          gradient
+          'px-6 py-3 rounded-xl text-white font-medium flex items-center gap-2',
+          'bg-gradient-to-r from-violet-500 to-purple-600',
+          'shadow-[0_4px_12px_rgba(139,92,246,0.35)] hover:shadow-[0_6px_16px_rgba(139,92,246,0.45)]',
+          'transition-all duration-200 hover:scale-[1.02]'
         )}
-        whileHover={{ scale: 1.02 }}
         whileTap={{ scale: 0.98 }}
       >
         <MessageSquare className="w-5 h-5" />
@@ -230,52 +208,53 @@ function ToolCard({ tool }: { tool: ExtendedTool }) {
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 5 }}
+      initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 5 }}
       animate={{ opacity: 1, y: 0 }}
       className={cn(
-        'my-2 rounded-lg border overflow-hidden',
+        'my-2 rounded-xl border overflow-hidden bg-white/80 backdrop-blur-sm shadow-[0_2px_8px_rgba(139,92,246,0.08)] hover:shadow-[0_4px_12px_rgba(139,92,246,0.12)] transition-shadow duration-200',
         tool.is_error
-          ? 'border-red-500/30 bg-red-500/5'
+          ? 'border-red-200'
           : tool.running
-          ? 'border-amber-500/30 bg-amber-500/5'
-          : 'border-green-500/30 bg-green-500/5'
+          ? 'border-amber-200'
+          : 'border-purple-100'
       )}
     >
       {/* Header */}
       <button
         onClick={() => setExpanded(!expanded)}
-        className="w-full px-3 py-2 flex items-center justify-between text-left"
+        className="w-full px-3 py-2 flex items-center justify-between text-left bg-violet-50/50 border-b border-purple-100 hover:bg-violet-50 transition-colors"
+        aria-expanded={expanded}
       >
         <div className="flex items-center gap-2">
           <Wrench className={cn(
             'w-4 h-4',
-            tool.is_error ? 'text-red-400' : tool.running ? 'text-amber-400' : 'text-green-400'
+            tool.is_error ? 'text-red-500' : tool.running ? 'text-amber-500' : 'text-violet-500'
           )} />
-          <span className="text-sm font-medium text-[var(--soft-text-primary)]">
+          <span className="text-sm font-medium text-violet-700">
             {tool.name}
           </span>
           {tool.running && (
-            <Loader2 className="w-3 h-3 animate-spin text-amber-400" />
+            <Loader2 className="w-3 h-3 animate-spin text-amber-500" />
           )}
           {tool.is_error && (
-            <AlertCircle className="w-3 h-3 text-red-400" />
+            <AlertCircle className="w-3 h-3 text-red-500" />
           )}
         </div>
         {expanded ? (
-          <ChevronDown className="w-4 h-4 text-[var(--soft-text-muted)]" />
+          <ChevronDown className="w-4 h-4 text-gray-400" />
         ) : (
-          <ChevronRight className="w-4 h-4 text-[var(--soft-text-muted)]" />
+          <ChevronRight className="w-4 h-4 text-gray-400" />
         )}
       </button>
 
       {/* Content */}
       {expanded && (
-        <div className="px-3 pb-3 border-t border-[var(--soft-divider)]">
+        <div className="px-3 pb-3 border-t border-purple-100">
           {/* Input params */}
           {tool.input && (
             <div className="mt-2">
-              <div className="text-xs text-[var(--soft-text-muted)] mb-1">Input:</div>
-              <pre className="text-xs bg-[var(--soft-surface)] rounded p-2 overflow-x-auto text-[var(--soft-text-secondary)]">
+              <div className="text-xs text-gray-400 mb-1">Input:</div>
+              <pre className="text-xs bg-gray-50/50 rounded-lg p-2 overflow-x-auto text-gray-600 font-mono border border-purple-100/50">
                 {tool.input}
               </pre>
             </div>
@@ -286,7 +265,7 @@ function ToolCard({ tool }: { tool: ExtendedTool }) {
             <div className="mt-2">
               <div className={cn(
                 'text-xs mb-1',
-                tool.is_error ? 'text-red-400' : 'text-green-400'
+                tool.is_error ? 'text-red-500' : 'text-green-500'
               )}>
                 {tool.is_error ? 'Error:' : 'Result:'}
               </div>
@@ -297,26 +276,26 @@ function ToolCard({ tool }: { tool: ExtendedTool }) {
                       key={idx}
                       src={url}
                       alt={`Generated ${idx + 1}`}
-                      className="max-w-[200px] max-h-[200px] rounded-lg border border-[var(--soft-divider)]"
+                      className="max-w-[200px] max-h-[200px] rounded-lg border border-purple-100"
                     />
                   ))}
                 </div>
               ) : tool._audioFile ? (
-                <div className="flex items-center gap-2 text-sm text-[var(--soft-text-secondary)]">
-                  <Music className="w-4 h-4" />
+                <div className="flex items-center gap-2 text-sm text-gray-600 bg-gray-50/50 rounded-lg p-2 border border-purple-100/50">
+                  <Music className="w-4 h-4 text-violet-500" />
                   <span>Audio saved to: {tool._audioFile}</span>
                   {tool._audioDuration && (
-                    <span className="text-xs text-[var(--soft-text-muted)]">
+                    <span className="text-xs text-gray-400">
                       (~{Math.round(tool._audioDuration / 1000)}s)
                     </span>
                   )}
                 </div>
               ) : (
                 <pre className={cn(
-                  'text-xs rounded p-2 overflow-x-auto',
+                  'text-xs rounded-lg p-2 overflow-x-auto font-mono border',
                   tool.is_error
-                    ? 'bg-red-500/10 text-red-400'
-                    : 'bg-green-500/10 text-green-400'
+                    ? 'bg-red-50 text-red-600 border-red-100'
+                    : 'bg-green-50 text-green-600 border-green-100'
                 )}>
                   {tool.result}
                 </pre>
@@ -595,42 +574,41 @@ function ToolCallCard({ tool }: { tool: ExtendedTool }) {
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 5 }}
+      initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 5 }}
       animate={{ opacity: 1, y: 0 }}
       className={cn(
-        "mt-2 rounded-xl border overflow-hidden",
-        tool.is_error ? "border-red-500/30 bg-red-500/5" :
-        tool.running ? "border-amber-500/30 bg-amber-500/5" :
-        "border-green-500/30 bg-green-500/5"
+        "mt-2 rounded-xl border overflow-hidden bg-white/80 backdrop-blur-sm shadow-[0_2px_8px_rgba(139,92,246,0.08)] hover:shadow-[0_4px_12px_rgba(139,92,246,0.12)] transition-shadow duration-200",
+        tool.is_error ? "border-red-200" :
+        tool.running ? "border-amber-200" :
+        "border-purple-100"
       )}
     >
+      {/* Header */}
       <button
         onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center justify-between px-3 py-2 hover:bg-[var(--soft-surface)]/50 transition-colors"
+        className="w-full flex items-center justify-between px-3 py-2 bg-violet-50/50 border-b border-purple-100 hover:bg-violet-50 transition-colors"
+        aria-expanded={expanded}
       >
         <div className="flex items-center gap-2">
-          {tool.is_error ? (
-            <AlertCircle className="w-4 h-4 text-red-400" />
-          ) : tool.running ? (
-            <Loader2 className="w-4 h-4 text-amber-400 animate-spin" />
-          ) : (
-            <Wrench className="w-4 h-4 text-green-400" />
-          )}
-          <span className="text-sm font-medium text-[var(--soft-text-primary)]">
+          <Wrench className={cn(
+            'w-4 h-4',
+            tool.is_error ? 'text-red-500' : tool.running ? 'text-amber-500' : 'text-violet-500'
+          )} />
+          <span className="text-sm font-medium text-violet-700">
             {tool.name}
           </span>
           <span className={cn(
             "text-xs px-1.5 py-0.5 rounded-full",
-            status === 'completed' && "bg-green-500/10 text-green-500",
-            status === 'running' && "bg-amber-500/10 text-amber-500",
-            status === 'error' && "bg-red-500/10 text-red-500",
-            status === 'pending' && "bg-[var(--soft-surface)] text-[var(--soft-text-muted)]"
+            status === 'completed' && "bg-green-100 text-green-600",
+            status === 'running' && "bg-amber-100 text-amber-600",
+            status === 'error' && "bg-red-100 text-red-600",
+            status === 'pending' && "bg-gray-100 text-gray-500"
           )}>
             {status}
           </span>
         </div>
         <ChevronDown className={cn(
-          "w-4 h-4 text-[var(--soft-text-muted)] transition-transform",
+          "w-4 h-4 text-gray-400 transition-transform",
           expanded && "rotate-180"
         )} />
       </button>
@@ -647,8 +625,8 @@ function ToolCallCard({ tool }: { tool: ExtendedTool }) {
               {/* Input params */}
               {tool.input && (
                 <div>
-                  <div className="text-xs text-[var(--soft-text-muted)] mb-1">Input</div>
-                  <pre className="text-xs bg-[var(--soft-surface)] rounded-lg p-2 overflow-x-auto font-mono text-[var(--soft-text-secondary)]">
+                  <div className="text-xs text-gray-400 mb-1">Input</div>
+                  <pre className="text-xs bg-gray-50/50 rounded-lg p-2 overflow-x-auto font-mono text-gray-600 border border-purple-100/50">
                     {typeof tool.input === 'string' ? tool.input : JSON.stringify(tool.input, null, 2)}
                   </pre>
                 </div>
@@ -659,7 +637,7 @@ function ToolCallCard({ tool }: { tool: ExtendedTool }) {
                 <div>
                   <div className={cn(
                     "text-xs mb-1",
-                    tool.is_error ? "text-red-400" : "text-green-400"
+                    tool.is_error ? "text-red-500" : "text-green-500"
                   )}>
                     {tool.is_error ? 'Error:' : 'Result:'}
                   </div>
@@ -672,27 +650,27 @@ function ToolCallCard({ tool }: { tool: ExtendedTool }) {
                           key={idx}
                           src={url}
                           alt={`Generated ${idx + 1}`}
-                          className="max-w-[200px] max-h-[200px] rounded-lg border border-[var(--soft-divider)]"
+                          className="max-w-[200px] max-h-[200px] rounded-lg border border-purple-100"
                         />
                       ))}
                     </div>
                   ) : tool._audioFile ? (
                     /* Special rendering for text-to-speech */
-                    <div className="flex items-center gap-2 text-sm text-[var(--soft-text-secondary)] bg-[var(--soft-surface)] rounded-lg p-2">
-                      <Music className="w-4 h-4" />
+                    <div className="flex items-center gap-2 text-sm text-gray-600 bg-gray-50/50 rounded-lg p-2 border border-purple-100/50">
+                      <Music className="w-4 h-4 text-violet-500" />
                       <span>Audio saved to: {tool._audioFile}</span>
                       {tool._audioDuration && (
-                        <span className="text-xs text-[var(--soft-text-muted)]">
+                        <span className="text-xs text-gray-400">
                           (~{Math.round(tool._audioDuration / 1000)}s)
                         </span>
                       )}
                     </div>
                   ) : (
                     <pre className={cn(
-                      "text-xs rounded-lg p-2 overflow-x-auto font-mono",
+                      "text-xs rounded-lg p-2 overflow-x-auto font-mono border",
                       tool.is_error
-                        ? "bg-red-500/10 text-red-400"
-                        : "bg-green-500/10 text-green-400"
+                        ? "bg-red-50 text-red-600 border-red-100"
+                        : "bg-green-50 text-green-600 border-green-100"
                     )}>
                       {typeof tool.result === 'string' ? tool.result : JSON.stringify(tool.result, null, 2)}
                     </pre>
@@ -717,7 +695,7 @@ function MessageBubble({
   isUser: boolean;
   agent?: Agent;
 }) {
-  const gradient = agent ? getAgentGradient(agent) : 'from-[var(--soft-blue)] to-blue-600';
+  const gradient = agent ? getAgentGradient(agent) : 'from-violet-500 to-purple-600';
   // Ensure content is always a string (handle object case from backend)
   const rawContent = message.content;
   const content = typeof rawContent === 'string' ? rawContent : JSON.stringify(rawContent || '');
@@ -727,23 +705,23 @@ function MessageBubble({
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.2 }}
+      initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 10, scale: 0.98 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={prefersReducedMotion ? { duration: 0.15 } : { type: "spring", stiffness: 200, damping: 20 }}
       className={cn(
-        'flex gap-4 px-4 py-4',
+        'flex gap-3 px-4 py-3',
         isUser ? 'flex-row-reverse' : 'flex-row'
       )}
     >
       {/* Avatar */}
       <div className="flex-shrink-0">
         {isUser ? (
-          <div className="w-8 h-8 rounded-xl bg-[var(--soft-surface)] flex items-center justify-center border border-[var(--soft-divider)]">
-            <User className="w-4 h-4 text-[var(--soft-text-secondary)]" />
+          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center shadow-[0_2px_8px_rgba(139,92,246,0.3)]">
+            <User className="w-4 h-4 text-white" />
           </div>
         ) : (
           <div className={cn(
-            'w-8 h-8 rounded-xl flex items-center justify-center bg-gradient-to-br shadow-md',
+            'w-8 h-8 rounded-full flex items-center justify-center bg-gradient-to-br shadow-[0_2px_8px_rgba(139,92,246,0.3)] border-2 border-white',
             gradient
           )}>
             <Bot className="w-4 h-4 text-white" />
@@ -763,23 +741,23 @@ function MessageBubble({
             isUser ? 'ml-auto' : 'mr-auto'
           )}
         >
-          {/* User Message - Simple bubble */}
+          {/* User Message - Claymorphism styled bubble */}
           {isUser ? (
-            <div className="bg-[var(--soft-blue)] text-white px-5 py-3 rounded-2xl rounded-tr-sm shadow-sm">
-              <div className="text-sm leading-relaxed whitespace-pre-wrap">{content}</div>
+            <div className="max-w-[85%] ml-auto bg-gradient-to-br from-violet-100 to-purple-100 border border-violet-200 rounded-2xl rounded-tr-sm px-4 py-3 shadow-[0_2px_8px_rgba(139,92,246,0.1)] hover:scale-[1.01] transition-transform duration-200">
+              <div className="text-gray-800 text-[15px] leading-relaxed whitespace-pre-wrap">{content}</div>
             </div>
           ) : (
             /* Assistant Message - Rich content */
-            <div className="text-[var(--soft-text-primary)]">
+            <div className="text-gray-800">
               {message.isStreaming && !content ? (
                 <div className="flex items-center gap-2 py-3 px-1">
-                  <div className="w-2 h-2 rounded-full bg-[var(--soft-blue)] animate-bounce" style={{ animationDelay: '0ms' }} />
-                  <div className="w-2 h-2 rounded-full bg-[var(--soft-blue)] animate-bounce" style={{ animationDelay: '150ms' }} />
-                  <div className="w-2 h-2 rounded-full bg-[var(--soft-blue)] animate-bounce" style={{ animationDelay: '300ms' }} />
+                  <div className="w-2 h-2 rounded-full bg-violet-500 animate-bounce" style={{ animationDelay: '0ms' }} />
+                  <div className="w-2 h-2 rounded-full bg-violet-500 animate-bounce" style={{ animationDelay: '150ms' }} />
+                  <div className="w-2 h-2 rounded-full bg-violet-500 animate-bounce" style={{ animationDelay: '300ms' }} />
                 </div>
               ) : message.thinking ? (
                 /* Thinking/Processing state */
-                <div className="flex items-center gap-2 py-3 px-1 text-[var(--soft-text-muted)]">
+                <div className="flex items-center gap-2 py-3 px-1 text-gray-500">
                   <Loader2 className="w-4 h-4 animate-spin" />
                   <span className="text-sm">{content}</span>
                 </div>
@@ -791,8 +769,10 @@ function MessageBubble({
                   html={message.canvasData.html}
                 />
               ) : (
-                <div className="prose prose-sm max-w-none">
-                  <MarkdownRenderer content={content} />
+                <div className="max-w-[85%] bg-white border border-purple-100 rounded-2xl rounded-tl-sm px-4 py-3 shadow-[0_2px_8px_rgba(139,92,246,0.08)] hover:scale-[1.01] transition-transform duration-200">
+                  <div className="prose prose-sm max-w-none">
+                    <MarkdownRenderer content={content} />
+                  </div>
                 </div>
               )}
 
@@ -810,7 +790,7 @@ function MessageBubble({
                 <motion.span
                   animate={{ opacity: [1, 0] }}
                   transition={{ duration: 0.5, repeat: Infinity }}
-                  className="inline-block w-2 h-4 bg-[var(--soft-blue)] ml-1 align-middle rounded-sm"
+                  className="inline-block w-2 h-4 bg-violet-500 ml-1 align-middle rounded-sm"
                 />
               )}
             </div>
@@ -819,7 +799,7 @@ function MessageBubble({
 
         {/* Meta info */}
         <div className={cn(
-          "mt-2 flex items-center gap-3 text-[11px] text-[var(--soft-text-muted)]",
+          "mt-2 flex items-center gap-3 text-[11px] text-gray-400",
           isUser && "justify-end"
         )}>
           <span>{new Date(message.ts || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
@@ -853,20 +833,23 @@ function SessionSelector({
   onSelect: (sessionId: string) => void;
   onNewSession: () => void;
 }) {
+  const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
 
   return (
     <div className="relative">
       <motion.button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[var(--soft-surface)] hover:bg-[var(--soft-surface-hover)] text-[var(--soft-text-secondary)] text-sm transition-colors"
+        className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-violet-50 hover:bg-violet-100 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2"
         whileTap={{ scale: 0.98 }}
+        aria-label={t('chat.selectAgent')}
+        aria-expanded={isOpen}
       >
-        <Clock className="w-4 h-4" />
-        <span className="max-w-[150px] truncate">
-          {currentSession?.title || 'Current Session'}
+        <Clock className="w-4 h-4 text-violet-600" />
+        <span className="max-w-[150px] truncate text-sm font-medium text-violet-700">
+          {currentSession?.title || t('chat.selectAgent')}
         </span>
-        <ChevronDown className={cn('w-3.5 h-3.5 transition-transform', isOpen && 'rotate-180')} />
+        <ChevronDown className={cn('w-3.5 h-3.5 text-violet-400 transition-transform', isOpen && 'rotate-180')} />
       </motion.button>
 
       <AnimatePresence>
@@ -884,29 +867,29 @@ function SessionSelector({
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: -10, scale: 0.95 }}
               transition={{ duration: 0.15 }}
-              className="absolute top-full left-0 mt-2 w-72 bg-[var(--soft-main)] border border-[var(--soft-divider)] rounded-xl shadow-lg z-50 overflow-hidden"
+              className="absolute top-full left-0 mt-2 w-72 bg-white/80 backdrop-blur-xl border border-purple-100 rounded-2xl shadow-[0_8px_24px_rgba(139,92,246,0.15)] z-50 overflow-hidden"
             >
               {/* Header */}
-              <div className="px-3 py-2 border-b border-[var(--soft-divider)] flex items-center justify-between">
-                <span className="text-xs font-medium text-[var(--soft-text-muted)] uppercase tracking-wider">
-                  Sessions
+              <div className="px-3 py-2 border-b border-purple-100 flex items-center justify-between">
+                <span className="text-xs font-medium text-gray-400 uppercase tracking-wider">
+                  {t('chat.title')}
                 </span>
                 <motion.button
                   onClick={onNewSession}
-                  className="flex items-center gap-1 px-2 py-1 rounded-md bg-[var(--soft-blue)] text-white text-xs font-medium"
+                  className="flex items-center gap-1 px-2 py-1 rounded-lg bg-violet-500 text-white text-xs font-medium shadow-[0_2px_8px_rgba(139,92,246,0.3)] hover:shadow-[0_4px_12px_rgba(139,92,246,0.4)] transition-shadow"
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
                 >
                   <Plus className="w-3 h-3" />
-                  New
+                  {t('chat.newChat')}
                 </motion.button>
               </div>
 
               {/* Session List */}
               <div className="max-h-64 overflow-y-auto">
                 {sessions.length === 0 ? (
-                  <div className="px-3 py-4 text-center text-sm text-[var(--soft-text-muted)]">
-                    No sessions yet
+                  <div className="px-3 py-4 text-center text-sm text-gray-400">
+                    {t('chat.noMessages')}
                   </div>
                 ) : (
                   sessions.map((session) => (
@@ -916,36 +899,41 @@ function SessionSelector({
                         onSelect(session.session_id);
                         setIsOpen(false);
                       }}
+                      data-active={currentSession?.session_id === session.session_id}
                       className={cn(
-                        'w-full px-3 py-2.5 text-left hover:bg-[var(--soft-surface)] transition-colors flex items-center gap-3',
-                        currentSession?.session_id === session.session_id && 'bg-[var(--soft-surface)]'
+                        'w-full text-left px-3 py-2.5 rounded-xl transition-all duration-200 hover:bg-violet-50 data-[active=true]:bg-violet-100 data-[active=true]:shadow-[inset_0_1px_2px_rgba(139,92,246,0.1)] flex items-center gap-3 relative group'
                       )}
+                      aria-label={session.title}
                     >
+                      {/* Active indicator - left side */}
+                      {currentSession?.session_id === session.session_id && (
+                        <motion.div
+                          layoutId="sessionActiveIndicator"
+                          className="absolute -left-0.5 top-1/2 -translate-y-1/2 w-1 h-5 rounded-r-full bg-violet-500"
+                          initial={false}
+                          transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+                        />
+                      )}
+
                       <MessageSquare className={cn(
-                        'w-4 h-4',
+                        'w-4 h-4 transition-colors',
                         currentSession?.session_id === session.session_id
-                          ? 'text-[var(--soft-blue)]'
-                          : 'text-[var(--soft-text-muted)]'
+                          ? 'text-violet-600'
+                          : 'text-gray-400 group-hover:text-violet-500'
                       )} />
                       <div className="flex-1 min-w-0">
                         <div className={cn(
-                          'text-sm truncate',
+                          'text-sm font-medium truncate transition-colors',
                           currentSession?.session_id === session.session_id
-                            ? 'text-[var(--soft-text-primary)] font-medium'
-                            : 'text-[var(--soft-text-secondary)]'
+                            ? 'text-violet-800'
+                            : 'text-gray-700 group-hover:text-violet-700'
                         )}>
                           {session.title}
                         </div>
-                        <div className="text-xs text-[var(--soft-text-tertiary)]">
+                        <div className="text-xs text-gray-400 mt-0.5">
                           {new Date(session.created_at).toLocaleDateString()} · {session.message_count} messages
                         </div>
                       </div>
-                      {currentSession?.session_id === session.session_id && (
-                        <motion.div
-                          layoutId="activeSessionIndicator"
-                          className="w-1.5 h-1.5 rounded-full bg-[var(--soft-blue)]"
-                        />
-                      )}
                     </motion.button>
                   ))
                 )}
@@ -1749,7 +1737,7 @@ export function Chat() {
       ) : (
         <>
       {/* Header */}
-      <div className="px-4 py-3 border-b border-[var(--soft-divider)] flex items-center justify-between bg-[var(--soft-bg)]">
+      <div className="flex items-center justify-between px-4 py-3 bg-white/80 backdrop-blur-xl border-b border-purple-100 sticky top-0 z-10">
         {/* Left: Agent Info */}
         <div className="flex items-center gap-3">
           {/* Back button (mobile) */}
@@ -1758,15 +1746,16 @@ export function Chat() {
               setSelectedAgentId(null);
               setCurrentSession(null);
             }}
-            className="lg:hidden p-2 rounded-lg hover:bg-[var(--soft-surface)] text-[var(--soft-text-secondary)]"
+            className="lg:hidden p-2 rounded-xl hover:bg-violet-50 text-gray-500 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2"
             whileTap={{ scale: 0.95 }}
+            aria-label={t('common.back')}
           >
             <ChevronDown className="w-5 h-5 rotate-90" />
           </motion.button>
 
           {/* Agent Avatar */}
           <div className={cn(
-            'w-9 h-9 rounded-xl flex items-center justify-center bg-gradient-to-br shadow-sm',
+            'w-9 h-9 rounded-xl flex items-center justify-center bg-gradient-to-br shadow-[0_2px_8px_rgba(139,92,246,0.3)] border-2 border-white',
             getAgentGradient(selectedAgent)
           )}>
             <Bot className="w-5 h-5 text-white" />
@@ -1774,7 +1763,7 @@ export function Chat() {
 
           {/* Agent Name & Session */}
           <div>
-            <h2 className="font-semibold text-[var(--soft-text-primary)] text-sm">{selectedAgent.name}</h2>
+            <h2 className="font-semibold text-gray-800 text-sm">{selectedAgent.name}</h2>
             <div className="flex items-center gap-2">
               <SessionSelector
                 sessions={sessions}
@@ -1785,7 +1774,7 @@ export function Chat() {
               {/* Model indicator */}
               <button
                 onClick={openModelChange}
-                className="flex items-center gap-1 text-xs text-[var(--soft-text-muted)] hover:text-[var(--soft-text-secondary)] transition-colors"
+                className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2 rounded-md"
                 title="Click to change model"
               >
                 <Cpu className="w-3 h-3" />
@@ -1802,29 +1791,29 @@ export function Chat() {
           {/* Connection Status Badge */}
           <div
             className={cn(
-              'flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium transition-colors',
+              'flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs font-medium transition-colors',
               wsConnectionState === 'connected'
-                ? 'bg-green-500/10 text-green-600 dark:text-green-400'
-                : wsConnectionState === 'reconnecting'
-                ? 'bg-yellow-500/10 text-yellow-600 dark:text-yellow-400'
-                : 'bg-gray-500/10 text-gray-600 dark:text-gray-400'
+                ? 'bg-green-50 text-green-600'
+                : wsConnectionState === 'reconnecting' || wsConnectionState === 'connecting'
+                ? 'bg-amber-50 text-amber-600'
+                : 'bg-red-50 text-red-600'
             )}
-            title={wsConnectionState === 'connected' ? t('chat.online') : wsConnectionState === 'connecting' ? t('chat.connecting') : wsConnectionState === 'reconnecting' ? t('chat.connecting') : t('chat.offline')}
+            title={wsConnectionState === 'connected' ? t('chat.online') : wsConnectionState === 'connecting' || wsConnectionState === 'reconnecting' ? t('chat.connecting') : t('chat.offline')}
           >
             {wsConnectionState === 'connected' ? (
               <>
                 <Wifi className="w-3.5 h-3.5" />
-                <span>WS</span>
+                <span className="hidden sm:inline">{t('chat.online')}</span>
               </>
             ) : wsConnectionState === 'reconnecting' || wsConnectionState === 'connecting' ? (
               <>
                 <Loader className="w-3.5 h-3.5 animate-spin" />
-                <span>{wsConnectionState === 'connecting' ? '...' : '...'}</span>
+                <span className="hidden sm:inline">{t('chat.connecting')}</span>
               </>
             ) : (
               <>
                 <WifiOff className="w-3.5 h-3.5" />
-                <span>HTTP</span>
+                <span className="hidden sm:inline">{t('chat.offline')}</span>
               </>
             )}
           </div>
@@ -1832,31 +1821,25 @@ export function Chat() {
           <motion.button
             onClick={() => handleNewSession.mutate()}
             disabled={handleNewSession.isPending}
-            className="p-2 rounded-lg hover:bg-[var(--soft-surface)] text-[var(--soft-text-secondary)] transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-purple-100 shadow-[0_2px_8px_rgba(139,92,246,0.08)] hover:shadow-[0_4px_12px_rgba(139,92,246,0.12)] hover:bg-violet-50 transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2"
             whileTap={{ scale: 0.95 }}
-            title="New Session"
+            aria-label={t('chat.newChat')}
+            title={t('chat.newChat')}
           >
             {handleNewSession.isPending ? (
-              <Loader2 className="w-5 h-5 animate-spin" />
+              <Loader2 className="w-4 h-4 animate-spin text-violet-600" />
             ) : (
-              <Plus className="w-5 h-5" />
+              <Plus className="w-4 h-4 text-violet-600" />
             )}
-          </motion.button>
-
-          <motion.button
-            onClick={openModelChange}
-            className="p-2 rounded-lg hover:bg-[var(--soft-surface)] text-[var(--soft-text-secondary)] transition-colors"
-            whileTap={{ scale: 0.95 }}
-            title="Change Model"
-          >
-            <Cpu className="w-5 h-5" />
+            <span className="hidden sm:inline text-sm font-medium text-violet-700">{t('chat.newChat')}</span>
           </motion.button>
 
           <motion.button
             onClick={() => navigate(`/agents?edit=${selectedAgent.id}`)}
-            className="p-2 rounded-lg hover:bg-[var(--soft-surface)] text-[var(--soft-text-secondary)] transition-colors"
+            className="p-2 rounded-xl hover:bg-violet-50 text-gray-500 hover:text-violet-600 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2"
             whileTap={{ scale: 0.95 }}
-            title="Agent Settings"
+            aria-label={t('layout.settings')}
+            title={t('layout.settings')}
           >
             <Settings className="w-5 h-5" />
           </motion.button>
