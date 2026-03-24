@@ -1,11 +1,22 @@
+---
+gsd_state_version: 1.0
+milestone: v0.1
+milestone_name: milestone
+status: Ready to execute
+last_updated: "2026-03-24T23:59:18.546Z"
+progress:
+  total_phases: 4
+  completed_phases: 2
+  total_plans: 7
+  completed_plans: 7
+---
+
 # State — Milestone v0.1 Dynamic Hand with steps
 
 ## Current Position
 
-Phase: 1 — Core Foundation
-Plan: 01-06 — Integration Testing (next)
-Status: Wave 4 Complete — React Flow UI implemented
-Last activity: 2026-03-25 — Completed Wave 4 (01-05)
+Phase: 01 (core-foundation) — EXECUTING
+Plan: 2 of 6
 
 ## Active Threads
 
@@ -24,6 +35,7 @@ Last activity: 2026-03-25 — Completed Wave 4 (01-05)
 ## Completed Work (Wave 4)
 
 ### Plan 01-05: Implement React Flow Visualization
+
 - **Commits:** 81c3283, 28e4221, 0e75164
 - **Files:**
   - `crates/openfang-webui/src/components/flow/StepNode.tsx` (new)
@@ -39,6 +51,7 @@ Last activity: 2026-03-25 — Completed Wave 4 (01-05)
 ## Completed Work (Wave 3)
 
 ### Plan 01-04: Create Agent Tools for Hand Management
+
 - **Commit:** 6ca179d
 - **Files:** `crates/openfang-runtime/src/kernel_handle.rs`, `crates/openfang-runtime/src/tool_runner.rs`, `crates/openfang-kernel/src/kernel.rs`
 - **Deliverables:**
@@ -51,6 +64,7 @@ Last activity: 2026-03-25 — Completed Wave 4 (01-05)
 ## Completed Work (Wave 2)
 
 ### Plan 01-03: Implement Steps API Endpoints
+
 - **Commits:** f916f57, 9ea01aa, 722c54c
 - **Files:** `crates/openfang-api/src/types.rs`, `crates/openfang-api/src/routes.rs`, `crates/openfang-api/src/server.rs`
 - **Deliverables:**
@@ -62,6 +76,7 @@ Last activity: 2026-03-25 — Completed Wave 4 (01-05)
 ## Completed Work (Wave 1)
 
 ### Plan 01-01: Define Step Types in openfang-hands
+
 - **Commit:** 4659c06
 - **Files:** `crates/openfang-hands/src/steps.rs` (new), `crates/openfang-hands/src/lib.rs`
 - **Deliverables:**
@@ -71,6 +86,7 @@ Last activity: 2026-03-25 — Completed Wave 4 (01-05)
   - 15 new unit tests (all passing)
 
 ### Plan 01-02: Add TypeScript Types for Steps
+
 - **Commit:** f94a00a
 - **Files:** `crates/openfang-webui/src/api/types.ts`, `crates/openfang-webui/src/api/client.ts`
 - **Deliverables:**
@@ -83,6 +99,7 @@ Last activity: 2026-03-25 — Completed Wave 4 (01-05)
 ## Accumulated Context
 
 ### Previous Milestone (Chat Redesign)
+
 - Completed: Chat 页面 Claymorphism 重设计
 - Key files: crates/openfang-webui/src/pages/Chat.tsx
 - Patterns: claymorphism, spring-animations, reduced-motion
@@ -98,6 +115,7 @@ Last activity: 2026-03-25 — Completed Wave 4 (01-05)
 | Layout approach | Tabbed interface (Details/Flow) | 01-05-SUMMARY.md |
 
 ### Pending Decisions (Future Phases)
+
 1. Agent Chat Editor prompt design — Phase 2
 2. Visual vs Chat editor state sync — Phase 2
 3. Step execution engine approach (prompt-based vs engine-based) — Phase 3

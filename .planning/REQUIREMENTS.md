@@ -4,17 +4,17 @@
 
 ### Hand 步骤系统 (HAND-STEP)
 
-- [ ] **HAND-STEP-01**: 用户可以查看 Hand 的步骤流程图（React Flow 渲染）
+- [x] **HAND-STEP-01**: 用户可以查看 Hand 的步骤流程图（React Flow 渲染）
   - Acceptance: Hands 详情页显示步骤节点和连接线
   - Steps: sequential, conditional, loop, wait-for-user
 
 - [ ] **HAND-STEP-02**: 用户可以手动编辑 Hand 的步骤
   - Acceptance: 添加、删除、修改步骤；配置步骤参数；设置步骤间流转
 
-- [ ] **HAND-STEP-03**: Agent 可以动态创建 Hand
+- [x] **HAND-STEP-03**: Agent 可以动态创建 Hand
   - Acceptance: Agent 通过 tool call 创建新 Hand；返回 Hand ID；新 Hand 出现在列表中
 
-- [ ] **HAND-STEP-04**: Agent 可以修改 Hand 的步骤
+- [x] **HAND-STEP-04**: Agent 可以修改 Hand 的步骤
   - Acceptance: Agent 通过 tool call 添加/删除/修改步骤；变更持久化到存储
 
 - [ ] **HAND-STEP-05**: 用户可以将 Agent 执行流程总结为 Hand
@@ -41,7 +41,7 @@
 
 ### UI 组件 (UI)
 
-- [ ] **UI-01**: React Flow 集成 — 步骤流程图渲染
+- [x] **UI-01**: React Flow 集成 — 步骤流程图渲染
 - [ ] **UI-02**: 步骤编辑器 — 节点拖拽、属性面板、连线编辑
 - [ ] **UI-03**: 步骤类型选择器 — 创建步骤时选择类型
 - [ ] **UI-04**: 执行状态指示器 — 实时显示步骤执行状态
