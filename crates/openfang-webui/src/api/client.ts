@@ -7,7 +7,8 @@ import type {
   McpServersResponse,
   Hand, HandInstance, HandStats, HandBrowserState, InstallDepsResponse,
   Profile, Template, Provider,
-  AuthCheckResponse, AuthLoginRequest, AuthLoginResponse, AuthLogoutResponse
+  AuthCheckResponse, AuthLoginRequest, AuthLoginResponse, AuthLogoutResponse,
+  GetHandStepsResponse, UpdateHandStepsRequest, HandStep
 } from './types';
 import { getApiBaseUrl, getWsBaseUrl } from '@/lib/tauri';
 
@@ -602,6 +603,17 @@ class ExtendedAPIClient extends APIClient {
 
   async getHandInstanceBrowser(id: string): Promise<HandBrowserState> {
     return this.get(`/api/hands/instances/${id}/browser`);
+  }
+
+  // ===== Hand Steps Operations =====
+
+  async getHandSteps(handId: string): Promise<GetHandStepsResponse> {
+    return this.get(`/api/hands/${handId}/steps`);
+  }
+
+  async updateHandSteps(handId: string, steps: HandStep[]): Promise<void> {
+    const body: UpdateHandStepsRequest = { steps };
+    await this.put(`/api/hands/${handId}/steps`, body);
   }
 
   // ===== Templates Operations =====

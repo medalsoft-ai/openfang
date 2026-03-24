@@ -589,7 +589,112 @@ export interface Peer {
   last_seen?: string;
 }
 
-// Migration types
+// Step types for Hand workflow
+export type StepTypeVariant =
+  | 'execute-tool'
+  | 'send-message'
+  | 'wait-for-input'
+  | 'condition'
+  | 'loop'
+  | 'sub-hand';
+
+// Base step configuration
+export interface BaseStepConfig {
+  [key: string]: unknown;
+}
+
+// Execute tool step
+export interface ExecuteToolConfig extends BaseStepConfig {
+  toolName: string;
+  input?: Record<string, unknown>;
+}
+
+// Send message step
+export interface SendMessageConfig extends BaseStepConfig {
+  content: string;
+  targetAgent?: string;
+}
+
+// Wait for input step
+export interface WaitForInputConfig extends BaseStepConfig {
+  prompt: string;
+  timeoutSecs?: number;
+}
+
+// Condition step
+export interface ConditionConfig extends BaseStepConfig {
+  expression: string;
+  trueBranch: string;
+  falseBranch: string;
+}
+
+// Loop step
+export interface LoopConfig extends BaseStepConfig {
+  iterator: string;
+  items: string;
+  body: string[];
+}
+
+// Sub-hand step
+export interface SubHandConfig extends BaseStepConfig {
+  handId: string;
+  inputMapping?: Record<string, unknown>;
+}
+
+// Union type for all step configs
+export type StepConfig =
+  | ExecuteToolConfig
+  | SendMessageConfig
+  | WaitForInputConfig
+  | ConditionConfig
+  | LoopConfig
+  | SubHandConfig;
+
+// Hand step definition
+export interface HandStep {
+  id: string;
+  name: string;
+  type: StepTypeVariant;
+  config: StepConfig;
+  nextSteps: string[];
+}
+
+// React Flow node data
+export interface StepNodeData {
+  step: HandStep;
+  label: string;
+}
+
+// React Flow extensions
+export interface ReactFlowNode {
+  id: string;
+  type: string;
+  position: { x: number; y: number };
+  data: StepNodeData;
+}
+
+export interface ReactFlowEdge {
+  id: string;
+  source: string;
+  target: string;
+  label?: string;
+  type?: string;
+}
+
+// API request/response types
+export interface GetHandStepsResponse {
+  steps: HandStep[];
+  nodes?: ReactFlowNode[];
+  edges?: ReactFlowEdge[];
+}
+
+export interface UpdateHandStepsRequest {
+  steps: HandStep[];
+}
+
+// API function types
+export type GetHandStepsFunction = (handId: string) => Promise<GetHandStepsResponse>;
+export type UpdateHandStepsFunction = (handId: string, steps: HandStep[]) => Promise<void>;
 export interface MigrationScanResult {
   agents: number;
   sessions: number;
