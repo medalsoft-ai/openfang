@@ -126,7 +126,9 @@ function MessageContent({ content }: { content: string }) {
             const match = /language-(\w+)/.exec(className || '');
             const value = String(children).replace(/\n$/, '');
 
-            if (inline) {
+            // Fix: Check inline !== false to handle undefined safely
+            // When inline is undefined, treat it as inline code to avoid div-inside-p errors
+            if (inline !== false) {
               return (
                 <code className="px-1.5 py-0.5 rounded-md bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300 text-sm font-mono" {...props}>
                   {children}
