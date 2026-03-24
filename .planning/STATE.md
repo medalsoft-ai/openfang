@@ -3,13 +3,13 @@
 ## Current Position
 
 Phase: 1 — Core Foundation
-Plan: 01-05 — React Flow UI (next)
-Status: Wave 3 Complete — Agent tools implemented
-Last activity: 2026-03-25 — Completed Wave 3 (01-04)
+Plan: 01-06 — Integration Testing (next)
+Status: Wave 4 Complete — React Flow UI implemented
+Last activity: 2026-03-25 — Completed Wave 4 (01-05)
 
 ## Active Threads
 
-- Phase 1 Execution — Wave 3 complete, ready for Wave 4
+- Phase 1 Execution — Wave 4 complete, ready for Wave 5
 
 ## Execution Plan
 
@@ -18,8 +18,23 @@ Last activity: 2026-03-25 — Completed Wave 3 (01-04)
 | 1 | 01-01, 01-02 | Data models (Rust + TypeScript) | **Complete** |
 | 2 | 01-03 | API endpoints | **Complete** |
 | 3 | 01-04 | Agent tools | **Complete** |
-| 4 | 01-05 | React Flow UI | Ready |
+| 4 | 01-05 | React Flow UI | **Complete** |
 | 5 | 01-06 | Integration testing | Ready |
+
+## Completed Work (Wave 4)
+
+### Plan 01-05: Implement React Flow Visualization
+- **Commits:** 81c3283, 28e4221, 0e75164
+- **Files:**
+  - `crates/openfang-webui/src/components/flow/StepNode.tsx` (new)
+  - `crates/openfang-webui/src/components/flow/FlowCanvas.tsx` (new)
+  - `crates/openfang-webui/src/pages/Hands.tsx` (modified)
+- **Deliverables:**
+  - StepNode component with type-specific colors/icons
+  - FlowCanvas component with auto-layout algorithm
+  - Flow tab in Hands page with React Flow diagram
+  - Integration with getHandSteps API
+  - TypeScript build passing
 
 ## Completed Work (Wave 3)
 
@@ -80,6 +95,7 @@ Last activity: 2026-03-25 — Completed Wave 3 (01-04)
 | Step type schema | Tagged union with `type` discriminator | 01-01-PLAN.md |
 | Agent tools | `hand_create` + `hand_update_steps` | 01-04-PLAN.md |
 | React Flow transform | Frontend-side nodes/edges generation | 01-05-PLAN.md |
+| Layout approach | Tabbed interface (Details/Flow) | 01-05-SUMMARY.md |
 
 ### Pending Decisions (Future Phases)
 1. Agent Chat Editor prompt design — Phase 2
@@ -90,7 +106,7 @@ Last activity: 2026-03-25 — Completed Wave 3 (01-04)
 
 | Phase | Name | Key Deliverable | Requirements | Status |
 |-------|------|-----------------|--------------|--------|
-| 1 | Core Foundation | 完整的 Hand+Step 底层系统 | 10 | Wave 3 Complete |
+| 1 | Core Foundation | 完整的 Hand+Step 底层系统 | 10 | Wave 4 Complete |
 | 2 | Dual Editor | 可视化编辑器 + Agent 对话编辑器 | 8 | Not Started |
 | 3 | Execution Engine | 步骤执行与状态跟踪 | 4 | Not Started |
 | 4 | Session to Hand | 从 Session 生成 Hand | 2 | Not Started |
@@ -106,6 +122,7 @@ Last activity: 2026-03-25 — Completed Wave 3 (01-04)
 - `.planning/phases/01-core-foundation/01-04-agent-tools-PLAN.md` — Wave 3: Agent tools
 - `.planning/phases/01-core-foundation/01-04-agent-tools-SUMMARY.md` — Wave 3 complete
 - `.planning/phases/01-core-foundation/01-05-react-flow-viz-PLAN.md` — Wave 4: React Flow UI
+- `.planning/phases/01-core-foundation/01-05-react-flow-viz-SUMMARY.md` — Wave 4 complete
 - `.planning/phases/01-core-foundation/01-06-integration-testing-PLAN.md` — Wave 5: Integration tests
 - `.planning/phases/01-core-foundation/CHANGELOG.md` — Implementation tracking
 - `.planning/phases/01-core-foundation/PLAN.md.archive` — Original monolithic plan (archived)
