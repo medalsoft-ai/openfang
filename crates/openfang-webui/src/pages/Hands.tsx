@@ -19,7 +19,8 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { api } from '@/api/client';
-import type { Hand, HandInstance, HandRequirement, HandSetting } from '@/api/types';
+import type { Hand, HandInstance, HandRequirement, HandSetting, HandStep } from '@/api/types';
+import { FlowCanvas } from '@/components/flow/FlowCanvas';
 import { toaster } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import { toggleFullscreen, isFullscreen } from '@/lib/tauri';
@@ -944,6 +945,9 @@ export function Hands() {
   const queryClient = useQueryClient();
   const [selectedHand, setSelectedHand] = useState<Hand | null>(null);
   const [showEditor, setShowEditor] = useState(false);
+  const [activeTab, setActiveTab] = useState<'details' | 'flow'>('details');
+  const [steps, setSteps] = useState<HandStep[]>([]);
+  const [stepsLoading, setStepsLoading] = useState(false);
 
   // Fetch hands
   const { data: hands = [], isLoading, error, refetch } = useQuery<Hand[]>({
@@ -1040,6 +1044,22 @@ export function Hands() {
       setSelectedHand(hands[0]);
     }
   }, [hands, selectedHand]);
+
+  // Fetch steps when selected hand changes
+  useEffect(() => {
+    if (selectedHand) {
+      setStepsLoading(true);
+      api.getHandSteps(selectedHand.id)
+        .then((response) => {
+          setSteps(response.steps || []);
+        })
+        .catch((err) => {
+          console.error('Failed to load steps:', err);
+          setSteps([]);
+        })
+        .finally(() => setStepsLoading(false));
+    }
+  }, [selectedHand]);
 
   const handleActivate = () => {
     if (displayHand) {
@@ -1159,10 +1179,37 @@ export function Hands() {
                   </div>
                 ) : (
                   <>
-                    {/* Steps & Flowchart - Side by Side Layout */}
-                    <div className="flex-1 flex gap-4 min-h-0">
-                      {/* Left: Steps List */}
-                      <div className="w-1/2 p-5 rounded-2xl bg-gradient-to-br from-violet-50/50 to-purple-50/30 border border-violet-100 overflow-auto">
+                    {/* Tab Navigation */}
+                    <div className="flex gap-1 p-1 bg-gray-100/50 rounded-xl mb-2">
+                      <button
+                        className={cn(
+                          'flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all',
+                          activeTab === 'details'
+                            ? 'bg-white text-violet-600 shadow-sm'
+                            : 'text-gray-500 hover:text-gray-700'
+                        )}
+                        onClick={() => setActiveTab('details')}
+                      >
+                        <List className="w-4 h-4" />
+                        {t('sop.details', 'Details')}
+                      </button>
+                      <button
+                        className={cn(
+                          'flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all',
+                          activeTab === 'flow'
+                            ? 'bg-white text-violet-600 shadow-sm'
+                            : 'text-gray-500 hover:text-gray-700'
+                        )}
+                        onClick={() => setActiveTab('flow')}
+                      >
+                        <GitBranch className="w-4 h-4" />
+                        {t('sop.flow', 'Flow')}
+                      </button>
+                    </div>
+
+                    {/* Tab Content */}
+                    {activeTab === 'details' && (
+                      <div className="flex-1 p-5 rounded-2xl bg-gradient-to-br from-violet-50/50 to-purple-50/30 border border-violet-100 overflow-auto">
                         <h3 className="text-sm font-semibold text-gray-700 mb-4 flex items-center gap-2">
                           <List className="w-4 h-4 text-violet-500" />
                           {t('sop.executionSteps', 'Execution Steps')}
@@ -1177,25 +1224,26 @@ export function Hands() {
                           })) || []}
                         />
                       </div>
+                    )}
 
-                      {/* Right: Flowchart */}
-                      <div className="w-1/2 p-5 rounded-2xl bg-white shadow-[0_4px_20px_rgba(139,92,246,0.06)] border border-white/50 flex flex-col">
+                    {activeTab === 'flow' && (
+                      <div className="flex-1 p-5 rounded-2xl bg-white shadow-[0_4px_20px_rgba(139,92,246,0.06)] border border-white/50 flex flex-col">
                         <h3 className="text-sm font-semibold text-gray-700 mb-4 flex items-center gap-2">
                           <GitBranch className="w-4 h-4 text-violet-500" />
                           {t('sop.processFlow', 'Process Flow')}
                         </h3>
                         <div className="flex-1 min-h-0">
-                          <FlowchartDiagram
-                            steps={displayHand.tools?.map((tool, index) => ({
-                              id: `step-${index}`,
-                              order: index + 1,
-                              title: tool,
-                              tool: tool,
-                            })) || []}
-                          />
+                          {stepsLoading ? (
+                            <div className="flex items-center justify-center h-full text-gray-400">
+                              <Loader2 className="w-6 h-6 animate-spin mr-2" />
+                              {t('sop.loadingFlow', 'Loading flow...')}
+                            </div>
+                          ) : (
+                            <FlowCanvas steps={steps} readOnly />
+                          )}
                         </div>
                       </div>
-                    </div>
+                    )}
                   </>
                 )}
               </div>
