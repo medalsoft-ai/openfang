@@ -3,13 +3,13 @@
 ## Current Position
 
 Phase: 1 — Core Foundation
-Plan: 01-04 — Agent Tools (next)
-Status: Wave 2 Complete — API endpoints implemented
-Last activity: 2026-03-25 — Completed Wave 2 (01-03)
+Plan: 01-05 — React Flow UI (next)
+Status: Wave 3 Complete — Agent tools implemented
+Last activity: 2026-03-25 — Completed Wave 3 (01-04)
 
 ## Active Threads
 
-- Phase 1 Execution — Wave 2 complete, ready for Wave 3
+- Phase 1 Execution — Wave 3 complete, ready for Wave 4
 
 ## Execution Plan
 
@@ -17,9 +17,21 @@ Last activity: 2026-03-25 — Completed Wave 2 (01-03)
 |------|-------|-------------|--------|
 | 1 | 01-01, 01-02 | Data models (Rust + TypeScript) | **Complete** |
 | 2 | 01-03 | API endpoints | **Complete** |
-| 3 | 01-04 | Agent tools | Ready |
+| 3 | 01-04 | Agent tools | **Complete** |
 | 4 | 01-05 | React Flow UI | Ready |
 | 5 | 01-06 | Integration testing | Ready |
+
+## Completed Work (Wave 3)
+
+### Plan 01-04: Create Agent Tools for Hand Management
+- **Commit:** 6ca179d
+- **Files:** `crates/openfang-runtime/src/kernel_handle.rs`, `crates/openfang-runtime/src/tool_runner.rs`, `crates/openfang-kernel/src/kernel.rs`
+- **Deliverables:**
+  - `hand_create` tool for creating Hands with steps
+  - `hand_update_steps` tool for modifying Hand steps
+  - Support for all 6 step types (execute-tool, send-message, wait-for-input, condition, loop, sub-hand)
+  - Operations: add, update, delete, replace
+  - 825 tests passing, clippy clean
 
 ## Completed Work (Wave 2)
 
@@ -78,7 +90,7 @@ Last activity: 2026-03-25 — Completed Wave 2 (01-03)
 
 | Phase | Name | Key Deliverable | Requirements | Status |
 |-------|------|-----------------|--------------|--------|
-| 1 | Core Foundation | 完整的 Hand+Step 底层系统 | 10 | Wave 2 Complete |
+| 1 | Core Foundation | 完整的 Hand+Step 底层系统 | 10 | Wave 3 Complete |
 | 2 | Dual Editor | 可视化编辑器 + Agent 对话编辑器 | 8 | Not Started |
 | 3 | Execution Engine | 步骤执行与状态跟踪 | 4 | Not Started |
 | 4 | Session to Hand | 从 Session 生成 Hand | 2 | Not Started |
@@ -92,6 +104,7 @@ Last activity: 2026-03-25 — Completed Wave 2 (01-03)
 - `.planning/phases/01-core-foundation/01-03-steps-api-endpoints-PLAN.md` — Wave 2: API endpoints
 - `.planning/phases/01-core-foundation/01-03-steps-api-endpoints-SUMMARY.md` — Wave 2 complete
 - `.planning/phases/01-core-foundation/01-04-agent-tools-PLAN.md` — Wave 3: Agent tools
+- `.planning/phases/01-core-foundation/01-04-agent-tools-SUMMARY.md` — Wave 3 complete
 - `.planning/phases/01-core-foundation/01-05-react-flow-viz-PLAN.md` — Wave 4: React Flow UI
 - `.planning/phases/01-core-foundation/01-06-integration-testing-PLAN.md` — Wave 5: Integration tests
 - `.planning/phases/01-core-foundation/CHANGELOG.md` — Implementation tracking
