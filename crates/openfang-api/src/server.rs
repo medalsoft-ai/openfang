@@ -396,6 +396,10 @@ pub async fn build_router(
             axum::routing::get(routes::get_hand_settings).put(routes::update_hand_settings),
         )
         .route(
+            "/api/hands/{hand_id}/steps",
+            axum::routing::get(routes::get_hand_steps).put(routes::update_hand_steps),
+        )
+        .route(
             "/api/hands/instances/{id}/pause",
             axum::routing::post(routes::pause_hand),
         )
