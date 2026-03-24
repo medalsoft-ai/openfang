@@ -12,7 +12,7 @@
 
 ## Phases
 
-- [ ] **Phase 1: Core Foundation** — 数据模型 + API + Agent Tools + 基础展示
+- [x] **Phase 1: Core Foundation** — 数据模型 + API + Agent Tools + 基础展示
 - [ ] **Phase 2: Dual Editor** — 流程图可视化编辑 + 聊天/Agent 对话编辑
 - [ ] **Phase 3: Execution Engine** — 步骤执行、状态跟踪、LLM 集成
 - [ ] **Phase 4: Session to Hand** — 从 Agent Session 生成 Hand
@@ -38,7 +38,18 @@
   9. 变更持久化到存储（TOML 或 JSON）
   10. 新创建的 Hand 立即出现在 Hands 列表中
 
-**Plans**: TBD
+**Plans**:
+- [ ] `phases/01-core-foundation/PLAN.md` — Detailed execution plan
+- [ ] `phases/01-core-foundation/CHANGELOG.md` — Implementation tracking
+
+**Tasks**:
+1. [x] Task 1.1: Define Step Types in openfang-hands (Data Model) — **Complete**
+2. [ ] Task 1.2: Implement Steps API Endpoints (GET/PUT)
+3. [ ] Task 1.3: Create Agent Tools (hand_create, hand_update_steps)
+4. [x] Task 1.4: Add TypeScript Types for Steps — **Complete**
+5. [ ] Task 1.5: Implement React Flow Visualization
+6. [ ] Task 1.6: Integration Testing
+
 **UI hint**: yes
 
 ---
@@ -132,10 +143,10 @@
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Core Foundation | 0/10 | Not started | - |
-| 2. Dual Editor | 0/16 | Not started | - |
-| 3. Execution Engine | 0/8 | Not started | - |
-| 4. Session to Hand | 0/6 | Not started | - |
+| 1. Core Foundation | 2/6 | Wave 1 Complete | 01-01, 01-02 done |
+| 2. Dual Editor | 0/1 | Not started | - |
+| 3. Execution Engine | 0/1 | Not started | - |
+| 4. Session to Hand | 0/1 | Not started | - |
 
 ## Coverage
 

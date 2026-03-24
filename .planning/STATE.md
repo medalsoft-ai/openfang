@@ -2,14 +2,45 @@
 
 ## Current Position
 
-Phase: Planning
-Plan: —
-Status: Roadmap v3 created (dual editor approach), awaiting approval
-Last activity: 2026-03-25 — Redesigned roadmap with Phase 2 as dual editor
+Phase: 1 — Core Foundation
+Plan: 01-03 — Steps API Endpoints (next)
+Status: Wave 1 Complete — Data models implemented
+Last activity: 2026-03-25 — Completed Wave 1 (01-01, 01-02)
 
 ## Active Threads
 
-None
+- Phase 1 Execution — Wave 1 complete, ready for Wave 2
+
+## Execution Plan
+
+| Wave | Plans | Description | Status |
+|------|-------|-------------|--------|
+| 1 | 01-01, 01-02 | Data models (Rust + TypeScript) | **Complete** |
+| 2 | 01-03 | API endpoints | Ready |
+| 3 | 01-04 | Agent tools | Ready |
+| 4 | 01-05 | React Flow UI | Ready |
+| 5 | 01-06 | Integration testing | Ready |
+
+## Completed Work (Wave 1)
+
+### Plan 01-01: Define Step Types in openfang-hands
+- **Commit:** 4659c06
+- **Files:** `crates/openfang-hands/src/steps.rs` (new), `crates/openfang-hands/src/lib.rs`
+- **Deliverables:**
+  - HandStep struct with id, name, step_type, next_steps
+  - 6 StepType variants (execute-tool, send-message, wait-for-input, condition, loop, sub-hand)
+  - TOML serialization with [[steps]] array syntax
+  - 15 new unit tests (all passing)
+
+### Plan 01-02: Add TypeScript Types for Steps
+- **Commit:** f94a00a
+- **Files:** `crates/openfang-webui/src/api/types.ts`, `crates/openfang-webui/src/api/client.ts`
+- **Deliverables:**
+  - StepTypeVariant union type
+  - StepConfig discriminated union
+  - HandStep interface with camelCase fields
+  - React Flow node/edge types for future visualization
+  - getHandSteps() and updateHandSteps() API methods
 
 ## Accumulated Context
 
@@ -18,52 +49,41 @@ None
 - Key files: crates/openfang-webui/src/pages/Chat.tsx
 - Patterns: claymorphism, spring-animations, reduced-motion
 
-### Technical Decisions Pending
-1. React Flow version: @xyflow/react (confirmed)
-2. Step storage format: TOML extension vs separate steps.json — Need decision in Phase 1
-3. Agent Tool design: hand_create + hand_update_steps API shape — Need spec in Phase 1 plan
-4. Agent Chat Editor prompt design: How Agent understands step editing intent
-5. Visual vs Chat editor state sync: How changes reflect in real-time
+### Technical Decisions Made (Phase 1 Plan)
+
+| Decision | Choice | Location |
+|----------|--------|----------|
+| Step storage format | TOML extension with `[[steps]]` array | 01-01-PLAN.md |
+| Step type schema | Tagged union with `type` discriminator | 01-01-PLAN.md |
+| Agent tools | `hand_create` + `hand_update_steps` | 01-04-PLAN.md |
+| React Flow transform | Frontend-side nodes/edges generation | 01-05-PLAN.md |
+
+### Pending Decisions (Future Phases)
+1. Agent Chat Editor prompt design — Phase 2
+2. Visual vs Chat editor state sync — Phase 2
+3. Step execution engine approach (prompt-based vs engine-based) — Phase 3
 
 ### Phase Summary (v3 — Dual Editor)
 
-| Phase | Name | Key Deliverable | Requirements |
-|-------|------|-----------------|--------------|
-| 1 | Core Foundation | 完整的 Hand+Step 底层系统 | 10 |
-| 2 | Dual Editor | 可视化编辑器 + Agent 对话编辑器 | 8 |
-| 3 | Execution Engine | 步骤执行与状态跟踪 | 4 |
-| 4 | Session to Hand | 从 Session 生成 Hand | 2 |
+| Phase | Name | Key Deliverable | Requirements | Status |
+|-------|------|-----------------|--------------|--------|
+| 1 | Core Foundation | 完整的 Hand+Step 底层系统 | 10 | Wave 1 Complete |
+| 2 | Dual Editor | 可视化编辑器 + Agent 对话编辑器 | 8 | Not Started |
+| 3 | Execution Engine | 步骤执行与状态跟踪 | 4 | Not Started |
+| 4 | Session to Hand | 从 Session 生成 Hand | 2 | Not Started |
 
-### Phase 2 Dual Editor 详细设计
+## Artifacts
 
-**模式 A: 流程图编辑 (Visual Editor)**
-```
-Hand 详情页 → 点击"Edit" → 进入编辑模式
-├── 左侧: 步骤类型 Palette (拖拽源)
-├── 中央: React Flow 画布 (节点 + 边)
-│   ├── 拖拽节点调整位置
-│   ├── 拖拽连接创建 next_steps
-│   └── 点击节点打开属性面板
-└── 右侧: 属性面板 (编辑 name, type, config)
-```
-
-**模式 B: 聊天编辑 (Agent Editor)**
-```
-Hand 详情页 → 点击"Chat Edit" → 打开对话界面
-├── 用户: "在步骤2后添加一个条件分支，检查用户是否确认"
-├── Agent:
-│   ├── 理解意图 → 生成新步骤结构
-│   ├── 展示预览: "将在步骤2后添加: 步骤3(condition) → 步骤4(if-yes), 步骤5(if-no)"
-│   └── 询问确认
-├── 用户: "确认"
-└── Agent: 调用 hand_update_steps → 刷新流程图
-```
-
-**关键技术点:**
-- 两种模式共用 PUT /api/hands/{id}/steps
-- Agent 编辑器需要专用 system prompt 理解步骤结构
-- 需要步骤 diff 算法展示变更预览
-- 聊天编辑支持增量和全量两种模式
+- `.planning/phases/01-core-foundation/01-01-define-step-types-PLAN.md` — Wave 1: Rust data models
+- `.planning/phases/01-core-foundation/01-01-define-step-types-SUMMARY.md` — Wave 1 complete
+- `.planning/phases/01-core-foundation/01-02-typescript-types-PLAN.md` — Wave 1: TypeScript types
+- `.planning/phases/01-core-foundation/01-02-typescript-types-SUMMARY.md` — Wave 1 complete
+- `.planning/phases/01-core-foundation/01-03-steps-api-endpoints-PLAN.md` — Wave 2: API endpoints
+- `.planning/phases/01-core-foundation/01-04-agent-tools-PLAN.md` — Wave 3: Agent tools
+- `.planning/phases/01-core-foundation/01-05-react-flow-viz-PLAN.md` — Wave 4: React Flow UI
+- `.planning/phases/01-core-foundation/01-06-integration-testing-PLAN.md` — Wave 5: Integration tests
+- `.planning/phases/01-core-foundation/CHANGELOG.md` — Implementation tracking
+- `.planning/phases/01-core-foundation/PLAN.md.archive` — Original monolithic plan (archived)
 
 ---
 *Last updated: 2026-03-25*
