@@ -9,8 +9,11 @@ use crate::execution_store::{
 use crate::step_variable_resolver::VariableResolver;
 use openfang_hands::steps::{HandStep, StepType};
 use openfang_types::error::{OpenFangError, OpenFangResult};
+use openfang_types::tool::{ToolDefinition, ToolResult};
 use std::collections::HashMap;
-use tokio::sync::{broadcast, RwLock};
+use std::sync::Arc;
+use tokio::sync::broadcast;
+use tokio::sync::RwLock;
 
 /// In-memory state for an active execution
 #[derive(Debug, Clone)]
@@ -314,6 +317,121 @@ impl HandExecutor {
             step.next_steps.clone()
         } else {
             vec![]
+        }
+    }
+}
+
+/// Tool for Agent to report step completion
+pub struct HandReportStepTool {
+    executor: Arc<HandExecutor>,
+}
+
+impl HandReportStepTool {
+    /// Create a new HandReportStepTool with the given executor
+    pub fn new(executor: Arc<HandExecutor>) -> Self {
+        Self { executor }
+    }
+
+    /// Get the tool definition for hand_report_step
+    pub fn definition() -> ToolDefinition {
+        ToolDefinition {
+            name: "hand_report_step".to_string(),
+            description: "Report the completion status of a Hand execution step".to_string(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "execution_id": {
+                        "type": "string",
+                        "description": "The execution ID"
+                    },
+                    "step_id": {
+                        "type": "string",
+                        "description": "The ID of the step being reported"
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": ["completed", "failed"],
+                        "description": "The completion status"
+                    },
+                    "output": {
+                        "type": "object",
+                        "description": "The output/result of the step (JSON)"
+                    },
+                    "error": {
+                        "type": "string",
+                        "description": "Error message if status is failed"
+                    }
+                },
+                "required": ["execution_id", "step_id", "status"]
+            }),
+        }
+    }
+
+    /// Execute the hand_report_step tool
+    pub async fn execute(&self, args: serde_json::Value) -> ToolResult {
+        let execution_id = match args["execution_id"].as_str() {
+            Some(id) => id,
+            None => return ToolResult {
+                tool_use_id: "hand_report_step".to_string(),
+                content: "execution_id is required".to_string(),
+                is_error: true,
+            },
+        };
+        let step_id = match args["step_id"].as_str() {
+            Some(id) => id,
+            None => return ToolResult {
+                tool_use_id: "hand_report_step".to_string(),
+                content: "step_id is required".to_string(),
+                is_error: true,
+            },
+        };
+        let status = match args["status"].as_str() {
+            Some(s) => s,
+            None => return ToolResult {
+                tool_use_id: "hand_report_step".to_string(),
+                content: "status is required".to_string(),
+                is_error: true,
+            },
+        };
+
+        match status {
+            "completed" => {
+                let output = args.get("output").cloned()
+                    .unwrap_or(serde_json::json!({}));
+                match self.executor.complete_step(execution_id, step_id, output).await {
+                    Ok(_) => ToolResult {
+                        tool_use_id: "hand_report_step".to_string(),
+                        content: serde_json::json!({"status": "recorded", "next_step": "Continue to next step"}).to_string(),
+                        is_error: false,
+                    },
+                    Err(e) => ToolResult {
+                        tool_use_id: "hand_report_step".to_string(),
+                        content: format!("Failed to complete step: {}", e),
+                        is_error: true,
+                    },
+                }
+            }
+            "failed" => {
+                let error = args["error"].as_str()
+                    .unwrap_or("Unknown error");
+                match self.executor.fail_step(execution_id, step_id, error.to_string()).await {
+                    Ok(_) => ToolResult {
+                        tool_use_id: "hand_report_step".to_string(),
+                        content: serde_json::json!({"status": "recorded", "action_required": "Step failed - retry or skip"}).to_string(),
+                        is_error: false,
+                    },
+                    Err(e) => ToolResult {
+                        tool_use_id: "hand_report_step".to_string(),
+                        content: format!("Failed to record failure: {}", e),
+                        is_error: true,
+                    },
+                }
+            }
+            _ => ToolResult {
+                tool_use_id: "hand_report_step".to_string(),
+                content: format!("Invalid status: {}", status),
+                is_error: true,
+            },
         }
     }
 }
