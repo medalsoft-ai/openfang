@@ -13,7 +13,7 @@
 ## Phases
 
 - [x] **Phase 1: Core Foundation** — 数据模型 + API + Agent Tools + 基础展示
-- [ ] **Phase 2: Dual Editor** — 流程图可视化编辑 + 聊天/Agent 对话编辑
+- [x] **Phase 2: Dual Editor** — 流程图可视化编辑 + 聊天/Agent 对话编辑
 - [ ] **Phase 3: Execution Engine** — 步骤执行、状态跟踪、LLM 集成
 - [ ] **Phase 4: Session to Hand** — 从 Agent Session 生成 Hand
 
@@ -39,8 +39,14 @@
   10. 新创建的 Hand 立即出现在 Hands 列表中
 
 **Plans**:
-- [ ] `phases/01-core-foundation/PLAN.md` — Detailed execution plan
-- [ ] `phases/01-core-foundation/CHANGELOG.md` — Implementation tracking
+- [x] `phases/01-core-foundation/01-01-define-step-types-PLAN.md` — Wave 1: Data models
+- [x] `phases/01-core-foundation/01-02-typescript-types-PLAN.md` — Wave 1: TypeScript types
+- [x] `phases/01-core-foundation/01-03-steps-api-endpoints-PLAN.md` — Wave 2: API endpoints
+- [x] `phases/01-core-foundation/01-04-agent-tools-PLAN.md` — Wave 3: Agent tools
+- [x] `phases/01-core-foundation/01-05-react-flow-viz-PLAN.md` — Wave 4: React Flow UI
+- [x] `phases/01-core-foundation/01-06-integration-testing-PLAN.md` — Wave 5: Integration tests
+- [x] `phases/01-core-foundation/CHANGELOG.md` — Implementation tracking
+- [x] `phases/01-core-foundation/VERIFICATION.md` — Phase verification
 
 **Tasks**:
 1. [x] Task 1.1: Define Step Types in openfang-hands (Data Model) — **Complete**
@@ -48,7 +54,7 @@
 3. [x] Task 1.3: Create Agent Tools (hand_create, hand_update_steps) — **Complete**
 4. [x] Task 1.4: Add TypeScript Types for Steps — **Complete**
 5. [x] Task 1.5: Implement React Flow Visualization — **Complete**
-6. [ ] Task 1.6: Integration Testing
+6. [x] Task 1.6: Integration Testing — **Complete**
 
 **UI hint**: yes
 
@@ -87,7 +93,10 @@
 - 聊天编辑适合：快速迭代、自然语言描述
 - Agent 需要 Hand 编辑专用 prompt，理解步骤结构和变更语义
 
-**Plans**: TBD
+**Plans**:
+- [x] `phases/02-design-system/02-CONTEXT.md` — Decisions from discuss-phase
+- [x] `phases/02-design-system/02-PLAN.md` — 4-wave implementation plan
+
 **UI hint**: yes
 
 ---
@@ -112,7 +121,14 @@
 - 状态存储在内存或 SQLite
 - WebSocket 推送状态变更到前端
 
-**Plans**: TBD
+**Plans**:
+- [ ] `phases/03-execution-engine/03-PLAN.md` — Master plan with 5 waves
+- [x] `phases/03-execution-engine/03-01-store-PLAN.md` — Wave 1: SQLite schema + ExecutionStore
+- [ ] `phases/03-execution-engine/03-02-executor-PLAN.md` — Wave 2: Variable resolver + State machine
+- [ ] `phases/03-execution-engine/03-03-api-PLAN.md` — Wave 3: API endpoints
+- [ ] `phases/03-execution-engine/03-04-websocket-PLAN.md` — Wave 4: WebSocket + UI status
+- [ ] `phases/03-execution-engine/03-05-integration-PLAN.md` — Wave 5: Hand execution prompt + Integration
+
 **UI hint**: yes
 
 ---
@@ -143,9 +159,9 @@
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Core Foundation | 5/6 | Wave 4 Complete | 01-01, 01-02, 01-03, 01-04, 01-05 done |
-| 2. Dual Editor | 0/1 | Not started | - |
-| 3. Execution Engine | 0/1 | Not started | - |
+| 1. Core Foundation | 6/6 | **Complete** | All 6 plans done, VERIFICATION.md created |
+| 2. Dual Editor | 1/1 | **Complete** | 4 waves done (1a, 1b, 2, 3), Chat Editor implemented |
+| 3. Execution Engine | 1/6 | **In Progress** | 03-01 Execution Store complete, 5 waves remaining |
 | 4. Session to Hand | 0/1 | Not started | - |
 
 ## Coverage
@@ -161,7 +177,7 @@
 | HAND-STEP-04 | 1 | Agent modifies Hand steps |
 | HAND-STEP-05 | 4 | Session to Hand conversion |
 | HAND-STEP-06 | 1 | Step types definition |
-| HAND-STEP-07 | 3 | Step execution status tracking |
+| HAND-STEP-07 | 3 | Step execution status tracking | **Complete** (03-01) |
 | HAND-STEP-08 | 2 | Step data passing |
 | API-01 | 1 | GET /api/hands/{id}/steps |
 | API-02 | 1 | PUT /api/hands/{id}/steps |
@@ -174,4 +190,4 @@
 | UI-04 | 3 | Execution status indicator |
 
 ---
-*Last updated: 2026-03-25*
+*Last updated: 2026-03-25 (Plan 03-01 Complete)*
