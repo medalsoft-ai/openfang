@@ -5,7 +5,7 @@
 use rusqlite::Connection;
 
 /// Current schema version.
-const SCHEMA_VERSION: u32 = 8;
+const SCHEMA_VERSION: u32 = 9;
 
 /// Run all migrations to bring the database up to date.
 pub fn run_migrations(conn: &Connection) -> Result<(), rusqlite::Error> {
@@ -41,6 +41,10 @@ pub fn run_migrations(conn: &Connection) -> Result<(), rusqlite::Error> {
 
     if current_version < 8 {
         migrate_v8(conn)?;
+    }
+
+    if current_version < 9 {
+        migrate_v9(conn)?;
     }
 
     set_schema_version(conn, SCHEMA_VERSION)?;
@@ -328,7 +332,46 @@ fn migrate_v8(conn: &Connection) -> Result<(), rusqlite::Error> {
     Ok(())
 }
 
-#[cfg(test)]
+/// Version 9: Add hand_executions and step_executions tables for Hand execution tracking.
+fn migrate_v9(conn: &Connection) -> Result<(), rusqlite::Error> {
+    conn.execute_batch(
+        "
+        CREATE TABLE IF NOT EXISTS hand_executions (
+            id TEXT PRIMARY KEY,
+            hand_id TEXT NOT NULL,
+            agent_id TEXT NOT NULL,
+            status TEXT NOT NULL,
+            current_step_id TEXT,
+            started_at DATETIME,
+            completed_at DATETIME,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS step_executions (
+            id TEXT PRIMARY KEY,
+            execution_id TEXT NOT NULL,
+            step_id TEXT NOT NULL,
+            status TEXT NOT NULL,
+            input TEXT,
+            output TEXT,
+            error TEXT,
+            retry_count INTEGER DEFAULT 0,
+            started_at DATETIME,
+            completed_at DATETIME,
+            FOREIGN KEY (execution_id) REFERENCES hand_executions(id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_hand_executions_hand_id ON hand_executions(hand_id);
+        CREATE INDEX IF NOT EXISTS idx_hand_executions_agent_id ON hand_executions(agent_id);
+        CREATE INDEX IF NOT EXISTS idx_step_executions_execution_id ON step_executions(execution_id);
+        CREATE INDEX IF NOT EXISTS idx_step_executions_step_id ON step_executions(step_id);
+
+        INSERT OR IGNORE INTO migrations (version, applied_at, description)
+        VALUES (9, datetime('now'), 'Add hand execution tracking tables');
+        ",
+    )?;
+    Ok(())
+}
 mod tests {
     use super::*;
 
@@ -359,5 +402,71 @@ mod tests {
         let conn = Connection::open_in_memory().unwrap();
         run_migrations(&conn).unwrap();
         run_migrations(&conn).unwrap(); // Should not error
+    }
+
+    #[test]
+    fn test_migration_v9_creates_execution_tables() {
+        let conn = Connection::open_in_memory().unwrap();
+        run_migrations(&conn).unwrap();
+
+        // Verify hand_executions table exists
+        let tables: Vec<String> = conn
+            .prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
+            .unwrap()
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .filter_map(|r| r.ok())
+            .collect();
+
+        assert!(
+            tables.contains(&"hand_executions".to_string()),
+            "hand_executions table should exist"
+        );
+        assert!(
+            tables.contains(&"step_executions".to_string()),
+            "step_executions table should exist"
+        );
+
+        // Verify indexes exist
+        let indexes: Vec<String> = conn
+            .prepare("SELECT name FROM sqlite_master WHERE type='index' ORDER BY name")
+            .unwrap()
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .filter_map(|r| r.ok())
+            .collect();
+
+        assert!(
+            indexes.contains(&"idx_hand_executions_hand_id".to_string()),
+            "idx_hand_executions_hand_id index should exist"
+        );
+        assert!(
+            indexes.contains(&"idx_hand_executions_agent_id".to_string()),
+            "idx_hand_executions_agent_id index should exist"
+        );
+        assert!(
+            indexes.contains(&"idx_step_executions_execution_id".to_string()),
+            "idx_step_executions_execution_id index should exist"
+        );
+        assert!(
+            indexes.contains(&"idx_step_executions_step_id".to_string()),
+            "idx_step_executions_step_id index should exist"
+        );
+
+        // Verify schema version is 9
+        let version: u32 = conn
+            .pragma_query_value(None, "user_version", |row| row.get(0))
+            .unwrap();
+        assert_eq!(version, 9, "Schema version should be 9");
+
+        // Verify migration entry exists
+        let mut stmt = conn
+            .prepare("SELECT description FROM migrations WHERE version = 9")
+            .unwrap();
+        let description: String = stmt.query_row([], |row| row.get(0)).unwrap();
+        assert_eq!(
+            description, "Add hand execution tracking tables",
+            "Migration description should match"
+        );
     }
 }
