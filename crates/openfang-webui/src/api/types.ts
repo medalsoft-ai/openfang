@@ -730,3 +730,64 @@ export interface AuthLoginResponse {
 export interface AuthLogoutResponse {
   status: 'ok' | 'error';
 }
+
+// Step execution status
+export interface StepStatusResponse {
+  execution_id: string;
+  step_id: string;
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'waiting';
+  input?: unknown;
+  output?: unknown;
+  error?: string;
+  started_at?: string;
+  completed_at?: string;
+  retry_count: number;
+}
+
+// Execution summary (list view)
+export interface ExecutionSummary {
+  id: string;
+  hand_id: string;
+  agent_id: string;
+  status: string;
+  current_step_id?: string;
+  started_at?: string;
+  completed_at?: string;
+  created_at: string;
+}
+
+// Step execution detail
+export interface StepExecutionDetail {
+  step_id: string;
+  step_name: string;
+  status: string;
+  input?: unknown;
+  output?: unknown;
+  error?: string;
+  started_at?: string;
+  completed_at?: string;
+  retry_count: number;
+}
+
+// Full execution detail
+export interface ExecutionDetail {
+  id: string;
+  hand_id: string;
+  agent_id: string;
+  status: string;
+  current_step_id?: string;
+  started_at?: string;
+  completed_at?: string;
+  created_at: string;
+  steps: StepExecutionDetail[];
+}
+
+// Request types
+export interface ExecuteStepRequest {
+  execution_id: string;
+  input?: unknown;
+}
+
+export interface SubmitInputRequest {
+  input: string;
+}
