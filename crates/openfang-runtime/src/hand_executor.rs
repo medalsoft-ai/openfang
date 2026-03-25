@@ -289,9 +289,24 @@ impl HandExecutor {
         Ok(())
     }
 
-    /// Get execution state
+    /// Get execution state by ID
     pub async fn get_execution_state(&self, execution_id: &str) -> Option<ExecutionState> {
         self.active_executions.read().await.get(execution_id).cloned()
+    }
+
+    /// Get execution state by agent ID
+    pub async fn get_execution_by_agent(&self, agent_id: &str) -> Option<ExecutionState> {
+        let executions = self.active_executions.read().await;
+        executions
+            .values()
+            .find(|state| state.agent_id == agent_id)
+            .cloned()
+    }
+
+    /// Get all active execution states
+    pub async fn get_active_executions(&self) -> Vec<ExecutionState> {
+        let executions = self.active_executions.read().await;
+        executions.values().cloned().collect()
     }
 
     /// Resolve variables for a step input
