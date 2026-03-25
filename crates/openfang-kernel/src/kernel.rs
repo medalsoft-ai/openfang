@@ -1860,6 +1860,23 @@ impl OpenFangKernel {
                 ),
                 sender_id,
                 sender_name,
+                hand_execution_context: {
+                    // Check if this agent has an active Hand execution
+                    // Use block_on since we're in a non-async function
+                    let agent_id_str = agent_id.to_string();
+                    let exec_state = tokio::task::block_in_place(|| {
+                        tokio::runtime::Handle::current().block_on(async {
+                            self.hand_executor.get_execution_by_agent(&agent_id_str).await
+                        })
+                    });
+                    exec_state.map(|state| {
+                        openfang_runtime::hand_execution_prompt::build_hand_execution_prompt(
+                            &state.steps,
+                            state.current_step_id.as_deref(),
+                            &state.step_outputs,
+                        )
+                    })
+                },
             };
             manifest.model.system_prompt =
                 openfang_runtime::prompt_builder::build_system_prompt(&prompt_ctx);
@@ -2404,6 +2421,23 @@ impl OpenFangKernel {
                 ),
                 sender_id,
                 sender_name,
+                hand_execution_context: {
+                    // Check if this agent has an active Hand execution
+                    // Use block_on since we're in a non-async function
+                    let agent_id_str = agent_id.to_string();
+                    let exec_state = tokio::task::block_in_place(|| {
+                        tokio::runtime::Handle::current().block_on(async {
+                            self.hand_executor.get_execution_by_agent(&agent_id_str).await
+                        })
+                    });
+                    exec_state.map(|state| {
+                        openfang_runtime::hand_execution_prompt::build_hand_execution_prompt(
+                            &state.steps,
+                            state.current_step_id.as_deref(),
+                            &state.step_outputs,
+                        )
+                    })
+                },
             };
             manifest.model.system_prompt =
                 openfang_runtime::prompt_builder::build_system_prompt(&prompt_ctx);

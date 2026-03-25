@@ -59,6 +59,8 @@ pub struct PromptContext {
     pub sender_id: Option<String>,
     /// Sender display name.
     pub sender_name: Option<String>,
+    /// Hand execution context - when a Hand is actively executing steps.
+    pub hand_execution_context: Option<String>,
 }
 
 /// Build the complete system prompt from a `PromptContext`.
@@ -169,6 +171,13 @@ pub fn build_system_prompt(ctx: &PromptContext) -> String {
     // Section 10 — Safety & Oversight (skip for subagents)
     if !ctx.is_subagent {
         sections.push(SAFETY_SECTION.to_string());
+    }
+
+    // Section 10.5 — Hand Execution Context (only when Hand is executing)
+    if let Some(ref hand_ctx) = ctx.hand_execution_context {
+        if !hand_ctx.is_empty() {
+            sections.push(hand_ctx.clone());
+        }
     }
 
     // Section 11 — Operational Guidelines (always present)
