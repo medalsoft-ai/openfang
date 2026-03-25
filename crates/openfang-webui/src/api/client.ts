@@ -8,7 +8,8 @@ import type {
   Hand, HandInstance, HandStats, HandBrowserState, InstallDepsResponse,
   Profile, Template, Provider,
   AuthCheckResponse, AuthLoginRequest, AuthLoginResponse, AuthLogoutResponse,
-  GetHandStepsResponse, UpdateHandStepsRequest, HandStep
+  GetHandStepsResponse, UpdateHandStepsRequest, HandStep,
+  StepStatusResponse, ExecutionSummary, ExecutionDetail, ExecuteStepRequest, SubmitInputRequest,
 } from './types';
 import { getApiBaseUrl, getWsBaseUrl } from '@/lib/tauri';
 
@@ -614,6 +615,39 @@ class ExtendedAPIClient extends APIClient {
   async updateHandSteps(handId: string, steps: HandStep[]): Promise<void> {
     const body: UpdateHandStepsRequest = { steps };
     await this.put(`/api/hands/${handId}/steps`, body);
+  }
+
+  // ===== Hand Execution Operations =====
+
+  async getStepStatus(handId: string, stepId: string): Promise<StepStatusResponse> {
+    return this.get(`/api/hands/${handId}/steps/${stepId}/status`);
+  }
+
+  async executeStep(
+    handId: string,
+    stepId: string,
+    executionId: string,
+    input?: unknown
+  ): Promise<{ success: boolean; execution_id: string }> {
+    const body: ExecuteStepRequest = { execution_id: executionId, input };
+    return this.post(`/api/hands/${handId}/steps/${stepId}/execute`, body);
+  }
+
+  async listExecutions(handId: string): Promise<{ executions: ExecutionSummary[] }> {
+    return this.get(`/api/hands/${handId}/executions`);
+  }
+
+  async getExecutionDetail(handId: string, execId: string): Promise<ExecutionDetail> {
+    return this.get(`/api/hands/${handId}/executions/${execId}`);
+  }
+
+  async retryExecution(handId: string, execId: string): Promise<{ success: boolean; message: string }> {
+    return this.post(`/api/hands/${handId}/executions/${execId}/retry`);
+  }
+
+  async submitInput(handId: string, execId: string, input: string): Promise<{ success: boolean; message: string }> {
+    const body: SubmitInputRequest = { input };
+    return this.post(`/api/hands/${handId}/executions/${execId}/input`, body);
   }
 
   // ===== Templates Operations =====
