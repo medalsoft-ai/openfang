@@ -5036,6 +5036,411 @@ fn find_unreachable_steps(steps: &[openfang_hands::steps::HandStep]) -> Vec<Stri
 }
 
 // ---------------------------------------------------------------------------
+// Hand Execution endpoints
+// ---------------------------------------------------------------------------
+
+/// GET /api/hands/{id}/steps/{step_id}/status — Get step execution status.
+pub async fn get_step_status(
+    State(state): State<Arc<AppState>>,
+    Path((hand_id, step_id)): Path<(String, String)>,
+) -> impl IntoResponse {
+    // Get query params for execution_id
+    // For now, get the most recent execution for this hand
+    let executions = match state.kernel.execution_store.list_executions_for_hand(&hand_id).await {
+        Ok(execs) => execs,
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "error": "Failed to list executions",
+                    "details": e.to_string()
+                })),
+            );
+        }
+    };
+
+    let execution = match executions.first() {
+        Some(exec) => exec,
+        None => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({
+                    "error": "No executions found for this hand"
+                })),
+            );
+        }
+    };
+
+    let step_record = match state
+        .kernel
+        .execution_store
+        .get_step_execution(&execution.id, &step_id)
+        .await
+    {
+        Ok(record) => record,
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "error": "Failed to get step execution",
+                    "details": e.to_string()
+                })),
+            );
+        }
+    };
+
+    match step_record {
+        Some(record) => {
+            let response = StepStatusResponse {
+                execution_id: execution.id.clone(),
+                step_id: step_id.clone(),
+                status: format!("{:?}", record.status).to_lowercase(),
+                input: record.input,
+                output: record.output,
+                error: record.error,
+                started_at: record.started_at.map(|t| t.to_rfc3339()),
+                completed_at: record.completed_at.map(|t| t.to_rfc3339()),
+                retry_count: record.retry_count,
+            };
+            (StatusCode::OK, Json(serde_json::json!(response)))
+        }
+        None => (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({
+                "error": "Step not found in execution"
+            })),
+        ),
+    }
+}
+
+/// POST /api/hands/{id}/steps/{step_id}/execute — Execute a specific step.
+pub async fn execute_step(
+    State(state): State<Arc<AppState>>,
+    Path((hand_id, step_id)): Path<(String, String)>,
+    Json(req): Json<ExecuteStepRequest>,
+) -> impl IntoResponse {
+    // Get the execution state
+    let exec_state = match state.kernel.hand_executor.get_execution_state(&req.execution_id).await {
+        Some(state) => state,
+        None => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({
+                    "error": "Execution not found"
+                })),
+            );
+        }
+    };
+
+    // Verify the execution belongs to this hand
+    if exec_state.hand_id != hand_id {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({
+                "error": "Execution does not belong to this hand"
+            })),
+        );
+    }
+
+    // Start the step
+    let step = match state.kernel.hand_executor.start_step(&req.execution_id, &step_id).await {
+        Ok(s) => s,
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "error": "Failed to start step",
+                    "details": e.to_string()
+                })),
+            );
+        }
+    };
+
+    match step {
+        Some(s) => (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "execution_id": req.execution_id,
+                "step_id": step_id,
+                "status": "running",
+                "step_type": format!("{:?}", s.step_type),
+            })),
+        ),
+        None => (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({
+                "error": "Step not found"
+            })),
+        ),
+    }
+}
+
+/// GET /api/hands/{id}/executions — List all executions for a hand.
+pub async fn list_hand_executions(
+    State(state): State<Arc<AppState>>,
+    Path(hand_id): Path<String>,
+) -> impl IntoResponse {
+    match state.kernel.execution_store.list_executions_for_hand(&hand_id).await {
+        Ok(executions) => {
+            let summaries: Vec<ExecutionSummary> = executions
+                .into_iter()
+                .map(|exec| ExecutionSummary {
+                    id: exec.id,
+                    hand_id: exec.hand_id,
+                    agent_id: exec.agent_id,
+                    status: format!("{:?}", exec.status).to_lowercase(),
+                    current_step_id: exec.current_step_id,
+                    started_at: exec.started_at.map(|t| t.to_rfc3339()),
+                    completed_at: exec.completed_at.map(|t| t.to_rfc3339()),
+                    created_at: exec.created_at.to_rfc3339(),
+                })
+                .collect();
+            (StatusCode::OK, Json(serde_json::json!({ "executions": summaries })))
+        }
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({
+                "error": "Failed to list executions",
+                "details": e.to_string()
+            })),
+        ),
+    }
+}
+
+/// GET /api/hands/{id}/executions/{exec_id} — Get detailed execution info.
+pub async fn get_hand_execution(
+    State(state): State<Arc<AppState>>,
+    Path((hand_id, exec_id)): Path<(String, String)>,
+) -> impl IntoResponse {
+    let execution = match state.kernel.execution_store.get_execution(&exec_id).await {
+        Ok(Some(exec)) => exec,
+        Ok(None) => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({
+                    "error": "Execution not found"
+                })),
+            );
+        }
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "error": "Failed to get execution",
+                    "details": e.to_string()
+                })),
+            );
+        }
+    };
+
+    // Verify the execution belongs to this hand
+    if execution.hand_id != hand_id {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({
+                "error": "Execution does not belong to this hand"
+            })),
+        );
+    }
+
+    let step_records = match state.kernel.execution_store.get_steps_for_execution(&exec_id).await {
+        Ok(steps) => steps,
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "error": "Failed to get step executions",
+                    "details": e.to_string()
+                })),
+            );
+        }
+    };
+
+    let step_details: Vec<StepExecutionDetail> = step_records
+        .into_iter()
+        .map(|record| StepExecutionDetail {
+            step_id: record.step_id.clone(),
+            step_name: record.step_id, // TODO: Get actual step name from hand definition
+            status: format!("{:?}", record.status).to_lowercase(),
+            input: record.input,
+            output: record.output,
+            error: record.error,
+            started_at: record.started_at.map(|t| t.to_rfc3339()),
+            completed_at: record.completed_at.map(|t| t.to_rfc3339()),
+            retry_count: record.retry_count,
+        })
+        .collect();
+
+    let detail = ExecutionDetail {
+        id: execution.id,
+        hand_id: execution.hand_id,
+        agent_id: execution.agent_id,
+        status: format!("{:?}", execution.status).to_lowercase(),
+        current_step_id: execution.current_step_id,
+        started_at: execution.started_at.map(|t| t.to_rfc3339()),
+        completed_at: execution.completed_at.map(|t| t.to_rfc3339()),
+        created_at: execution.created_at.to_rfc3339(),
+        steps: step_details,
+    };
+
+    (StatusCode::OK, Json(serde_json::json!(detail)))
+}
+
+/// POST /api/hands/{id}/executions/{exec_id}/retry — Retry a failed execution.
+pub async fn retry_hand_execution(
+    State(state): State<Arc<AppState>>,
+    Path((hand_id, exec_id)): Path<(String, String)>,
+) -> impl IntoResponse {
+    let execution = match state.kernel.execution_store.get_execution(&exec_id).await {
+        Ok(Some(exec)) => exec,
+        Ok(None) => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({
+                    "error": "Execution not found"
+                })),
+            );
+        }
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "error": "Failed to get execution",
+                    "details": e.to_string()
+                })),
+            );
+        }
+    };
+
+    // Verify the execution belongs to this hand
+    if execution.hand_id != hand_id {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({
+                "error": "Execution does not belong to this hand"
+            })),
+        );
+    }
+
+    // Get failed steps and retry them
+    let step_records = match state.kernel.execution_store.get_steps_for_execution(&exec_id).await {
+        Ok(steps) => steps,
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "error": "Failed to get step executions",
+                    "details": e.to_string()
+                })),
+            );
+        }
+    };
+
+    let mut retried_count = 0;
+    for record in step_records {
+        if record.status == openfang_runtime::execution_store::StepStatus::Failed {
+            if let Err(e) = state
+                .kernel
+                .hand_executor
+                .retry_step(&exec_id, &record.step_id)
+                .await
+            {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(serde_json::json!({
+                        "error": "Failed to retry step",
+                        "details": e.to_string()
+                    })),
+                );
+            }
+            retried_count += 1;
+        }
+    }
+
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({
+            "execution_id": exec_id,
+            "retried_steps": retried_count,
+            "status": "retrying"
+        })),
+    )
+}
+
+/// POST /api/hands/{id}/executions/{exec_id}/input — Submit user input for a waiting step.
+pub async fn submit_hand_input(
+    State(state): State<Arc<AppState>>,
+    Path((hand_id, exec_id)): Path<(String, String)>,
+    Json(req): Json<SubmitInputRequest>,
+) -> impl IntoResponse {
+    let execution = match state.kernel.execution_store.get_execution(&exec_id).await {
+        Ok(Some(exec)) => exec,
+        Ok(None) => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({
+                    "error": "Execution not found"
+                })),
+            );
+        }
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "error": "Failed to get execution",
+                    "details": e.to_string()
+                })),
+            );
+        }
+    };
+
+    // Verify the execution belongs to this hand
+    if execution.hand_id != hand_id {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({
+                "error": "Execution does not belong to this hand"
+            })),
+        );
+    }
+
+    // Store the input and mark the step as completed
+    if let Some(current_step_id) = execution.current_step_id {
+        let output = serde_json::json!({ "user_input": req.input });
+        if let Err(e) = state
+            .kernel
+            .hand_executor
+            .complete_step(&exec_id, &current_step_id, output)
+            .await
+        {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "error": "Failed to submit input",
+                    "details": e.to_string()
+                })),
+            );
+        }
+
+        (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "execution_id": exec_id,
+                "step_id": current_step_id,
+                "status": "completed"
+            })),
+        )
+    } else {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({
+                "error": "No step is currently waiting for input"
+            })),
+        )
+    }
+}
+
+// ---------------------------------------------------------------------------
 // MCP server endpoints
 // ---------------------------------------------------------------------------
 

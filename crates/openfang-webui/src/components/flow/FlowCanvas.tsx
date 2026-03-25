@@ -1,19 +1,23 @@
-import React, { useMemo, useCallback } from 'react';
+import React, { useMemo, useCallback, useRef } from 'react';
 import {
   ReactFlow,
+  ReactFlowProvider,
   Background,
   Controls,
   MiniMap,
   useNodesState,
   useEdgesState,
+  useReactFlow,
   type Node,
   type Edge,
   type NodeTypes,
+  type Connection,
+  type ReactFlowInstance,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 
 import { StepNode } from './StepNode';
-import type { HandStep } from '../../api/types';
+import type { HandStep } from '@/api/types';
 
 const nodeTypes: NodeTypes = {
   stepNode: StepNode,
@@ -22,6 +26,13 @@ const nodeTypes: NodeTypes = {
 interface FlowCanvasProps {
   steps: HandStep[];
   readOnly?: boolean;
+  isEditing?: boolean;
+  selectedNodeId?: string | null;
+  stepStatuses?: Record<string, 'pending' | 'running' | 'completed' | 'failed' | 'waiting'>;
+  onStepsChange?: (steps: HandStep[]) => void;
+  onNodeSelect?: (nodeId: string | null) => void;
+  onStepAdd?: (step: HandStep, position: { x: number; y: number }) => void;
+  onStepDelete?: (stepId: string) => void;
 }
 
 // Simple layout algorithm - positions nodes in a tree structure
@@ -76,7 +87,20 @@ function calculateLayout(steps: HandStep[]): Map<string, { x: number; y: number 
   return positions;
 }
 
-export const FlowCanvas: React.FC<FlowCanvasProps> = ({ steps, readOnly = true }) => {
+// Inner component that uses useReactFlow - must be wrapped in ReactFlowProvider
+const FlowCanvasInner: React.FC<FlowCanvasProps> = ({
+  steps,
+  readOnly = true,
+  isEditing = false,
+  selectedNodeId,
+  stepStatuses = {},
+  onStepsChange,
+  onNodeSelect,
+  onStepAdd,
+  onStepDelete,
+}) => {
+  const reactFlowWrapper = useRef<HTMLDivElement>(null);
+  const { screenToFlowPosition } = useReactFlow();
   const positions = useMemo(() => calculateLayout(steps), [steps]);
 
   const initialNodes: Node[] = useMemo(() => {
@@ -84,9 +108,16 @@ export const FlowCanvas: React.FC<FlowCanvasProps> = ({ steps, readOnly = true }
       id: step.id,
       type: 'stepNode',
       position: positions.get(step.id) || { x: 0, y: 0 },
-      data: { step },
+      data: {
+        step,
+        isEditing,
+        isSelected: step.id === selectedNodeId,
+        onDelete: onStepDelete,
+        status: stepStatuses[step.id] || 'pending',
+      },
+      selected: step.id === selectedNodeId,
     }));
-  }, [steps, positions]);
+  }, [steps, positions, isEditing, selectedNodeId, onStepDelete, stepStatuses]);
 
   const initialEdges: Edge[] = useMemo(() => {
     const edges: Edge[] = [];
@@ -105,41 +136,149 @@ export const FlowCanvas: React.FC<FlowCanvasProps> = ({ steps, readOnly = true }
     return edges;
   }, [steps]);
 
-  const [nodes, , onNodesChange] = useNodesState(initialNodes);
-  const [edges, , onEdgesChange] = useEdgesState(initialEdges);
+  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
+  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
 
-  const onInit = useCallback((reactFlowInstance: any) => {
+  // Update nodes/edges when steps change externally
+  React.useEffect(() => {
+    setNodes(initialNodes);
+    setEdges(initialEdges);
+  }, [initialNodes, initialEdges, setNodes, setEdges]);
+
+  const onInit = useCallback((reactFlowInstance: ReactFlowInstance) => {
     reactFlowInstance.fitView({ padding: 0.2 });
   }, []);
 
+  // Handle node selection
+  const onNodeClick = useCallback((_: React.MouseEvent, node: Node) => {
+    onNodeSelect?.(node.id);
+  }, [onNodeSelect]);
+
+  const onPaneClick = useCallback(() => {
+    onNodeSelect?.(null);
+  }, [onNodeSelect]);
+
+  // Handle connections (drag to connect nodes)
+  const onConnect = useCallback((connection: Connection) => {
+    if (!isEditing || !connection.source || !connection.target) return;
+
+    // Prevent duplicate connections
+    const exists = edges.some(e =>
+      e.source === connection.source && e.target === connection.target
+    );
+    if (exists) return;
+
+    // Update steps with new connection
+    const updatedSteps = steps.map(step => {
+      if (step.id === connection.source) {
+        return { ...step, nextSteps: [...step.nextSteps, connection.target!] };
+      }
+      return step;
+    });
+
+    onStepsChange?.(updatedSteps);
+  }, [isEditing, edges, steps, onStepsChange]);
+
+  // Handle edge deletion
+  const onEdgesDelete = useCallback((deletedEdges: Edge[]) => {
+    if (!isEditing) return;
+
+    const updatedSteps = steps.map(step => {
+      const hasDeletedEdge = deletedEdges.some(e => e.source === step.id);
+      if (hasDeletedEdge) {
+        return {
+          ...step,
+          nextSteps: step.nextSteps.filter(id =>
+            !deletedEdges.some(e => e.source === step.id && e.target === id)
+          ),
+        };
+      }
+      return step;
+    });
+
+    onStepsChange?.(updatedSteps);
+  }, [isEditing, steps, onStepsChange]);
+
+  // Handle drop from palette
+  const onDragOver = useCallback((event: React.DragEvent) => {
+    if (!isEditing) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+  }, [isEditing]);
+
+  const onDrop = useCallback((event: React.DragEvent) => {
+    if (!isEditing || !onStepAdd) return;
+    event.preventDefault();
+
+    const data = event.dataTransfer.getData('application/json');
+    if (!data) return;
+
+    try {
+      const { type, stepType } = JSON.parse(data);
+      if (type !== 'step-palette-item' || !stepType) return;
+
+      const position = screenToFlowPosition({
+        x: event.clientX,
+        y: event.clientY,
+      });
+
+      // Create new step with unique ID
+      const newStep: HandStep = {
+        id: `${stepType}-${Date.now()}`,
+        name: `New ${stepType}`,
+        type: stepType,
+        config: {} as HandStep['config'],
+        nextSteps: [],
+      };
+
+      onStepAdd(newStep, position);
+    } catch {
+      // Invalid drop data, ignore
+    }
+  }, [isEditing, onStepAdd, screenToFlowPosition]);
+
   if (steps.length === 0) {
     return (
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        height: '400px',
-        color: '#666',
-      }}>
-        No steps defined for this Hand
+      <div
+        ref={reactFlowWrapper}
+        onDragOver={onDragOver}
+        onDrop={onDrop}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          height: '100%',
+          color: '#666',
+          border: isEditing ? '2px dashed #ddd' : undefined,
+          borderRadius: isEditing ? '8px' : undefined,
+        }}
+      >
+        {isEditing ? 'Drag step types here to build your flow' : 'No steps defined for this Hand'}
       </div>
     );
   }
 
   return (
-    <div style={{ height: '500px', width: '100%' }}>
+    <div ref={reactFlowWrapper} style={{ height: '100%', width: '100%' }}>
       <ReactFlow
         nodes={nodes}
         edges={edges}
         onNodesChange={readOnly ? undefined : onNodesChange}
         onEdgesChange={readOnly ? undefined : onEdgesChange}
+        onNodeClick={onNodeClick}
+        onPaneClick={onPaneClick}
+        onConnect={onConnect}
+        onEdgesDelete={onEdgesDelete}
+        onDragOver={onDragOver}
+        onDrop={onDrop}
         nodeTypes={nodeTypes}
         onInit={onInit}
         fitView
         attributionPosition="bottom-right"
-        nodesDraggable={!readOnly}
-        nodesConnectable={!readOnly}
-        elementsSelectable={!readOnly}
+        nodesDraggable={isEditing}
+        nodesConnectable={isEditing}
+        elementsSelectable={isEditing || !readOnly}
+        deleteKeyCode={isEditing ? 'Delete' : null}
       >
         <Background color="#ddd" gap={16} />
         <Controls />
@@ -155,6 +294,15 @@ export const FlowCanvas: React.FC<FlowCanvasProps> = ({ steps, readOnly = true }
         />
       </ReactFlow>
     </div>
+  );
+};
+
+// Wrapper component that provides ReactFlowProvider
+export const FlowCanvas: React.FC<FlowCanvasProps> = (props) => {
+  return (
+    <ReactFlowProvider>
+      <FlowCanvasInner {...props} />
+    </ReactFlowProvider>
   );
 };
 

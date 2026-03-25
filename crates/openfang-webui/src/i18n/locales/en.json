@@ -22,6 +22,23 @@
     "description": "Build, deploy, and manage autonomous AI agents. Connect them to your favorite tools and let them work for you.",
     "startChat": "Start Chat",
     "createAgent": "Create Agent",
+    "quickActions": "Quick Actions",
+    "actions": {
+      "chat": "Start Chat",
+      "chatDesc": "Begin a conversation with your agents",
+      "sop": "SOP",
+      "sopDesc": "Manage standard operating procedures",
+      "workflow": "Workflows",
+      "workflowDesc": "Design automated workflows",
+      "channel": "Channels",
+      "channelDesc": "Connect to external platforms"
+    },
+    "stats": {
+      "agents": "Agents",
+      "conversations": "Conversations",
+      "active": "Active Tasks",
+      "efficiency": "Efficiency"
+    },
     "features": {
       "title": "Everything you need",
       "subtitle": "A complete platform for creating and managing AI agents",
@@ -249,7 +266,23 @@
     "enabled": "Enabled",
     "disabled": "Disabled",
     "enterValue": "Enter value...",
-    "dashboardMetrics": "Dashboard Metrics"
+    "dashboardMetrics": "Dashboard Metrics",
+    "details": "Details",
+    "flow": "Flow",
+    "chatEdit": "Chat Edit",
+    "editor": "SOP Editor",
+    "loadingFlow": "Loading flow...",
+    "stepPalette": "Step Palette",
+    "properties": "Properties",
+    "selectedStep": "Selected",
+    "selectNode": "Select a step\nto edit properties",
+    "palettePlaceholder": "Step palette\ncoming in Wave 1b",
+    "propertyPanelPlaceholder": "Property panel coming in Wave 1b",
+    "chatEditTitle": "Chat Edit",
+    "chatEditPlaceholder": "Chat-based step editor coming in Wave 3",
+    "chatEditDesc": "Edit Hand steps using natural language with Agent assistance",
+    "stepsSaved": "Steps saved successfully",
+    "saveFailed": "Failed to save steps"
   },
   "languages": {
     "zh-CN": "简体中文",

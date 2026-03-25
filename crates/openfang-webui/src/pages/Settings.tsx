@@ -1,94 +1,121 @@
-// Settings - Soft UI Evolution Style
-import { useState, useEffect } from 'react';
+// Settings - Developer Tool Design System
+// Layout: Sidebar Menu + Content Area
+// Style: Dark code theme + Green accents (per design system)
+
+import { useState, useEffect, useMemo } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuthQuery } from '@/hooks/useAuthQuery';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { api } from '@/api/client';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import {
-  Key, Shield, Cpu, Database, Network, Loader2,
-  Check, X, Save, Settings2, Plus, TestTube,
-  AlertCircle, RefreshCw, Wallet, Server, Search,
-  ArrowRightLeft, ExternalLink, Zap, Bot, MessageSquare, Pencil
-} from 'lucide-react';
-import { cn } from '@/lib/utils';
 import { useTranslation } from 'react-i18next';
-import type { Provider, SecurityStatus } from '@/api/types';
+import { cn } from '@/lib/utils';
+import type { Provider, SecurityStatus, Model } from '@/api/types';
 
-// Animation variants
+import {
+  Key, Shield, Cpu, Network, Loader2, Check, X, Save,
+  Settings2, Plus, TestTube, AlertCircle, RefreshCw, Wallet,
+  Server, Search, Bot, ChevronRight, Eye, EyeOff, Trash2,
+  Globe, Zap, Clock, HardDrive, Bell, Moon, Sun,
+  LayoutGrid, Sparkles, Terminal, ExternalLink, Copy, CheckCircle2,
+  XCircle, AlertTriangle, Play, Pause, Filter,
+  ArrowUpRight, MoreHorizontal, Maximize2, Minimize2
+} from 'lucide-react';
+
+// ========================================
+// TYPES
+// ========================================
+
+interface MenuItem {
+  id: string;
+  label: string;
+  icon: React.ElementType;
+  badge?: number;
+  description?: string;
+}
+
+interface TestResult {
+  status: 'ok' | 'error' | 'pending';
+  latency_ms?: number;
+  error?: string;
+  timestamp?: number;
+}
+
+// ========================================
+// ANIMATION VARIANTS
+// ========================================
+
 const containerVariants = {
   hidden: { opacity: 0 },
   visible: {
     opacity: 1,
-    transition: { staggerChildren: 0.05 }
+    transition: { staggerChildren: 0.03, delayChildren: 0.05 }
   }
 };
 
 const itemVariants = {
-  hidden: { opacity: 0, y: 10 },
+  hidden: { opacity: 0, y: 8 },
   visible: {
     opacity: 1,
     y: 0,
-    transition: { duration: 0.2 }
+    transition: { duration: 0.2, ease: "easeOut" as const }
   }
 };
 
-// Soft Toggle Switch - Uses flex layout for cross-platform consistency
-function SoftToggle({
-  enabled,
-  onToggle,
-  size = 'md',
-  disabled = false
-}: {
-  enabled: boolean;
-  onToggle: () => void;
-  size?: 'sm' | 'md';
-  disabled?: boolean;
-}) {
-  const containerSize = size === 'sm' ? 'w-9 h-5' : 'w-11 h-6';
-  const knobSize = size === 'sm' ? 'w-3.5 h-3.5' : 'w-4 h-4';
-  const padding = size === 'sm' ? 'p-0.5' : 'p-1';
+const sidebarVariants = {
+  hidden: { x: -20, opacity: 0 },
+  visible: {
+    x: 0,
+    opacity: 1,
+    transition: { duration: 0.25, ease: "easeOut" as const }
+  }
+};
 
+const contentVariants = {
+  hidden: { opacity: 0, x: 10 },
+  visible: {
+    opacity: 1,
+    x: 0,
+    transition: { duration: 0.2, ease: "easeOut" as const }
+  }
+};
+
+// ========================================
+// UTILITY COMPONENTS
+// ========================================
+
+function StatusDot({ status, className }: { status: 'active' | 'inactive' | 'warning' | 'error' | 'pending'; className?: string }) {
+  const colors = {
+    active: 'bg-[var(--success)] shadow-[0_0_8px_rgba(34,197,94,0.5)]',
+    inactive: 'bg-[var(--text-muted)]',
+    warning: 'bg-[var(--warning)] shadow-[0_0_8px_rgba(245,158,11,0.5)]',
+    error: 'bg-[var(--error)] shadow-[0_0_8px_rgba(239,68,68,0.5)]',
+    pending: 'bg-[var(--neon-cyan)] animate-pulse'
+  };
+  return <span className={cn('w-2 h-2 rounded-full', colors[status], className)} />;
+}
+
+function StatusBadge({ status, text }: { status: 'active' | 'inactive' | 'warning' | 'error'; text?: string }) {
+  const styles = {
+    active: 'bg-[var(--success)]/10 text-[var(--success)] border-[var(--success)]/30',
+    inactive: 'bg-[var(--surface-tertiary)] text-[var(--text-muted)] border-[var(--border-default)]',
+    warning: 'bg-[var(--warning)]/10 text-[var(--warning)] border-[var(--warning)]/30',
+    error: 'bg-[var(--error)]/10 text-[var(--error)] border-[var(--error)]/30'
+  };
+  const labels = { active: 'Active', inactive: 'Inactive', warning: 'Warning', error: 'Error' };
   return (
-    <button
-      onClick={onToggle}
-      disabled={disabled}
-      className={cn(
-        containerSize,
-        padding,
-        'rounded-full transition-all duration-200 flex',
-        enabled ? 'bg-[var(--soft-blue)] justify-end' : 'bg-[var(--soft-divider)] justify-start',
-        disabled && 'opacity-40 grayscale cursor-not-allowed pointer-events-none'
-      )}
-    >
-      <span
-        className={cn(
-          knobSize,
-          'rounded-full bg-white shadow-sm block flex-shrink-0'
-        )}
-      />
-    </button>
+    <span className={cn('px-2 py-0.5 rounded-md text-xs font-medium border', styles[status])}>
+      {text || labels[status]}
+    </span>
   );
 }
 
-// Soft Card Component
-function SoftCard({
-  children,
-  className,
-  hover = true
-}: {
-  children: React.ReactNode;
-  className?: string;
-  hover?: boolean;
-}) {
+function Card({ children, className, hover = true }: { children: React.ReactNode; className?: string; hover?: boolean }) {
   return (
     <motion.div
       variants={itemVariants}
       className={cn(
-        'rounded-2xl bg-[var(--soft-sidebar)] border border-[var(--soft-divider)]',
-        'shadow-[0_2px_8px_rgba(0,0,0,0.04)]',
-        hover && 'transition-all duration-200 hover:shadow-[0_4px_12px_rgba(0,0,0,0.06)] hover:border-[var(--soft-blue)]/20',
+        'rounded-xl bg-[var(--surface-secondary)] border border-[var(--border-default)]',
+        hover && 'hover:border-[var(--border-hover)] transition-all duration-200',
         className
       )}
     >
@@ -97,37 +124,33 @@ function SoftCard({
   );
 }
 
-// Section Header
-function SectionHeader({
-  icon: Icon,
-  title,
-  description
-}: {
-  icon: React.ElementType;
-  title: string;
-  description?: string;
-}) {
+function SectionHeader({ icon: Icon, title, description, action }: { icon: React.ElementType; title: string; description?: string; action?: React.ReactNode }) {
   return (
-    <div className="flex items-center gap-3 mb-6">
-      <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[var(--soft-blue)]/20 to-[var(--soft-purple)]/20 flex items-center justify-center">
-        <Icon className="w-5 h-5 text-[var(--soft-blue)]" />
+    <motion.div variants={itemVariants} className="flex items-start justify-between mb-6">
+      <div className="flex items-center gap-3">
+        <div className="w-10 h-10 rounded-xl bg-[var(--surface-tertiary)] border border-[var(--border-default)] flex items-center justify-center">
+          <Icon className="w-5 h-5 text-[var(--neon-cyan)]" />
+        </div>
+        <div>
+          <h2 className="text-lg font-semibold text-[var(--text-primary)]">{title}</h2>
+          {description && <p className="text-sm text-[var(--text-muted)]">{description}</p>}
+        </div>
       </div>
-      <div>
-        <h3 className="text-lg font-semibold text-[var(--soft-text-primary)]">{title}</h3>
-        {description && <p className="text-sm text-[var(--soft-text-muted)]">{description}</p>}
-      </div>
-    </div>
+      {action}
+    </motion.div>
   );
 }
 
-// Soft Input
-function SoftInput({
+function Input({
   value,
   onChange,
   placeholder,
   type = 'text',
   icon: Icon,
-  className
+  className,
+  rightElement,
+  autoFocus,
+  onKeyDown
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -135,303 +158,953 @@ function SoftInput({
   type?: string;
   icon?: React.ElementType;
   className?: string;
+  rightElement?: React.ReactNode;
+  autoFocus?: boolean;
+  onKeyDown?: (e: React.KeyboardEvent) => void;
 }) {
   return (
-    <div className="relative">
-      {Icon && <Icon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--soft-text-muted)]" />}
+    <div className={cn('relative flex items-center', className)}>
+      {Icon && <Icon className="absolute left-3 w-4 h-4 text-[var(--text-muted)] pointer-events-none" />}
       <input
         type={type}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
+        autoFocus={autoFocus}
+        onKeyDown={onKeyDown}
         className={cn(
-          'w-full px-4 py-2.5 rounded-xl',
-          'bg-[var(--soft-main)] border border-[var(--soft-divider)]',
-          'text-[var(--soft-text-primary)] text-sm',
-          'placeholder:text-[var(--soft-text-tertiary)]',
-          'focus:outline-none focus:border-[var(--soft-blue)]/50 focus:ring-2 focus:ring-[var(--soft-blue)]/10',
-          'transition-all duration-200',
+          'w-full px-3 py-2 rounded-lg',
+          'bg-[var(--surface-tertiary)] border border-[var(--border-default)]',
+          'text-[var(--text-primary)] text-sm',
+          'placeholder:text-[var(--text-muted)]',
+          'focus:outline-none focus:border-[var(--neon-cyan)]/50 focus:ring-1 focus:ring-[var(--neon-cyan)]/20',
+          'transition-all duration-150',
           Icon && 'pl-10',
-          className
+          rightElement && 'pr-10'
         )}
       />
+      {rightElement && <div className="absolute right-2">{rightElement}</div>}
     </div>
   );
 }
 
-// Soft Button
-function SoftButton({
+function Button({
   children,
   onClick,
   variant = 'primary',
   size = 'md',
   icon: Icon,
   disabled = false,
-  loading = false
+  loading = false,
+  className
 }: {
   children?: React.ReactNode;
   onClick?: () => void;
-  variant?: 'primary' | 'secondary' | 'ghost' | 'danger';
+  variant?: 'primary' | 'secondary' | 'ghost' | 'danger' | 'success';
   size?: 'sm' | 'md' | 'lg';
   icon?: React.ElementType;
   disabled?: boolean;
   loading?: boolean;
+  className?: string;
 }) {
   const variants = {
-    primary: 'bg-[var(--soft-blue)] text-white hover:bg-[var(--soft-blue-dark)] shadow-sm',
-    secondary: 'bg-[var(--soft-surface)] text-[var(--soft-text-primary)] hover:bg-[var(--soft-surface-hover)] border border-[var(--soft-divider)]',
-    ghost: 'bg-transparent text-[var(--soft-text-secondary)] hover:bg-[var(--soft-surface)] hover:text-[var(--soft-text-primary)]',
-    danger: 'bg-[var(--soft-pink)] text-white hover:bg-[#d97a8f]'
+    primary: 'bg-[var(--neon-cyan)] text-[var(--void)] hover:bg-[var(--neon-cyan-dim)] shadow-lg shadow-[var(--neon-cyan)]/20',
+    secondary: 'bg-[var(--surface-tertiary)] text-[var(--text-primary)] border border-[var(--border-default)] hover:border-[var(--border-hover)] hover:bg-[var(--surface-elevated)]',
+    ghost: 'bg-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-tertiary)]',
+    danger: 'bg-[var(--error)] text-white hover:bg-[var(--error-dark)] shadow-lg shadow-[var(--error)]/20',
+    success: 'bg-[var(--success)] text-white hover:bg-[var(--success-dark)] shadow-lg shadow-[var(--success)]/20'
   };
 
   const sizes = {
-    sm: 'px-3 py-1.5 text-xs',
-    md: 'px-4 py-2 text-sm',
-    lg: 'px-6 py-3 text-base'
+    sm: 'px-2.5 py-1.5 text-xs gap-1.5',
+    md: 'px-4 py-2 text-sm gap-2',
+    lg: 'px-6 py-2.5 text-base gap-2'
   };
+
+  const iconSizes = { sm: 'w-3.5 h-3.5', md: 'w-4 h-4', lg: 'w-5 h-5' };
 
   return (
     <motion.button
-      whileTap={{ scale: 0.98 }}
+      whileTap={{ scale: disabled || loading ? 1 : 0.98 }}
       onClick={onClick}
       disabled={disabled || loading}
       className={cn(
-        'inline-flex items-center justify-center gap-2 rounded-xl font-medium',
-        'transition-all duration-200',
+        'inline-flex items-center justify-center rounded-lg font-medium',
+        'transition-all duration-150',
         'disabled:opacity-50 disabled:cursor-not-allowed',
         variants[variant],
-        sizes[size]
+        sizes[size],
+        className
       )}
     >
-      {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : Icon ? <Icon className="w-4 h-4" /> : null}
+      {loading ? <Loader2 className={cn('animate-spin', iconSizes[size])} /> : Icon ? <Icon className={iconSizes[size]} /> : null}
       {children}
     </motion.button>
   );
 }
 
-// Status Badge
-function StatusBadge({ status }: { status: 'active' | 'inactive' | 'warning' | 'error' }) {
-  const styles = {
-    active: 'bg-[var(--soft-green)]/15 text-[var(--soft-green)]',
-    inactive: 'bg-[var(--soft-text-tertiary)]/15 text-[var(--soft-text-muted)]',
-    warning: 'bg-[var(--soft-amber)]/15 text-[var(--soft-amber)]',
-    error: 'bg-[var(--soft-pink)]/15 text-[var(--soft-pink)]'
+function IconButton({
+  icon: Icon,
+  onClick,
+  variant = 'ghost',
+  size = 'md',
+  className,
+  title
+}: {
+  icon: React.ElementType;
+  onClick?: () => void;
+  variant?: 'primary' | 'secondary' | 'ghost' | 'danger';
+  size?: 'sm' | 'md' | 'lg';
+  className?: string;
+  title?: string;
+}) {
+  const variants = {
+    primary: 'bg-[var(--neon-cyan)] text-[var(--void)] hover:bg-[var(--neon-cyan-dim)]',
+    secondary: 'bg-[var(--surface-tertiary)] text-[var(--text-primary)] hover:bg-[var(--surface-elevated)]',
+    ghost: 'bg-transparent text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-tertiary)]',
+    danger: 'bg-transparent text-[var(--neon-magenta)] hover:bg-[var(--neon-magenta)]/10'
   };
 
-  const labels = { active: 'Active', inactive: 'Inactive', warning: 'Warning', error: 'Error' };
+  const sizes = { sm: 'w-7 h-7', md: 'w-8 h-8', lg: 'w-10 h-10' };
+  const iconSizes = { sm: 'w-3.5 h-3.5', md: 'w-4 h-4', lg: 'w-5 h-5' };
 
   return (
-    <span className={cn('px-2.5 py-1 rounded-full text-xs font-medium', styles[status])}>
-      {labels[status]}
-    </span>
+    <motion.button
+      whileTap={{ scale: 0.95 }}
+      onClick={onClick}
+      title={title}
+      className={cn(
+        'inline-flex items-center justify-center rounded-lg',
+        'transition-all duration-150',
+        variants[variant],
+        sizes[size],
+        className
+      )}
+    >
+      <Icon className={iconSizes[size]} />
+    </motion.button>
   );
 }
 
-// Agent Model Editor Component
-interface AgentModelEditorProps {
-  agent: { id: string; name: string; model_provider?: string; model_name?: string; model?: { provider?: string; model?: string } };
-  providers: Array<{ id: string; display_name: string; auth_status: string }>;
-  models: Array<{ id: string; display_name?: string; provider: string; available: boolean; context_window?: number }>;
-  isEditing: boolean;
-  onEdit: () => void;
-  onCancel: () => void;
-  onSave: (modelValue: string) => void;
+// ========================================
+// PROVIDER CARD COMPONENT
+// ========================================
+
+interface ProviderCardProps {
+  provider: Provider;
+  apiKey: string;
+  isSelected: boolean;
+  isHighlighted: boolean;
+  testResult?: TestResult;
+  isTesting: boolean;
   isSaving: boolean;
+  onSelect: () => void;
+  onKeyChange: (key: string) => void;
+  onSave: () => void;
+  onTest: () => void;
+  onToggle: () => void;
 }
 
-function AgentModelEditor({ agent, providers, models, isEditing, onEdit, onCancel, onSave, isSaving }: AgentModelEditorProps) {
-  const currentProvider = agent.model_provider || agent.model?.provider || 'groq';
-  const currentModel = agent.model_name || agent.model?.model || 'llama-3.3-70b-versatile';
-
-  const [selectedProvider, setSelectedProvider] = useState(currentProvider);
-  const [selectedModel, setSelectedModel] = useState(currentModel);
-
-  // Reset selections when entering edit mode
-  useEffect(() => {
-    if (isEditing) {
-      setSelectedProvider(currentProvider);
-      setSelectedModel(currentModel);
-    }
-  }, [isEditing, currentProvider, currentModel]);
-
-  // Get available models for selected provider
-  // For SiliconFlow, show models with full format (e.g., deepseek-ai/DeepSeek-V3)
-  const availableModels = models.filter(m => {
-    if (m.provider !== selectedProvider) return false;
-    // available might be undefined for custom models, treat as true
-    if (m.available === false) return false;
-    // For siliconflow, only show models with vendor prefix format
-    if (selectedProvider === 'siliconflow') {
-      return m.id.includes('/');
-    }
-    return true;
-  });
-
-  // Handle provider change
-  const handleProviderChange = (providerId: string) => {
-    setSelectedProvider(providerId);
-    // Auto-select first available model for this provider
-    const firstModel = models.find(m => m.provider === providerId && m.available);
-    setSelectedModel(firstModel?.id || '');
-  };
-
-  // Get the effective model ID to use
-  // For some providers (zhipu, siliconflow), we may need to use a different format
-  const getEffectiveModelId = (provider: string, modelId: string): string => {
-    // For zhipu, try to use the short alias format if the model ID has a date suffix
-    if (provider === 'zhipu') {
-      // glm-5-20250605 -> glm-5
-      if (modelId.match(/^glm-\d+-\d{8}$/)) {
-        return modelId.replace(/-\d{8}$/, '');
-      }
-      // glm-4.7 -> glm-4.7 (keep as is)
-    }
-    return modelId;
-  };
-
-  // Handle save
-  const handleSave = () => {
-    if (selectedProvider && selectedModel) {
-      const effectiveModel = getEffectiveModelId(selectedProvider, selectedModel);
-      onSave(`${selectedProvider}/${effectiveModel}`);
-    }
-  };
+function ProviderCard({
+  provider,
+  apiKey,
+  isSelected,
+  isHighlighted,
+  testResult,
+  isTesting,
+  isSaving,
+  onSelect,
+  onKeyChange,
+  onSave,
+  onTest,
+  onToggle
+}: ProviderCardProps) {
+  const [showKey, setShowKey] = useState(false);
+  const isConfigured = provider.auth_status === 'configured';
 
   return (
-    <div className="p-4 rounded-xl bg-[var(--soft-main)] border border-[var(--soft-divider)]">
-      <div className="flex items-center justify-between gap-4">
+    <motion.div
+      variants={itemVariants}
+      className={cn(
+        'group rounded-xl border transition-all duration-200',
+        isHighlighted
+          ? 'border-[var(--neon-cyan)] ring-1 ring-[var(--neon-cyan)] bg-[var(--neon-cyan)]/5'
+          : 'border-[var(--border-default)] bg-[var(--surface-secondary)] hover:border-[var(--border-hover)]',
+        'overflow-hidden'
+      )}
+    >
+      {/* Header */}
+      <div className="flex items-center justify-between p-4">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[var(--soft-blue)]/20 to-[var(--soft-purple)]/20 flex items-center justify-center">
-            <MessageSquare className="w-5 h-5 text-[var(--soft-blue)]" />
+          <div className={cn(
+            'w-10 h-10 rounded-xl flex items-center justify-center transition-colors',
+            isConfigured
+              ? 'bg-[var(--success)]/10 text-[var(--success)]'
+              : 'bg-[var(--surface-tertiary)] text-[var(--text-muted)]'
+          )}>
+            <Key className="w-5 h-5" />
           </div>
           <div>
-            <h4 className="font-semibold text-[var(--soft-text-primary)]">{agent.name}</h4>
-            <p className="text-xs text-[var(--soft-text-muted)]">
-              {providers.find(p => p.id === currentProvider)?.display_name || currentProvider} / {currentModel}
-            </p>
+            <div className="flex items-center gap-2">
+              <h3 className="font-semibold text-[var(--text-primary)]">{provider.display_name}</h3>
+              <StatusBadge status={isConfigured ? 'active' : 'inactive'} />
+            </div>
+            <p className="text-xs text-[var(--text-muted)]">{provider.id}</p>
           </div>
         </div>
+
         <div className="flex items-center gap-2">
-          {isEditing ? (
-            <>
-              <SoftButton size="sm" icon={Check} onClick={handleSave} loading={isSaving}>Save</SoftButton>
-              <SoftButton variant="ghost" size="sm" icon={X} onClick={onCancel} />
-            </>
-          ) : (
-            <SoftButton variant="secondary" size="sm" icon={Pencil} onClick={onEdit}>Change</SoftButton>
-          )}
+          {/* Quick Test Button */}
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={isTesting ? undefined : TestTube}
+            onClick={onTest}
+            loading={isTesting}
+            className="opacity-0 group-hover:opacity-100 transition-opacity"
+          >
+            {isTesting ? '' : 'Test'}
+          </Button>
+
+          {/* Toggle Switch */}
+          <button
+            onClick={onToggle}
+            className={cn(
+              'relative w-11 h-6 rounded-full transition-colors duration-200',
+              isConfigured ? 'bg-[var(--success)]' : 'bg-[var(--surface-elevated)]'
+            )}
+          >
+            <span className={cn(
+              'absolute top-1 w-4 h-4 rounded-full bg-white shadow-sm transition-all duration-200',
+              isConfigured ? 'left-6' : 'left-1'
+            )} />
+          </button>
         </div>
       </div>
 
-      {/* Editor Panel */}
-      {isEditing && (
-        <div className="mt-4 pt-4 border-t border-[var(--soft-divider)] space-y-4">
-          {/* Provider Select */}
-          <div>
-            <label className="block text-xs font-medium text-[var(--soft-text-muted)] mb-2">Provider</label>
-            <div className="flex flex-wrap gap-2">
-              {providers.map((provider) => (
-                <button
-                  key={provider.id}
-                  onClick={() => handleProviderChange(provider.id)}
-                  className={cn(
-                    'px-3 py-1.5 rounded-lg text-xs border transition-all',
-                    selectedProvider === provider.id
-                      ? 'bg-[var(--soft-blue)] text-white border-[var(--soft-blue)]'
-                      : 'bg-[var(--soft-surface)] text-[var(--soft-text-secondary)] border-[var(--soft-divider)] hover:border-[var(--soft-blue)]/50'
-                  )}
-                >
-                  {provider.display_name}
-                  {provider.auth_status !== 'configured' && (
-                    <span className="ml-1 text-[10px] opacity-70">(not configured)</span>
-                  )}
-                </button>
-              ))}
-            </div>
+      {/* API Key Input Section */}
+      <div className="px-4 pb-4">
+        <div className="flex gap-2">
+          <div className="flex-1 relative">
+            <input
+              type={showKey ? 'text' : 'password'}
+              value={isSelected ? apiKey : (isConfigured ? 'sk-************************' : '')}
+              onChange={(e) => { onSelect(); onKeyChange(e.target.value); }}
+              onFocus={onSelect}
+              placeholder={isConfigured ? 'API key saved' : 'Enter API key'}
+              className={cn(
+                'w-full px-3 py-2 pr-10 rounded-lg',
+                'bg-[var(--surface-tertiary)] border border-[var(--border-default)]',
+                'text-[var(--text-primary)] text-sm font-mono',
+                'placeholder:text-[var(--text-muted)]',
+                'focus:outline-none focus:border-[var(--neon-cyan)]/50 focus:ring-1 focus:ring-[var(--neon-cyan)]/20',
+                'transition-all duration-150'
+              )}
+            />
+            <button
+              onClick={() => setShowKey(!showKey)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+            >
+              {showKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+            </button>
           </div>
 
-          {/* Model Select */}
-          <div>
-            <label className="block text-xs font-medium text-[var(--soft-text-muted)] mb-2">
-              Model ({availableModels.length} available)
-            </label>
-            {availableModels.length > 0 ? (
-              <div className="flex flex-wrap gap-2">
-                {availableModels.map((model) => (
-                  <button
-                    key={model.id}
-                    onClick={() => setSelectedModel(model.id)}
-                    title={`${model.id}${model.context_window ? ` • ${model.context_window.toLocaleString()} tokens` : ''}`}
-                    className={cn(
-                      'px-3 py-1.5 rounded-lg text-xs border transition-all flex items-center gap-1.5',
-                      selectedModel === model.id
-                        ? 'bg-[var(--soft-purple)] text-white border-[var(--soft-purple)]'
-                        : 'bg-[var(--soft-surface)] text-[var(--soft-text-secondary)] border-[var(--soft-divider)] hover:border-[var(--soft-purple)]/50'
-                    )}
-                  >
-                    <span>{model.display_name || model.id}</span>
-                    {model.context_window && (
-                      <span className={cn(
-                        'text-[10px] opacity-70',
-                        selectedModel === model.id ? 'text-white/70' : 'text-[var(--soft-text-muted)]'
-                      )}>
-                        ({(model.context_window / 1000).toFixed(0)}k)
-                      </span>
-                    )}
-                  </button>
-                ))}
-              </div>
-            ) : (
-              <div className="p-3 rounded-lg bg-[var(--soft-surface)] border border-[var(--soft-divider)]">
-                <p className="text-xs text-[var(--soft-text-tertiary)]">No available models for this provider</p>
-                <p className="text-[10px] text-[var(--soft-text-muted)] mt-1">
-                  Try adding a custom model in the Models tab, or check if the provider is configured.
-                </p>
-              </div>
-            )}
-          </div>
-
-          {/* Selected Summary */}
-          <div className="flex items-center gap-2 text-xs">
-            <span className="text-[var(--soft-text-muted)]">Will be set to:</span>
-            <code className="px-2 py-0.5 rounded bg-[var(--soft-surface)] text-[var(--soft-text-primary)]">
-              {selectedProvider}/{selectedModel}
-            </code>
-          </div>
+          <Button
+            onClick={onSave}
+            loading={isSaving}
+            disabled={!isSelected || !apiKey}
+            size="sm"
+            icon={Save}
+          >
+            Save
+          </Button>
         </div>
-      )}
-    </div>
+
+        {/* Test Result */}
+        <AnimatePresence>
+          {testResult && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              className="mt-3"
+            >
+              <div className={cn(
+                'flex items-center gap-2 px-3 py-2 rounded-lg text-sm',
+                testResult.status === 'ok'
+                  ? 'bg-[var(--success)]/10 text-[var(--success)] border border-[var(--success)]/30'
+                  : 'bg-[var(--error)]/10 text-[var(--error)] border border-[var(--error)]/30'
+              )}>
+                {testResult.status === 'ok' ? (
+                  <>
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>Connected ({testResult.latency_ms}ms)</span>
+                  </>
+                ) : (
+                  <>
+                    <XCircle className="w-4 h-4" />
+                    <span>{testResult.error || 'Connection failed'}</span>
+                  </>
+                )}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+    </motion.div>
   );
 }
 
-// Main Settings Component
-export function Settings() {
-  const { t, i18n } = useTranslation();
-  const queryClient = useQueryClient();
-  const [activeTab, setActiveTab] = useState('providers');
+// ========================================
+// SETTINGS SECTIONS
+// ========================================
 
-  // Local state
-  const [securityEnabled, setSecurityEnabled] = useState(true);
-  const [encryptionEnabled, setEncryptionEnabled] = useState(true);
-  const [auditLogging, setAuditLogging] = useState(false);
-  const [monthlyLimit, setMonthlyLimit] = useState(100);
+function ProvidersSection({
+  providers,
+  providersLoading,
+  testResults,
+  testingProvider,
+  saveProviderMutation,
+  testProviderMutation,
+  toggleProviderMutation,
+  selectedProvider,
+  setSelectedProvider,
+  apiKey,
+  setApiKey,
+  highlightProvider
+}: {
+  providers: Provider[];
+  providersLoading: boolean;
+  testResults: Record<string, TestResult>;
+  testingProvider: string | null;
+  saveProviderMutation: { mutate: (data: { providerId: string; key: string }) => void; isPending: boolean };
+  testProviderMutation: { mutate: (id: string) => void };
+  toggleProviderMutation: { mutate: (data: { providerId: string; enabled: boolean }) => void };
+  selectedProvider: string;
+  setSelectedProvider: (id: string) => void;
+  apiKey: string;
+  setApiKey: (key: string) => void;
+  highlightProvider: string | null;
+}) {
+  const { t } = useTranslation();
+  const [search, setSearch] = useState('');
+  const [filter, setFilter] = useState<'all' | 'active' | 'inactive'>('all');
+
+  const filteredProviders = useMemo(() => {
+    let result = providers;
+    if (search) {
+      const q = search.toLowerCase();
+      result = result.filter(p =>
+        p.display_name.toLowerCase().includes(q) ||
+        p.id.toLowerCase().includes(q)
+      );
+    }
+    if (filter === 'active') {
+      result = result.filter(p => p.auth_status === 'configured');
+    } else if (filter === 'inactive') {
+      result = result.filter(p => p.auth_status !== 'configured');
+    }
+    return result;
+  }, [providers, search, filter]);
+
+  const activeCount = providers.filter(p => p.auth_status === 'configured').length;
+
+  if (providersLoading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="w-8 h-8 text-[var(--neon-cyan)] animate-spin" />
+      </div>
+    );
+  }
+
+  return (
+    <motion.div
+      variants={containerVariants}
+      initial="hidden"
+      animate="visible"
+      className="space-y-6"
+    >
+      <SectionHeader
+        icon={Key}
+        title="AI Providers"
+        description={`${activeCount} of ${providers.length} providers configured`}
+        action={
+          <Button variant="secondary" icon={Plus}>
+            Add Custom
+          </Button>
+        }
+      />
+
+      {/* Search & Filter Bar */}
+      <Card className="p-4">
+        <div className="flex gap-3">
+          <div className="flex-1 relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)]" />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search providers..."
+              className={cn(
+                'w-full pl-10 pr-4 py-2 rounded-lg',
+                'bg-[var(--surface-tertiary)] border border-[var(--border-default)]',
+                'text-[var(--text-primary)] text-sm',
+                'placeholder:text-[var(--text-muted)]',
+                'focus:outline-none focus:border-[var(--neon-cyan)]/50'
+              )}
+            />
+          </div>
+          <div className="flex gap-1 bg-[var(--surface-tertiary)] rounded-lg p-1">
+            {(['all', 'active', 'inactive'] as const).map((f) => (
+              <button
+                key={f}
+                onClick={() => setFilter(f)}
+                className={cn(
+                  'px-3 py-1.5 rounded-md text-sm font-medium capitalize transition-all',
+                  filter === f
+                    ? 'bg-[var(--surface-secondary)] text-[var(--text-primary)] shadow-sm'
+                    : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
+                )}
+              >
+                {f}
+              </button>
+            ))}
+          </div>
+        </div>
+      </Card>
+
+      {/* Providers Grid */}
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+        {filteredProviders.map((provider) => (
+          <ProviderCard
+            key={provider.id}
+            provider={provider}
+            apiKey={apiKey}
+            isSelected={selectedProvider === provider.id}
+            isHighlighted={highlightProvider === provider.id}
+            testResult={testResults[provider.id]}
+            isTesting={testingProvider === provider.id}
+            isSaving={saveProviderMutation.isPending && selectedProvider === provider.id}
+            onSelect={() => setSelectedProvider(provider.id)}
+            onKeyChange={setApiKey}
+            onSave={() => saveProviderMutation.mutate({ providerId: provider.id, key: apiKey })}
+            onTest={() => testProviderMutation.mutate(provider.id)}
+            onToggle={() => toggleProviderMutation.mutate({
+              providerId: provider.id,
+              enabled: provider.auth_status === 'configured'
+            })}
+          />
+        ))}
+      </div>
+
+      {filteredProviders.length === 0 && (
+        <div className="text-center py-12">
+          <div className="w-16 h-16 rounded-2xl bg-[var(--surface-tertiary)] flex items-center justify-center mx-auto mb-4">
+            <Search className="w-8 h-8 text-[var(--text-muted)]" />
+          </div>
+          <h3 className="text-lg font-medium text-[var(--text-primary)]">No providers found</h3>
+          <p className="text-sm text-[var(--text-muted)] mt-1">Try adjusting your search</p>
+        </div>
+      )}
+    </motion.div>
+  );
+}
+
+function ModelsSection({
+  models,
+  modelsLoading
+}: {
+  models: Model[];
+  modelsLoading: boolean;
+}) {
+  const [search, setSearch] = useState('');
+  const [selectedProvider, setSelectedProvider] = useState<string>('all');
+
+  const providers = useMemo(() => {
+    const set = new Set(models.map(m => m.provider));
+    return ['all', ...Array.from(set)];
+  }, [models]);
+
+  const filteredModels = useMemo(() => {
+    return models.filter(m => {
+      const matchesSearch = !search ||
+        m.id.toLowerCase().includes(search.toLowerCase()) ||
+        (m.display_name?.toLowerCase().includes(search.toLowerCase()));
+      const matchesProvider = selectedProvider === 'all' || m.provider === selectedProvider;
+      return matchesSearch && matchesProvider;
+    });
+  }, [models, search, selectedProvider]);
+
+  if (modelsLoading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="w-8 h-8 text-[var(--neon-cyan)] animate-spin" />
+      </div>
+    );
+  }
+
+  return (
+    <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-6">
+      <SectionHeader
+        icon={Cpu}
+        title="AI Models"
+        description={`${models.length} models available`}
+      />
+
+      {/* Search & Filter */}
+      <Card className="p-4">
+        <div className="flex gap-3">
+          <div className="flex-1 relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)]" />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search models..."
+              className={cn(
+                'w-full pl-10 pr-4 py-2 rounded-lg',
+                'bg-[var(--surface-tertiary)] border border-[var(--border-default)]',
+                'text-[var(--text-primary)] text-sm',
+                'placeholder:text-[var(--text-muted)]',
+                'focus:outline-none focus:border-[var(--neon-cyan)]/50'
+              )}
+            />
+          </div>
+          <select
+            value={selectedProvider}
+            onChange={(e) => setSelectedProvider(e.target.value)}
+            className={cn(
+              'px-3 py-2 rounded-lg',
+              'bg-[var(--surface-tertiary)] border border-[var(--border-default)]',
+              'text-[var(--text-primary)] text-sm',
+              'focus:outline-none focus:border-[var(--neon-cyan)]/50'
+            )}
+          >
+            <option value="all">All Providers</option>
+            {providers.filter(p => p !== 'all').map(p => (
+              <option key={p} value={p}>{p}</option>
+            ))}
+          </select>
+          <Button icon={Plus}>Add Custom</Button>
+        </div>
+      </Card>
+
+      {/* Models List */}
+      <Card className="overflow-hidden">
+        <div className="divide-y divide-[var(--border-default)]">
+          {filteredModels.map((model) => (
+            <motion.div
+              key={model.id}
+              variants={itemVariants}
+              className="flex items-center justify-between p-4 hover:bg-[var(--surface-tertiary)]/50 transition-colors"
+            >
+              <div className="flex items-center gap-4">
+                <div className="w-8 h-8 rounded-lg bg-[var(--surface-tertiary)] flex items-center justify-center">
+                  <Cpu className="w-4 h-4 text-[var(--text-muted)]" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium text-[var(--text-primary)]">
+                      {model.display_name || model.id}
+                    </span>
+                    {model.available && (
+                      <span className="px-1.5 py-0.5 rounded text-[10px] bg-[var(--success)]/10 text-[var(--success)]">
+                        Available
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-3 text-xs text-[var(--text-muted)]">
+                    <span>{model.id}</span>
+                    <span>•</span>
+                    <span className="capitalize">{model.provider}</span>
+                    {model.context_window && (
+                      <>
+                        <span>•</span>
+                        <span>{(model.context_window / 1000).toFixed(0)}k context</span>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100">
+                <IconButton icon={MoreHorizontal} size="sm" />
+              </div>
+            </motion.div>
+          ))}
+        </div>
+      </Card>
+    </motion.div>
+  );
+}
+
+function SecuritySection({ securityStatus }: { securityStatus?: SecurityStatus }) {
+  // Use securityStatus if provided, otherwise use defaults
+  const [features, setFeatures] = useState({
+    apiAuth: securityStatus?.features?.apiAuth ?? true,
+    sessionSecurity: securityStatus?.features?.sessionSecurity ?? true,
+    auditLogging: securityStatus?.audit_enabled ?? false,
+    encryption: securityStatus?.features?.encryption ?? true
+  });
+
+  return (
+    <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-6">
+      <SectionHeader
+        icon={Shield}
+        title="Security Settings"
+        description="Configure authentication and security features"
+      />
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <Card className="p-5">
+          <div className="flex items-start justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-[var(--surface-tertiary)] flex items-center justify-center">
+                <Key className="w-5 h-5 text-[var(--neon-cyan)]" />
+              </div>
+              <div>
+                <h3 className="font-medium text-[var(--text-primary)]">API Authentication</h3>
+                <p className="text-sm text-[var(--text-muted)]">Require API key for access</p>
+              </div>
+            </div>
+            <button
+              onClick={() => setFeatures(f => ({ ...f, apiAuth: !f.apiAuth }))}
+              className={cn(
+                'relative w-11 h-6 rounded-full transition-colors duration-200',
+                features.apiAuth ? 'bg-[var(--success)]' : 'bg-[var(--surface-elevated)]'
+              )}
+            >
+              <span className={cn(
+                'absolute top-1 w-4 h-4 rounded-full bg-white shadow-sm transition-all duration-200',
+                features.apiAuth ? 'left-6' : 'left-1'
+              )} />
+            </button>
+          </div>
+        </Card>
+
+        <Card className="p-5">
+          <div className="flex items-start justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-[var(--surface-tertiary)] flex items-center justify-center">
+                <Clock className="w-5 h-5 text-[var(--neon-cyan)]" />
+              </div>
+              <div>
+                <h3 className="font-medium text-[var(--text-primary)]">Session Security</h3>
+                <p className="text-sm text-[var(--text-muted)]">Auto-expire inactive sessions</p>
+              </div>
+            </div>
+            <button
+              onClick={() => setFeatures(f => ({ ...f, sessionSecurity: !f.sessionSecurity }))}
+              className={cn(
+                'relative w-11 h-6 rounded-full transition-colors duration-200',
+                features.sessionSecurity ? 'bg-[var(--success)]' : 'bg-[var(--surface-elevated)]'
+              )}
+            >
+              <span className={cn(
+                'absolute top-1 w-4 h-4 rounded-full bg-white shadow-sm transition-all duration-200',
+                features.sessionSecurity ? 'left-6' : 'left-1'
+              )} />
+            </button>
+          </div>
+        </Card>
+
+        <Card className="p-5">
+          <div className="flex items-start justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-[var(--surface-tertiary)] flex items-center justify-center">
+                <Terminal className="w-5 h-5 text-[var(--neon-cyan)]" />
+              </div>
+              <div>
+                <h3 className="font-medium text-[var(--text-primary)]">Audit Logging</h3>
+                <p className="text-sm text-[var(--text-muted)]">Track all system activities</p>
+              </div>
+            </div>
+            <button
+              onClick={() => setFeatures(f => ({ ...f, auditLogging: !f.auditLogging }))}
+              className={cn(
+                'relative w-11 h-6 rounded-full transition-colors duration-200',
+                features.auditLogging ? 'bg-[var(--success)]' : 'bg-[var(--surface-elevated)]'
+              )}
+            >
+              <span className={cn(
+                'absolute top-1 w-4 h-4 rounded-full bg-white shadow-sm transition-all duration-200',
+                features.auditLogging ? 'left-6' : 'left-1'
+              )} />
+            </button>
+          </div>
+        </Card>
+
+        <Card className="p-5">
+          <div className="flex items-start justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-[var(--surface-tertiary)] flex items-center justify-center">
+                <Shield className="w-5 h-5 text-[var(--neon-cyan)]" />
+              </div>
+              <div>
+                <h3 className="font-medium text-[var(--text-primary)]">Encryption</h3>
+                <p className="text-sm text-[var(--text-muted)]">Encrypt sensitive data at rest</p>
+              </div>
+            </div>
+            <button
+              onClick={() => setFeatures(f => ({ ...f, encryption: !f.encryption }))}
+              className={cn(
+                'relative w-11 h-6 rounded-full transition-colors duration-200',
+                features.encryption ? 'bg-[var(--success)]' : 'bg-[var(--surface-elevated)]'
+              )}
+            >
+              <span className={cn(
+                'absolute top-1 w-4 h-4 rounded-full bg-white shadow-sm transition-all duration-200',
+                features.encryption ? 'left-6' : 'left-1'
+              )} />
+            </button>
+          </div>
+        </Card>
+      </div>
+    </motion.div>
+  );
+}
+
+function BudgetSection({ budgetData }: { budgetData?: { monthly_limit: number; monthly_spend: number } }) {
+  const monthlyLimit = budgetData?.monthly_limit || 100;
+  const monthlySpend = budgetData?.monthly_spend || 0;
+  const percentage = Math.min((monthlySpend / monthlyLimit) * 100, 100);
+
+  return (
+    <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-6">
+      <SectionHeader
+        icon={Wallet}
+        title="Budget Management"
+        description="Monitor and control your API spending"
+      />
+
+      {/* Usage Overview */}
+      <Card className="p-6">
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <p className="text-sm text-[var(--text-muted)]">Monthly Spending</p>
+            <p className="text-3xl font-bold text-[var(--text-primary)]">
+              ${monthlySpend.toFixed(2)}
+              <span className="text-lg font-normal text-[var(--text-muted)]"> / ${monthlyLimit}</span>
+            </p>
+          </div>
+          <div className="text-right">
+            <p className="text-sm text-[var(--text-muted)]">Remaining</p>
+            <p className="text-xl font-semibold text-[var(--success)]">${(monthlyLimit - monthlySpend).toFixed(2)}</p>
+          </div>
+        </div>
+
+        {/* Progress Bar */}
+        <div className="h-3 bg-[var(--surface-tertiary)] rounded-full overflow-hidden">
+          <motion.div
+            initial={{ width: 0 }}
+            animate={{ width: `${percentage}%` }}
+            transition={{ duration: 0.5, ease: 'easeOut' }}
+            className={cn(
+              'h-full rounded-full transition-colors',
+              percentage > 80 ? 'bg-[var(--error)]' : percentage > 60 ? 'bg-[var(--warning)]' : 'bg-[var(--success)]'
+            )}
+          />
+        </div>
+        <p className="text-xs text-[var(--text-muted)] mt-2">{percentage.toFixed(1)}% of monthly limit used</p>
+      </Card>
+
+      {/* Budget Settings */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <Card className="p-5">
+          <label className="block text-sm font-medium text-[var(--text-primary)] mb-2">
+            Monthly Budget Limit
+          </label>
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]">$</span>
+              <input
+                type="number"
+                defaultValue={monthlyLimit}
+                className={cn(
+                  'w-full pl-7 pr-3 py-2 rounded-lg',
+                  'bg-[var(--surface-tertiary)] border border-[var(--border-default)]',
+                  'text-[var(--text-primary)] text-sm',
+                  'focus:outline-none focus:border-[var(--neon-cyan)]/50'
+                )}
+              />
+            </div>
+            <Button>Update</Button>
+          </div>
+        </Card>
+
+        <Card className="p-5">
+          <label className="block text-sm font-medium text-[var(--text-primary)] mb-2">
+            Alert Threshold
+          </label>
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <input
+                type="number"
+                defaultValue={80}
+                className={cn(
+                  'w-full px-3 py-2 rounded-lg',
+                  'bg-[var(--surface-tertiary)] border border-[var(--border-default)]',
+                  'text-[var(--text-primary)] text-sm',
+                  'focus:outline-none focus:border-[var(--neon-cyan)]/50'
+                )}
+              />
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]">%</span>
+            </div>
+            <Button>Save</Button>
+          </div>
+        </Card>
+      </div>
+    </motion.div>
+  );
+}
+
+function NetworkSection() {
+  return (
+    <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-6">
+      <SectionHeader
+        icon={Network}
+        title="Network Settings"
+        description="Configure A2A network and peer connections"
+      />
+
+      <div className="grid grid-cols-1 gap-4">
+        <Card className="p-5">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-[var(--surface-tertiary)] flex items-center justify-center">
+                <Globe className="w-5 h-5 text-[var(--neon-cyan)]" />
+              </div>
+              <div>
+                <h3 className="font-medium text-[var(--text-primary)]">A2A Network</h3>
+                <p className="text-sm text-[var(--text-muted)]">Enable agent-to-agent communication</p>
+              </div>
+            </div>
+            <button className="relative w-11 h-6 rounded-full bg-[var(--success)] transition-colors duration-200">
+              <span className="absolute top-1 left-6 w-4 h-4 rounded-full bg-white shadow-sm transition-all duration-200" />
+            </button>
+          </div>
+        </Card>
+
+        <Card className="p-5">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-[var(--surface-tertiary)] flex items-center justify-center">
+                <Zap className="w-5 h-5 text-[var(--neon-cyan)]" />
+              </div>
+              <div>
+                <h3 className="font-medium text-[var(--text-primary)]">Auto Discovery</h3>
+                <p className="text-sm text-[var(--text-muted)]">Automatically discover peers on the network</p>
+              </div>
+            </div>
+            <button className="relative w-11 h-6 rounded-full bg-[var(--surface-elevated)] transition-colors duration-200">
+              <span className="absolute top-1 left-1 w-4 h-4 rounded-full bg-white shadow-sm transition-all duration-200" />
+            </button>
+          </div>
+        </Card>
+      </div>
+    </motion.div>
+  );
+}
+
+function SystemSection({ systemVersion, systemStatus }: { systemVersion?: { version: string }; systemStatus?: { uptime_seconds: number; agent_count: number } }) {
+  const uptime = systemStatus?.uptime_seconds || 0;
+  const hours = Math.floor(uptime / 3600);
+  const minutes = Math.floor((uptime % 3600) / 60);
+
+  return (
+    <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-6">
+      <SectionHeader
+        icon={Server}
+        title="System Information"
+        description="View system status and configuration"
+      />
+
+      {/* Stats Grid */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <Card className="p-4">
+          <p className="text-xs text-[var(--text-muted)] uppercase tracking-wider">Version</p>
+          <p className="text-lg font-semibold text-[var(--text-primary)] mt-1">{systemVersion?.version || '1.0.0'}</p>
+        </Card>
+        <Card className="p-4">
+          <p className="text-xs text-[var(--text-muted)] uppercase tracking-wider">Uptime</p>
+          <p className="text-lg font-semibold text-[var(--text-primary)] mt-1">{hours}h {minutes}m</p>
+        </Card>
+        <Card className="p-4">
+          <p className="text-xs text-[var(--text-muted)] uppercase tracking-wider">Agents</p>
+          <p className="text-lg font-semibold text-[var(--text-primary)] mt-1">{systemStatus?.agent_count || 0}</p>
+        </Card>
+        <Card className="p-4">
+          <p className="text-xs text-[var(--text-muted)] uppercase tracking-wider">Status</p>
+          <div className="flex items-center gap-2 mt-1">
+            <StatusDot status="active" />
+            <span className="text-lg font-semibold text-[var(--success)]">Healthy</span>
+          </div>
+        </Card>
+      </div>
+
+      {/* System Settings */}
+      <Card className="p-6">
+        <h3 className="font-medium text-[var(--text-primary)] mb-4">General Settings</h3>
+        <div className="space-y-4">
+          <div className="flex items-center justify-between py-3 border-b border-[var(--border-default)]">
+            <div className="flex items-center gap-3">
+              <Bell className="w-4 h-4 text-[var(--text-muted)]" />
+              <span className="text-sm text-[var(--text-primary)]">Notifications</span>
+            </div>
+            <button className="relative w-11 h-6 rounded-full bg-[var(--success)] transition-colors duration-200">
+              <span className="absolute top-1 left-6 w-4 h-4 rounded-full bg-white shadow-sm transition-all duration-200" />
+            </button>
+          </div>
+          <div className="flex items-center justify-between py-3 border-b border-[var(--border-default)]">
+            <div className="flex items-center gap-3">
+              <Moon className="w-4 h-4 text-[var(--text-muted)]" />
+              <span className="text-sm text-[var(--text-primary)]">Dark Mode</span>
+            </div>
+            <button className="relative w-11 h-6 rounded-full bg-[var(--success)] transition-colors duration-200">
+              <span className="absolute top-1 left-6 w-4 h-4 rounded-full bg-white shadow-sm transition-all duration-200" />
+            </button>
+          </div>
+          <div className="flex items-center justify-between py-3">
+            <div className="flex items-center gap-3">
+              <HardDrive className="w-4 h-4 text-[var(--text-muted)]" />
+              <span className="text-sm text-[var(--text-primary)]">Auto Cleanup</span>
+            </div>
+            <button className="relative w-11 h-6 rounded-full bg-[var(--surface-elevated)] transition-colors duration-200">
+              <span className="absolute top-1 left-1 w-4 h-4 rounded-full bg-white shadow-sm transition-all duration-200" />
+            </button>
+          </div>
+        </div>
+      </Card>
+    </motion.div>
+  );
+}
+
+// ========================================
+// MAIN SETTINGS COMPONENT
+// ========================================
+
+const menuItems: MenuItem[] = [
+  { id: 'providers', label: 'Providers', icon: Key, description: 'API keys & connections' },
+  { id: 'models', label: 'Models', icon: Cpu, description: 'Manage AI models' },
+  { id: 'security', label: 'Security', icon: Shield, description: 'Auth & encryption' },
+  { id: 'budget', label: 'Budget', icon: Wallet, description: 'Spending limits' },
+  { id: 'network', label: 'Network', icon: Network, description: 'A2A & peers' },
+  { id: 'system', label: 'System', icon: Server, description: 'Status & settings' }
+];
+
+export function Settings() {
+  const { t } = useTranslation();
+  const queryClient = useQueryClient();
+  const [activeSection, setActiveSection] = useState('providers');
+  const [isSidebarCollapsed, setSidebarCollapsed] = useState(false);
+
+  // Provider state
   const [apiKey, setApiKey] = useState('');
   const [selectedProvider, setSelectedProvider] = useState('');
   const [testingProvider, setTestingProvider] = useState<string | null>(null);
   const [highlightProvider, setHighlightProvider] = useState<string | null>(null);
-  const [testResults, setTestResults] = useState<Record<string, { status: 'ok' | 'error'; latency_ms?: number; error?: string }>>({});
-  const [editingAgent, setEditingAgent] = useState<string | null>(null);
+  const [testResults, setTestResults] = useState<Record<string, TestResult>>({});
 
-  // Custom model form state
-  const [showCustomModelForm, setShowCustomModelForm] = useState(false);
-  const [customModelId, setCustomModelId] = useState('');
-  const [customModelProvider, setCustomModelProvider] = useState('openrouter');
-  const [customModelContext, setCustomModelContext] = useState(128000);
-  const [customModelMaxOutput, setCustomModelMaxOutput] = useState(8192);
-  const [customModelStatus, setCustomModelStatus] = useState('');
-  const [modelSearch, setModelSearch] = useState('');
-
-  // Fetch data using actual API methods - useAuthQuery waits for authReady automatically
+  // Fetch data
   const { data: providersData, isLoading: providersLoading } = useAuthQuery({
     queryKey: ['providers'],
     queryFn: () => api.listProviders()
@@ -452,19 +1125,9 @@ export function Settings() {
     queryFn: () => api.getBudget()
   });
 
-  const { data: agentBudgets } = useAuthQuery({
-    queryKey: ['budget-agents'],
-    queryFn: () => api.getBudgetAgents()
-  });
-
-  const { data: a2aAgents } = useAuthQuery({
-    queryKey: ['a2a-agents'],
-    queryFn: () => api.listA2AAgents()
-  });
-
-  const { data: peers } = useAuthQuery({
-    queryKey: ['peers'],
-    queryFn: () => api.listPeers()
+  const { data: systemVersion } = useAuthQuery({
+    queryKey: ['system-version'],
+    queryFn: () => api.getVersion()
   });
 
   const { data: systemStatus } = useAuthQuery({
@@ -472,21 +1135,14 @@ export function Settings() {
     queryFn: () => api.getSystemStatus()
   });
 
-  const { data: systemVersion } = useAuthQuery({
-    queryKey: ['system-version'],
-    queryFn: () => api.getVersion()
-  });
-
-  // Agents data for Agent Models tab
-  const { data: agentsData, isLoading: agentsLoading } = useAuthQuery({
-    queryKey: ['agents'],
-    queryFn: () => api.listAgents()
-  });
-
   // Mutations
-  const updateBudgetMutation = useMutation({
-    mutationFn: api.updateBudget.bind(api),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['budget'] })
+  const saveProviderMutation = useMutation({
+    mutationFn: ({ providerId, key }: { providerId: string; key: string }) =>
+      api.saveProviderKey(providerId, key),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['providers'] });
+      setApiKey('');
+    }
   });
 
   const testProviderMutation = useMutation({
@@ -494,12 +1150,16 @@ export function Settings() {
       setTestingProvider(providerId);
       try {
         const result = await api.testProvider(providerId);
-        setTestResults(prev => ({ ...prev, [providerId]: result }));
+        setTestResults(prev => ({ ...prev, [providerId]: { ...result, timestamp: Date.now() } }));
         return result;
       } catch (error) {
         setTestResults(prev => ({
           ...prev,
-          [providerId]: { status: 'error', error: error instanceof Error ? error.message : 'Test failed' }
+          [providerId]: {
+            status: 'error',
+            error: error instanceof Error ? error.message : 'Test failed',
+            timestamp: Date.now()
+          }
         }));
         throw error;
       } finally {
@@ -511,20 +1171,16 @@ export function Settings() {
   const toggleProviderMutation = useMutation({
     mutationFn: async ({ providerId, enabled }: { providerId: string; enabled: boolean }) => {
       if (enabled) {
-        // Disable: remove the key
         await api.removeProviderKey(providerId);
-        setApiKey('');
       } else {
-        // Enable: need API key
         if (selectedProvider === providerId && apiKey) {
           await api.saveProviderKey(providerId, apiKey);
         } else {
-          // Auto-select this provider and prompt for API key
           setSelectedProvider(providerId);
           setApiKey('');
           setHighlightProvider(providerId);
           setTimeout(() => setHighlightProvider(null), 2000);
-          throw new Error('Please enter an API key first');
+          throw new Error('Please enter an API key');
         }
       }
     },
@@ -534,775 +1190,130 @@ export function Settings() {
     }
   });
 
-  const saveProviderMutation = useMutation({
-    mutationFn: ({ providerId, key }: { providerId: string; key: string }) =>
-      api.saveProviderKey(providerId, key),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['providers'] });
-      setApiKey('');
-    }
-  });
-
-  // Agent model mutation
-  const updateAgentModelMutation = useMutation({
-    mutationFn: ({ agentId, modelValue }: { agentId: string; modelValue: string }) =>
-      api.setAgentModel(agentId, modelValue),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['agents'] });
-    }
-  });
-
-  // Custom model mutation
-  const addCustomModelMutation = useMutation({
-    mutationFn: async () => {
-      const id = customModelId.trim();
-      if (!id) throw new Error('Please enter a model ID');
-      setCustomModelStatus('Adding...');
-      await api.addCustomModel({
-        id,
-        provider: customModelProvider || 'openrouter',
-        context_window: customModelContext || 128000,
-        max_output_tokens: customModelMaxOutput || 8192,
-      });
-    },
-    onSuccess: () => {
-      setCustomModelStatus('Added!');
-      setCustomModelId('');
-      setShowCustomModelForm(false);
-      queryClient.invalidateQueries({ queryKey: ['models'] });
-    },
-    onError: (error) => {
-      setCustomModelStatus('Error: ' + (error instanceof Error ? error.message : 'Failed'));
-    }
-  });
-
-  // Delete custom model mutation
-  const deleteCustomModelMutation = useMutation({
-    mutationFn: (modelId: string) => api.deleteCustomModel(modelId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['models'] });
-    }
-  });
-
-  // Derived values - ensure all data is array type with safe defaults
-  const providers = Array.isArray(providersData?.providers) ? providersData?.providers : [];
-  const models = Array.isArray(modelsData?.models) ? modelsData?.models : [];
-  const a2aAgentsList = Array.isArray(a2aAgents?.agents) ? a2aAgents?.agents : [];
-  const peersList = Array.isArray(peers) ? peers : [];
-  const agentBudgetsList = Array.isArray(agentBudgets) ? agentBudgets : [];
-  const agents = Array.isArray(agentsData) ? agentsData : [];
-  const totalLimit = budgetData?.monthly_limit || 100;
-
-  // Filtered models based on search
-  const filteredModels = models.filter((model) => {
-    if (!modelSearch.trim()) return true;
-    const q = modelSearch.toLowerCase().trim();
-    return (
-      model.id.toLowerCase().includes(q) ||
-      (model.display_name || '').toLowerCase().includes(q) ||
-      model.provider.toLowerCase().includes(q)
-    );
-  });
-
-  const formatUptime = (seconds: number) => {
-    const days = Math.floor(seconds / 86400);
-    const hours = Math.floor((seconds % 86400) / 3600);
-    const mins = Math.floor((seconds % 3600) / 60);
-    return days > 0 ? `${days}d ${hours}h ${mins}m` : `${hours}h ${mins}m`;
-  };
+  const providers = Array.isArray(providersData?.providers) ? providersData.providers : [];
+  const models = Array.isArray(modelsData?.models) ? modelsData.models : [];
 
   return (
-    <div className="min-h-screen bg-[var(--soft-bg)]">
+    <div className="min-h-screen bg-[var(--void)]">
       {/* Header */}
-      <header className="sticky top-0 z-30 bg-[var(--soft-bg)]/80 backdrop-blur-xl border-b border-[var(--soft-divider)]">
-        <div className="max-w-6xl mx-auto px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-[var(--soft-blue)] to-[var(--soft-purple)] flex items-center justify-center shadow-lg shadow-[var(--soft-blue)]/20">
-                <Settings2 className="w-6 h-6 text-white" />
-              </div>
-              <div>
-                <h1 className="text-2xl font-bold text-[var(--soft-text-primary)]">{t('settings.title')}</h1>
-                <p className="text-sm text-[var(--soft-text-muted)]">Configure your EnterpriseClaw instance</p>
-              </div>
+      <header className="sticky top-0 z-30 bg-[var(--void)]/80 backdrop-blur-xl border-b border-[var(--border-default)]">
+        <div className="flex items-center justify-between px-6 py-4">
+          <div className="flex items-center gap-4">
+            <div className="w-10 h-10 rounded-xl bg-[var(--surface-secondary)] border border-[var(--border-default)] flex items-center justify-center">
+              <Settings2 className="w-5 h-5 text-[var(--neon-cyan)]" />
             </div>
-            <div className="flex items-center gap-3">
-              <div className="px-4 py-2 rounded-xl bg-[var(--soft-sidebar)] border border-[var(--soft-divider)]">
-                <span className="text-xs text-[var(--soft-text-muted)]">Version</span>
-                <p className="text-sm font-medium text-[var(--soft-text-primary)]">{systemVersion?.version || '1.0.0'}</p>
-              </div>
-              <SoftButton variant="secondary" icon={RefreshCw} onClick={() => queryClient.invalidateQueries()}>
-                Refresh
-              </SoftButton>
+            <div>
+              <h1 className="text-xl font-bold text-[var(--text-primary)]">{t('settings.title')}</h1>
+              <p className="text-xs text-[var(--text-muted)]">Configure your OpenFang instance</p>
             </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <Button
+              variant="ghost"
+              size="sm"
+              icon={RefreshCw}
+              onClick={() => queryClient.invalidateQueries()}
+            >
+              Refresh
+            </Button>
           </div>
         </div>
       </header>
 
-      {/* Main Content */}
-      <main className="max-w-6xl mx-auto px-6 py-8">
-        <Tabs value={activeTab} onValueChange={setActiveTab}>
-          {/* Tab Navigation */}
-          <div className="mb-8">
-            <TabsList className="bg-[var(--soft-sidebar)] p-1.5 rounded-2xl border border-[var(--soft-divider)]">
-              {[
-                { id: 'providers', label: t('settings.tabs.providers'), icon: Key },
-                { id: 'models', label: t('settings.tabs.models'), icon: Cpu },
-                { id: 'agents', label: t('settings.tabs.agents'), icon: Bot },
-                { id: 'security', label: t('settings.tabs.security'), icon: Shield },
-                { id: 'budget', label: t('settings.tabs.budget'), icon: Wallet },
-                { id: 'network', label: t('settings.tabs.network'), icon: Network },
-                { id: 'system', label: t('settings.tabs.system'), icon: Server }
-              ].map((tab) => (
-                <TabsTrigger
-                  key={tab.id}
-                  value={tab.id}
-                  className={cn(
-                    'flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-all',
-                    'data-[state=active]:bg-[var(--soft-blue)] data-[state=active]:text-white',
-                    'data-[state=inactive]:text-[var(--soft-text-muted)] data-[state=inactive]:hover:text-[var(--soft-text-primary)]'
-                  )}
-                >
-                  <tab.icon className="w-4 h-4" />
-                  {tab.label}
-                </TabsTrigger>
-              ))}
-            </TabsList>
+      {/* Main Layout: Sidebar + Content */}
+      <div className="flex">
+        {/* Sidebar */}
+        <motion.aside
+          variants={sidebarVariants}
+          initial="hidden"
+          animate="visible"
+          className={cn(
+            'sticky top-[73px] h-[calc(100vh-73px)] border-r border-[var(--border-default)] bg-[var(--surface-secondary)]/50',
+            isSidebarCollapsed ? 'w-16' : 'w-64'
+          )}
+        >
+          <div className="p-3 space-y-1">
+            {menuItems.map((item) => (
+              <button
+                key={item.id}
+                onClick={() => setActiveSection(item.id)}
+                className={cn(
+                  'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition-all duration-150',
+                  activeSection === item.id
+                    ? 'bg-[var(--neon-cyan)]/10 text-[var(--neon-cyan)] border border-[var(--neon-cyan)]/30'
+                    : 'text-[var(--text-secondary)] hover:bg-[var(--surface-tertiary)] hover:text-[var(--text-primary)]'
+                )}
+              >
+                <item.icon className={cn('w-5 h-5 flex-shrink-0', activeSection === item.id && 'text-[var(--neon-cyan)]')} />
+                {!isSidebarCollapsed && (
+                  <div className="flex-1 min-w-0">
+                    <p className={cn('font-medium text-sm', activeSection === item.id && 'text-[var(--neon-cyan)]')}>
+                      {item.label}
+                    </p>
+                    <p className="text-xs text-[var(--text-muted)] truncate">{item.description}</p>
+                  </div>
+                )}
+                {!isSidebarCollapsed && activeSection === item.id && (
+                  <ChevronRight className="w-4 h-4 text-[var(--neon-cyan)]" />
+                )}
+              </button>
+            ))}
           </div>
 
-          {/* Providers Tab */}
-          <TabsContent value="providers">
-            <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-6">
-              <SectionHeader icon={Key} title="AI Providers" description="Configure API keys and connection settings" />
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {providersLoading ? (
-                  <div className="col-span-2 flex items-center justify-center py-16">
-                    <Loader2 className="w-8 h-8 text-[var(--soft-blue)] animate-spin" />
-                  </div>
-                ) : providers.map((provider: Provider) => (
-                  <SoftCard key={provider.id} className="p-6">
-                    <div className="flex items-start justify-between mb-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[var(--soft-blue)]/20 to-[var(--soft-purple)]/20 flex items-center justify-center">
-                          <Key className="w-6 h-6 text-[var(--soft-blue)]" />
-                        </div>
-                        <div>
-                          <h4 className="font-semibold text-[var(--soft-text-primary)]">{provider.display_name}</h4>
-                          <p className="text-xs text-[var(--soft-text-muted)]">{provider.id}</p>
-                        </div>
-                      </div>
-                      <StatusBadge status={provider.auth_status === 'configured' ? 'active' : 'inactive'} />
-                    </div>
-                    <div className="space-y-4">
-                      <div>
-                        <label className="block text-sm font-medium text-[var(--soft-text-secondary)] mb-2">API Key</label>
-                        <div className={cn(
-                          'rounded-xl transition-all duration-300',
-                          highlightProvider === provider.id && 'ring-2 ring-[var(--soft-blue)] ring-offset-2 ring-offset-[var(--soft-sidebar)]'
-                        )}>
-                          <SoftInput
-                            type={selectedProvider === provider.id ? 'text' : 'password'}
-                            value={selectedProvider === provider.id ? apiKey : (provider.auth_status === 'configured' ? '••••••••••••••••' : '')}
-                            onChange={(v) => { setSelectedProvider(provider.id); setApiKey(v); }}
-                            placeholder={provider.auth_status === 'configured' ? 'Key saved ••••••••' : 'Enter API key'}
-                            icon={Key}
-                          />
-                        </div>
-                      </div>
-                      <div className="flex items-center justify-between pt-2">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm text-[var(--soft-text-muted)]">Enabled</span>
-                          <SoftToggle
-                            enabled={provider.auth_status === 'configured'}
-                            onToggle={() => toggleProviderMutation.mutate({
-                              providerId: provider.id,
-                              enabled: provider.auth_status === 'configured'
-                            })}
-                            disabled={toggleProviderMutation.isPending}
-                          />
-                        </div>
-                        <div className="flex flex-col items-end gap-1">
-                          <div className="flex gap-2">
-                            <SoftButton
-                              variant="secondary" size="sm" icon={TestTube}
-                              onClick={() => testProviderMutation.mutate(provider.id)}
-                              loading={testingProvider === provider.id}
-                            >
-                              Test
-                            </SoftButton>
-                            <SoftButton
-                              size="sm"
-                              icon={Save}
-                              onClick={() => {
-                                if (selectedProvider === provider.id && apiKey) {
-                                  saveProviderMutation.mutate({ providerId: provider.id, key: apiKey });
-                                } else {
-                                  setSelectedProvider(provider.id);
-                                }
-                              }}
-                              loading={saveProviderMutation.isPending}
-                            >
-                              Save
-                            </SoftButton>
-                          </div>
-                          {testResults[provider.id] && (
-                            <span className={cn(
-                              'text-xs',
-                              testResults[provider.id].status === 'ok'
-                                ? 'text-[var(--soft-green)]'
-                                : 'text-[var(--soft-pink)]'
-                            )}>
-                              {testResults[provider.id].status === 'ok'
-                                ? `${testResults[provider.id].latency_ms}ms`
-                                : testResults[provider.id].error}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </SoftCard>
-                ))}
-              </div>
-              <SoftCard className="p-6 border-dashed border-2 border-[var(--soft-divider)] hover:border-[var(--soft-blue)]/30 cursor-pointer">
-                <div className="flex items-center justify-center gap-3 py-4">
-                  <div className="w-10 h-10 rounded-xl bg-[var(--soft-surface)] flex items-center justify-center">
-                    <Plus className="w-5 h-5 text-[var(--soft-text-muted)]" />
-                  </div>
-                  <span className="text-[var(--soft-text-muted)] font-medium">Add Custom Provider</span>
-                </div>
-              </SoftCard>
-            </motion.div>
-          </TabsContent>
+          {/* Collapse Toggle */}
+          <div className="absolute bottom-4 left-0 right-0 px-3">
+            <button
+              onClick={() => setSidebarCollapsed(!isSidebarCollapsed)}
+              className="w-full flex items-center justify-center p-2 rounded-lg text-[var(--text-muted)] hover:bg-[var(--surface-tertiary)] hover:text-[var(--text-primary)] transition-colors"
+            >
+              {isSidebarCollapsed ? <Maximize2 className="w-4 h-4" /> : <Minimize2 className="w-4 h-4" />}
+            </button>
+          </div>
+        </motion.aside>
 
-          {/* Models Tab */}
-          <TabsContent value="models">
-            <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-6">
-              <SectionHeader icon={Cpu} title="AI Models" description="Manage available models and settings" />
-              <SoftCard className="p-6">
-                <div className="flex items-center justify-between mb-6">
-                  <div className="relative flex-1 max-w-md">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--soft-text-muted)]" />
-                    <input
-                      type="text"
-                      placeholder="Search models..."
-                      value={modelSearch}
-                      onChange={(e) => setModelSearch(e.target.value)}
-                      className={cn(
-                        'w-full pl-10 pr-4 py-2.5 rounded-xl bg-[var(--soft-main)] border border-[var(--soft-divider)]',
-                        'text-[var(--soft-text-primary)] text-sm placeholder:text-[var(--soft-text-tertiary)]',
-                        'focus:outline-none focus:border-[var(--soft-blue)]/50'
-                      )}
-                    />
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <SoftButton
-                      icon={Plus}
-                      variant="secondary"
-                      onClick={() => setShowCustomModelForm(true)}
-                    >
-                      Add Custom
-                    </SoftButton>
-                    <SoftButton icon={RefreshCw} variant="secondary">Sync</SoftButton>
-                  </div>
-                </div>
-
-                {/* Custom Model Form */}
-                {showCustomModelForm && (
-                  <motion.div
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: 'auto' }}
-                    exit={{ opacity: 0, height: 0 }}
-                    className="mb-6 p-4 rounded-xl bg-[var(--soft-main)] border border-[var(--soft-blue)]/30"
-                  >
-                    <div className="flex items-center justify-between mb-4">
-                      <h4 className="font-medium text-[var(--soft-text-primary)]">Add Custom Model</h4>
-                      <button
-                        onClick={() => setShowCustomModelForm(false)}
-                        className="text-[var(--soft-text-muted)] hover:text-[var(--soft-text-primary)]"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                      <div>
-                        <label className="block text-xs font-medium text-[var(--soft-text-muted)] mb-2">Model ID</label>
-                        <input
-                          type="text"
-                          value={customModelId}
-                          onChange={(e) => setCustomModelId(e.target.value)}
-                          placeholder="e.g., glm-5"
-                          className={cn(
-                            'w-full px-3 py-2 rounded-lg bg-[var(--soft-surface)] border border-[var(--soft-divider)]',
-                            'text-[var(--soft-text-primary)] text-sm',
-                            'focus:outline-none focus:border-[var(--soft-blue)]/50'
-                          )}
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-[var(--soft-text-muted)] mb-2">Provider</label>
-                        <select
-                          value={customModelProvider}
-                          onChange={(e) => setCustomModelProvider(e.target.value)}
-                          className={cn(
-                            'w-full px-3 py-2 rounded-lg bg-[var(--soft-surface)] border border-[var(--soft-divider)]',
-                            'text-[var(--soft-text-primary)] text-sm',
-                            'focus:outline-none focus:border-[var(--soft-blue)]/50'
-                          )}
-                        >
-                          {providers.map((p) => (
-                            <option key={p.id} value={p.id}>{p.display_name}</option>
-                          ))}
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-[var(--soft-text-muted)] mb-2">Context Window</label>
-                        <input
-                          type="number"
-                          value={customModelContext}
-                          onChange={(e) => setCustomModelContext(Number(e.target.value))}
-                          className={cn(
-                            'w-full px-3 py-2 rounded-lg bg-[var(--soft-surface)] border border-[var(--soft-divider)]',
-                            'text-[var(--soft-text-primary)] text-sm',
-                            'focus:outline-none focus:border-[var(--soft-blue)]/50'
-                          )}
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-[var(--soft-text-muted)] mb-2">Max Output Tokens</label>
-                        <input
-                          type="number"
-                          value={customModelMaxOutput}
-                          onChange={(e) => setCustomModelMaxOutput(Number(e.target.value))}
-                          className={cn(
-                            'w-full px-3 py-2 rounded-lg bg-[var(--soft-surface)] border border-[var(--soft-divider)]',
-                            'text-[var(--soft-text-primary)] text-sm',
-                            'focus:outline-none focus:border-[var(--soft-blue)]/50'
-                          )}
-                        />
-                      </div>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      {customModelStatus && (
-                        <span className={cn(
-                          'text-sm',
-                          customModelStatus.startsWith('Error') ? 'text-[var(--soft-pink)]' : 'text-[var(--soft-green)]'
-                        )}>
-                          {customModelStatus}
-                        </span>
-                      )}
-                      <div className="flex items-center gap-2 ml-auto">
-                        <SoftButton
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setShowCustomModelForm(false)}
-                        >
-                          Cancel
-                        </SoftButton>
-                        <SoftButton
-                          size="sm"
-                          icon={Plus}
-                          loading={addCustomModelMutation.isPending}
-                          onClick={() => addCustomModelMutation.mutate()}
-                        >
-                          Add Model
-                        </SoftButton>
-                      </div>
-                    </div>
-                  </motion.div>
-                )}
-
-                <ScrollArea className="h-[400px]">
-                  <div className="space-y-3">
-                    {modelsLoading ? (
-                      <div className="flex items-center justify-center py-8">
-                        <Loader2 className="w-6 h-6 text-[var(--soft-blue)] animate-spin" />
-                      </div>
-                    ) : filteredModels.map((model) => (
-                      <div
-                        key={model.id}
-                        className={cn(
-                          'flex items-center justify-between p-4 rounded-xl bg-[var(--soft-main)] border border-[var(--soft-divider)]',
-                          'hover:border-[var(--soft-blue)]/30 transition-colors'
-                        )}
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-lg bg-[var(--soft-surface)] flex items-center justify-center">
-                            <Cpu className="w-5 h-5 text-[var(--soft-blue)]" />
-                          </div>
-                          <div>
-                            <h4 className="font-medium text-[var(--soft-text-primary)]">{model.display_name || model.id}</h4>
-                            <p className="text-xs text-[var(--soft-text-muted)]">{model.provider} · {model.id}</p>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-4">
-                          <div className="text-right">
-                            <p className="text-sm text-[var(--soft-text-secondary)]">{model.context_window?.toLocaleString()} tokens</p>
-                            <p className="text-xs text-[var(--soft-text-muted)]">context</p>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            {!model.display_name?.includes('Official') && (
-                              <button
-                                onClick={() => {
-                                  if (confirm(`Delete custom model "${model.id}"?`)) {
-                                    deleteCustomModelMutation.mutate(model.id);
-                                  }
-                                }}
-                                className="p-2 rounded-lg text-[var(--soft-text-muted)] hover:text-[var(--soft-pink)] hover:bg-[var(--soft-pink)]/10 transition-colors"
-                                title="Delete custom model"
-                              >
-                                <X className="w-4 h-4" />
-                              </button>
-                            )}
-                            <SoftToggle enabled={model.available} onToggle={() => {}} />
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </ScrollArea>
-              </SoftCard>
-            </motion.div>
-          </TabsContent>
-
-          {/* Agents Tab */}
-          <TabsContent value="agents">
-            <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-6">
-              <SectionHeader icon={Bot} title="Agent Models" description="Configure provider and model for each agent" />
-              <SoftCard className="p-6">
-                {agentsLoading ? (
-                  <div className="flex items-center justify-center py-16">
-                    <Loader2 className="w-8 h-8 text-[var(--soft-blue)] animate-spin" />
-                  </div>
-                ) : agents.length === 0 ? (
-                  <div className="text-center py-16">
-                    <Bot className="w-12 h-12 mx-auto mb-4 text-[var(--soft-text-muted)]" />
-                    <p className="text-[var(--soft-text-muted)]">No agents yet</p>
-                    <p className="text-sm text-[var(--soft-text-tertiary)] mt-2">Create an agent from the sidebar to get started</p>
-                  </div>
-                ) : (
-                  <ScrollArea className="h-[500px]">
-                    <div className="space-y-4">
-                      {agents.map((agent) => (
-                        <AgentModelEditor
-                          key={agent.id}
-                          agent={agent}
-                          providers={providers}
-                          models={models}
-                          isEditing={editingAgent === agent.id}
-                          onEdit={() => setEditingAgent(agent.id)}
-                          onCancel={() => setEditingAgent(null)}
-                          onSave={(modelValue) => updateAgentModelMutation.mutate(
-                            { agentId: agent.id, modelValue },
-                            { onSuccess: () => setEditingAgent(null) }
-                          )}
-                          isSaving={updateAgentModelMutation.isPending}
-                        />
-                      ))}
-                    </div>
-                  </ScrollArea>
-                )}
-              </SoftCard>
-            </motion.div>
-          </TabsContent>
-
-          {/* Security Tab */}
-          <TabsContent value="security">
-            <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-6">
-              <SectionHeader icon={Shield} title="Security Settings" description="Configure authentication and encryption" />
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <SoftCard className="p-6 lg:col-span-1">
-                  <h4 className="font-semibold text-[var(--soft-text-primary)] mb-4">Security Status</h4>
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-[var(--soft-text-secondary)]">Audit Enabled</span>
-                      {securityStatus?.audit_enabled ? <Check className="w-5 h-5 text-[var(--soft-green)]" /> : <X className="w-5 h-5 text-[var(--soft-pink)]" />}
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-[var(--soft-text-secondary)]">Chain Valid</span>
-                      {securityStatus?.chain_valid ? <Check className="w-5 h-5 text-[var(--soft-green)]" /> : <X className="w-5 h-5 text-[var(--soft-pink)]" />}
-                    </div>
-                  </div>
-                  <div className="mt-6 p-4 rounded-xl bg-[var(--soft-green)]/10 border border-[var(--soft-green)]/20">
-                    <div className="flex items-center gap-2 mb-1">
-                      <Shield className="w-4 h-4 text-[var(--soft-green)]" />
-                      <span className="font-medium text-[var(--soft-green)]">Secure</span>
-                    </div>
-                    <p className="text-xs text-[var(--soft-text-muted)]">Your instance is properly secured</p>
-                  </div>
-                </SoftCard>
-                <SoftCard className="p-6 lg:col-span-2">
-                  <h4 className="font-semibold text-[var(--soft-text-primary)] mb-4">Configuration</h4>
-                  <div className="space-y-4">
-                    {[
-                      { icon: Shield, label: 'Authentication', desc: 'Require login to access', state: securityEnabled, setState: setSecurityEnabled },
-                      { icon: Key, label: 'Encryption at Rest', desc: 'Encrypt stored data', state: encryptionEnabled, setState: setEncryptionEnabled },
-                      { icon: Database, label: 'Audit Logging', desc: 'Log all system actions', state: auditLogging, setState: setAuditLogging }
-                    ].map((item) => (
-                      <div key={item.label} className="flex items-center justify-between p-4 rounded-xl bg-[var(--soft-main)]">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-lg bg-[var(--soft-surface)] flex items-center justify-center">
-                            <item.icon className="w-5 h-5 text-[var(--soft-blue)]" />
-                          </div>
-                          <div>
-                            <p className="font-medium text-[var(--soft-text-primary)]">{item.label}</p>
-                            <p className="text-xs text-[var(--soft-text-muted)]">{item.desc}</p>
-                          </div>
-                        </div>
-                        <SoftToggle enabled={item.state} onToggle={() => item.setState(!item.state)} />
-                      </div>
-                    ))}
-                  </div>
-                </SoftCard>
-              </div>
-            </motion.div>
-          </TabsContent>
-
-          {/* Budget Tab */}
-          <TabsContent value="budget">
-            <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-6">
-              <SectionHeader icon={Wallet} title="Budget Management" description="Set spending limits and track usage" />
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <SoftCard className="p-6 lg:col-span-1">
-                  <h4 className="font-semibold text-[var(--soft-text-primary)] mb-4">Global Budget</h4>
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-[var(--soft-text-secondary)]">Budget Enabled</span>
-                      <SoftToggle enabled={true} onToggle={() => {}} />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-[var(--soft-text-secondary)] mb-2">Monthly Limit (USD)</label>
-                      <div className="flex items-center gap-2">
-                        <span className="text-[var(--soft-text-muted)]">$</span>
-                        <input
-                          type="number"
-                          value={monthlyLimit}
-                          onChange={(e) => setMonthlyLimit(Number(e.target.value))}
-                          className={cn(
-                            'flex-1 px-3 py-2 rounded-xl bg-[var(--soft-main)] border border-[var(--soft-divider)]',
-                            'text-[var(--soft-text-primary)] text-sm focus:outline-none focus:border-[var(--soft-blue)]/50'
-                          )}
-                        />
-                      </div>
-                    </div>
-                    <SoftButton
-                      onClick={() => updateBudgetMutation.mutate({ monthly_limit: monthlyLimit })}
-                      loading={updateBudgetMutation.isPending}
-                    >
-                      Save Budget
-                    </SoftButton>
-                  </div>
-                  <div className="mt-6 pt-6 border-t border-[var(--soft-divider)]">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-sm text-[var(--soft-text-muted)]">Monthly Usage</span>
-                      <span className="text-sm font-medium text-[var(--soft-text-primary)]">
-                        ${(budgetData?.monthly_spend || 0).toFixed(2)} / {totalLimit}
-                      </span>
-                    </div>
-                    <div className="h-2 rounded-full bg-[var(--soft-surface)] overflow-hidden">
-                      <div
-                        className="h-full rounded-full bg-gradient-to-r from-[var(--soft-blue)] to-[var(--soft-purple)]"
-                        style={{ width: `${Math.min(((budgetData?.monthly_spend || 0) / totalLimit) * 100, 100)}%` }}
-                      />
-                    </div>
-                  </div>
-                </SoftCard>
-                <SoftCard className="p-6 lg:col-span-2">
-                  <div className="flex items-center justify-between mb-4">
-                    <h4 className="font-semibold text-[var(--soft-text-primary)]">Per-Agent Usage</h4>
-                  </div>
-                  <ScrollArea className="h-[300px]">
-                    <div className="space-y-3">
-                      {agentBudgetsList.map((agentBudget) => (
-                        <div key={agentBudget.agent_id} className="flex items-center justify-between p-4 rounded-xl bg-[var(--soft-main)]">
-                          <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-[var(--soft-blue)]/20 to-[var(--soft-purple)]/20 flex items-center justify-center">
-                              <Zap className="w-5 h-5 text-[var(--soft-blue)]" />
-                            </div>
-                            <div>
-                              <p className="font-medium text-[var(--soft-text-primary)]">{agentBudget.agent_name || agentBudget.agent_id}</p>
-                              <p className="text-xs text-[var(--soft-text-muted)]">{agentBudget.calls} calls · {agentBudget.tokens.toLocaleString()} tokens</p>
-                            </div>
-                          </div>
-                          <div className="text-right">
-                            <p className="text-sm font-medium text-[var(--soft-text-primary)]">${agentBudget.spend.toFixed(2)}</p>
-                            <p className="text-xs text-[var(--soft-text-muted)]">spent</p>
-                          </div>
-                        </div>
-                      ))}
-                      {!agentBudgetsList.length && (
-                        <div className="text-center py-8 text-[var(--soft-text-muted)]">
-                          <Wallet className="w-10 h-10 mx-auto mb-2 opacity-50" />
-                          <p className="text-sm">No agent usage data yet</p>
-                        </div>
-                      )}
-                    </div>
-                  </ScrollArea>
-                </SoftCard>
-              </div>
-            </motion.div>
-          </TabsContent>
-
-          {/* Network Tab */}
-          <TabsContent value="network">
-            <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-6">
-              <SectionHeader icon={Network} title="Network & A2A" description="Manage peer connections and A2A agents" />
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <SoftCard className="p-6">
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-2">
-                      <Network className="w-5 h-5 text-[var(--soft-blue)]" />
-                      <h4 className="font-semibold text-[var(--soft-text-primary)]">Connected Peers</h4>
-                    </div>
-                    <StatusBadge status={peers && peers.length > 0 ? 'active' : 'inactive'} />
-                  </div>
-                  <ScrollArea className="h-[250px]">
-                    <div className="space-y-3">
-                      {peersList.map((peer) => (
-                        <div key={peer.id} className="flex items-center justify-between p-3 rounded-xl bg-[var(--soft-main)]">
-                          <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 rounded-lg bg-[var(--soft-surface)] flex items-center justify-center">
-                              <Server className="w-4 h-4 text-[var(--soft-blue)]" />
-                            </div>
-                            <div>
-                              <p className="font-medium text-[var(--soft-text-primary)] text-sm">{peer.name || peer.id}</p>
-                              <p className="text-xs text-[var(--soft-text-muted)]">{peer.address}</p>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <span className={cn('w-2 h-2 rounded-full', peer.status === 'online' ? 'bg-[var(--soft-green)]' : 'bg-[var(--soft-amber)]')} />
-                            <span className="text-xs text-[var(--soft-text-muted)]">{peer.agent_count || 0} agents</span>
-                          </div>
-                        </div>
-                      ))}
-                      {!peersList.length && (
-                        <div className="text-center py-8 text-[var(--soft-text-muted)]">
-                          <Network className="w-10 h-10 mx-auto mb-2 opacity-50" />
-                          <p className="text-sm">No peers connected</p>
-                        </div>
-                      )}
-                    </div>
-                  </ScrollArea>
-                </SoftCard>
-                <SoftCard className="p-6">
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-2">
-                      <ArrowRightLeft className="w-5 h-5 text-[var(--soft-purple)]" />
-                      <h4 className="font-semibold text-[var(--soft-text-primary)]">A2A Agents</h4>
-                    </div>
-                    <SoftButton variant="secondary" size="sm" icon={Plus}>Add</SoftButton>
-                  </div>
-                  <ScrollArea className="h-[250px]">
-                    <div className="space-y-3">
-                      {a2aAgentsList.map((agent, idx) => (
-                        <div key={idx} className="flex items-center justify-between p-3 rounded-xl bg-[var(--soft-main)]">
-                          <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[var(--soft-purple)]/20 to-[var(--soft-pink)]/20 flex items-center justify-center">
-                              <Bot className="w-4 h-4 text-[var(--soft-purple)]" />
-                            </div>
-                            <div>
-                              <p className="font-medium text-[var(--soft-text-primary)] text-sm">{agent.name}</p>
-                              <p className="text-xs text-[var(--soft-text-muted)] truncate max-w-[200px]">{agent.url}</p>
-                            </div>
-                          </div>
-                          <SoftButton variant="ghost" size="sm" icon={ExternalLink} />
-                        </div>
-                      ))}
-                      {!a2aAgentsList.length && (
-                        <div className="text-center py-8 text-[var(--soft-text-muted)]">
-                          <ArrowRightLeft className="w-10 h-10 mx-auto mb-2 opacity-50" />
-                          <p className="text-sm">No A2A agents configured</p>
-                        </div>
-                      )}
-                    </div>
-                  </ScrollArea>
-                </SoftCard>
-              </div>
-            </motion.div>
-          </TabsContent>
-
-          {/* System Tab */}
-          <TabsContent value="system">
-            <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-6">
-              <SectionHeader icon={Server} title="System Information" description="View system status and diagnostics" />
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <SoftCard className="p-6">
-                  <h4 className="font-semibold text-[var(--soft-text-primary)] mb-4">Status</h4>
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-[var(--soft-text-secondary)]">Agent Count</span>
-                      <span className="text-sm text-[var(--soft-text-primary)]">{systemStatus?.agent_count || 0}</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-[var(--soft-text-secondary)]">Uptime</span>
-                      <span className="text-sm text-[var(--soft-text-primary)]">{formatUptime(systemStatus?.uptime_seconds || 0)}</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-[var(--soft-text-secondary)]">Version</span>
-                      <span className="text-sm text-[var(--soft-text-primary)]">{systemVersion?.version || 'N/A'}</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-[var(--soft-text-secondary)]">Commit</span>
-                      <code className="text-xs text-[var(--soft-text-muted)] bg-[var(--soft-main)] px-2 py-1 rounded">
-                        {systemVersion?.git_commit?.slice(0, 7) || 'N/A'}
-                      </code>
-                    </div>
-                  </div>
-                </SoftCard>
-                <SoftCard className="p-6">
-                  <h4 className="font-semibold text-[var(--soft-text-primary)] mb-4">Configuration</h4>
-                  <div className="space-y-4">
-                    {[
-                      { label: 'Default Provider', value: systemStatus?.default_provider || 'None' },
-                      { label: 'Default Model', value: systemStatus?.default_model || 'None' },
-                      { label: 'Platform', value: systemVersion?.platform || 'Unknown' },
-                      { label: 'Architecture', value: systemVersion?.arch || 'Unknown' }
-                    ].map((item) => (
-                      <div key={item.label} className="flex items-center justify-between">
-                        <span className="text-sm text-[var(--soft-text-secondary)]">{item.label}</span>
-                        <span className="text-sm text-[var(--soft-text-primary)]">{item.value}</span>
-                      </div>
-                    ))}
-                  </div>
-                </SoftCard>
-                <SoftCard className="p-6">
-                  <h4 className="font-semibold text-[var(--soft-text-primary)] mb-4">{t('settings.system.language')}</h4>
-                  <div className="space-y-3">
-                    {[
-                      { code: 'zh-CN', name: t('languages.zh-CN') },
-                      { code: 'zh-TW', name: t('languages.zh-TW') },
-                      { code: 'en', name: t('languages.en') },
-                      { code: 'ja', name: t('languages.ja') }
-                    ].map((lang) => (
-                      <button
-                        key={lang.code}
-                        onClick={() => i18n.changeLanguage(lang.code)}
-                        className={cn(
-                          'w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm transition-colors',
-                          i18n.language === lang.code
-                            ? 'bg-[var(--soft-blue)]/10 text-[var(--soft-blue)] border border-[var(--soft-blue)]/30'
-                            : 'hover:bg-[var(--soft-surface-hover)] text-[var(--soft-text-secondary)]'
-                        )}
-                      >
-                        <span>{lang.name}</span>
-                        {i18n.language === lang.code && <Check className="w-4 h-4" />}
-                      </button>
-                    ))}
-                  </div>
-                </SoftCard>
-                <SoftCard className="p-6">
-                  <h4 className="font-semibold text-[var(--soft-text-primary)] mb-4">Actions</h4>
-                  <div className="space-y-3">
-                    <SoftButton variant="secondary" icon={RefreshCw}>Restart System</SoftButton>
-                    <SoftButton variant="secondary" icon={Database}>Clear Cache</SoftButton>
-                    <SoftButton variant="secondary" icon={Save}>Export Config</SoftButton>
-                    <SoftButton variant="ghost" icon={AlertCircle}>Reset to Defaults</SoftButton>
-                  </div>
-                </SoftCard>
-              </div>
-            </motion.div>
-          </TabsContent>
-        </Tabs>
-      </main>
+        {/* Content Area */}
+        <main className="flex-1 p-6 overflow-auto">
+          <motion.div
+            key={activeSection}
+            variants={contentVariants}
+            initial="hidden"
+            animate="visible"
+            className="max-w-5xl"
+          >
+            {activeSection === 'providers' && (
+              <ProvidersSection
+                providers={providers}
+                providersLoading={providersLoading}
+                testResults={testResults}
+                testingProvider={testingProvider}
+                saveProviderMutation={saveProviderMutation}
+                testProviderMutation={testProviderMutation}
+                toggleProviderMutation={toggleProviderMutation}
+                selectedProvider={selectedProvider}
+                setSelectedProvider={setSelectedProvider}
+                apiKey={apiKey}
+                setApiKey={setApiKey}
+                highlightProvider={highlightProvider}
+              />
+            )}
+            {activeSection === 'models' && (
+              <ModelsSection models={models} modelsLoading={modelsLoading} />
+            )}
+            {activeSection === 'security' && (
+              <SecuritySection securityStatus={securityStatus} />
+            )}
+            {activeSection === 'budget' && (
+              <BudgetSection budgetData={budgetData} />
+            )}
+            {activeSection === 'network' && (
+              <NetworkSection />
+            )}
+            {activeSection === 'system' && (
+              <SystemSection systemVersion={systemVersion} systemStatus={systemStatus} />
+            )}
+          </motion.div>
+        </main>
+      </div>
     </div>
   );
 }

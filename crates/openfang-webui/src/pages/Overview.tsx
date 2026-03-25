@@ -1,346 +1,502 @@
-// Welcome Landing Page - Simple Product Showcase
-import React from 'react';
-import { motion } from 'framer-motion';
-import { useNavigate } from 'react-router';
-import Lottie from 'lottie-react';
+// Overview Page - Claymorphism Dashboard Style
+// Consistent with app design system: purple theme, soft 3D, rounded cards
+
+import { motion, type Variants } from 'framer-motion'
+import { useNavigate } from 'react-router'
+import Lottie from 'lottie-react'
+import welcomeAnimation from '../../public/lottie/welcome-screen-ai.json'
 import {
-  Bot, MessageSquare, Zap, Shield, ArrowRight, Sparkles, Cpu, Globe
-} from 'lucide-react';
-import { useTranslation } from 'react-i18next';
+  Bot,
+  MessageSquare,
+  Zap,
+  Shield,
+  ArrowRight,
+  Sparkles,
+  Activity,
+  TrendingUp,
+  Hand,
+  Workflow,
+  Blocks,
+} from 'lucide-react'
+import { useTranslation } from 'react-i18next'
+import { cn } from '@/lib/utils'
 
-// Local Lottie animation path - Download your own from LottieFiles
-// Recommended animations: AI Bot, Robot Assistant, Chat Animation
-const LOTTIE_PATH = '/lottie/ai-bot.json';
+// ============================================
+// CLAYMORPHISM DESIGN TOKENS
+// ============================================
+const clay = {
+  // Primary: Purple (#8B5CF6)
+  primary: '#8B5CF6',
+  primaryLight: '#A78BFA',
+  primaryDark: '#7C3AED',
 
-// Embedded fallback animation (simple AI pulse)
-const fallbackAnimation = {
-  v: "5.7.4",
-  fr: 60,
-  ip: 0,
-  op: 60,
-  w: 400,
-  h: 400,
-  nm: "AI Pulse",
-  ddd: 0,
-  assets: [],
-  layers: [
-    {
-      ddd: 0,
-      ind: 1,
-      ty: 4,
-      nm: "Circle",
-      sr: 1,
-      ks: {
-        o: { a: 1, k: [
-          { i: { x: [0.833], y: [0.833] }, o: { x: [0.167], y: [0.167] }, t: 0, s: [100] },
-          { i: { x: [0.833], y: [0.833] }, o: { x: [0.167], y: [0.167] }, t: 30, s: [50] },
-          { t: 60, s: [100] }
-        ]},
-        r: { a: 0, k: 0 },
-        p: { a: 0, k: [200, 200, 0] },
-        a: { a: 0, k: [0, 0, 0] },
-        s: { a: 1, k: [
-          { i: { x: [0.667, 0.667, 0.667], y: [1, 1, 1] }, o: { x: [0.333, 0.333, 0.333], y: [0, 0, 0] }, t: 0, s: [100, 100, 100] },
-          { i: { x: [0.667, 0.667, 0.667], y: [1, 1, 1] }, o: { x: [0.333, 0.333, 0.333], y: [0, 0, 0] }, t: 30, s: [120, 120, 100] },
-          { t: 60, s: [100, 100, 100] }
-        ]}
-      },
-      ao: 0,
-      shapes: [
-        {
-          ty: "gr",
-          it: [
-            {
-              d: 1,
-              ty: "el",
-              s: { a: 0, k: [120, 120] },
-              p: { a: 0, k: [0, 0] },
-              nm: "Ellipse Path 1"
-            },
-            {
-              ty: "fl",
-              c: { a: 0, k: [0.231, 0.51, 0.965, 1] },
-              o: { a: 0, k: 100 },
-              r: 1,
-              bm: 0,
-              nm: "Fill 1"
-            }
-          ],
-          nm: "Ellipse 1"
-        }
-      ],
-      ip: 0,
-      op: 60,
-      st: 0,
-      bm: 0
-    }
-  ]
-};
+  // Background
+  bgGradient: 'from-gray-50 via-violet-50/30 to-purple-50/20',
 
-// Hero Lottie Animation Component
-function HeroLottie() {
-  const [animationData, setAnimationData] = React.useState(null);
-  const [loading, setLoading] = React.useState(true);
+  // Cards
+  card: 'bg-white border-[3px] border-white',
+  cardShadow: 'shadow-[0_4px_16px_rgba(139,92,246,0.15),inset_0_1px_3px_rgba(255,255,255,0.8)]',
+  cardHover: 'hover:shadow-[0_8px_24px_rgba(139,92,246,0.25)]',
 
-  React.useEffect(() => {
-    fetch(LOTTIE_PATH)
-      .then(res => res.json())
-      .then(data => {
-        setAnimationData(data);
-        setLoading(false);
-      })
-      .catch(() => {
-        setLoading(false);
-      });
-  }, []);
+  // Active/Pressed State
+  active: 'bg-violet-50 shadow-[inset_0_2px_4px_rgba(139,92,246,0.15)]',
 
-  if (loading) {
-    return (
-      <div className="w-full h-80 max-w-md mx-auto flex items-center justify-center">
-        <div className="w-16 h-16 border-4 border-[var(--neon-cyan)] border-t-transparent rounded-full animate-spin" />
-      </div>
-    );
-  }
+  // Border Radius
+  radius: 'rounded-2xl',
+  radiusLg: 'rounded-3xl',
 
-  if (!animationData) {
-    return <HeroIllustration />;
-  }
-
-  return (
-    <Lottie
-      animationData={animationData}
-      loop={true}
-      autoplay={true}
-      className="w-full h-auto max-w-md mx-auto"
-    />
-  );
+  // Text
+  textPrimary: 'text-gray-800',
+  textMuted: 'text-gray-500',
+  textViolet: 'text-violet-600',
 }
 
-// Fallback Hero Illustration - AI Core with orbiting agents
+// ============================================
+// ANIMATION VARIANTS
+// ============================================
+const containerVariants: Variants = {
+  hidden: { opacity: 0 },
+  visible: {
+    opacity: 1,
+    transition: { staggerChildren: 0.1 },
+  },
+}
+
+const itemVariants: Variants = {
+  hidden: { opacity: 0, y: 20 },
+  visible: {
+    opacity: 1,
+    y: 0,
+    transition: { duration: 0.4, ease: 'easeOut' },
+  },
+}
+
+// ============================================
+// HERO CARD COMPONENT
+// ============================================
+function HeroCard() {
+  const navigate = useNavigate()
+  const { t } = useTranslation()
+
+  return (
+    <motion.div
+      variants={itemVariants}
+      className={cn(
+        clay.card,
+        clay.cardShadow,
+        clay.radiusLg,
+        'p-8 relative overflow-hidden'
+      )}
+    >
+      {/* Background Gradient Blob */}
+      <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-br from-violet-200/40 to-purple-200/30 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2" />
+
+      <div className="relative z-10 flex flex-col lg:flex-row items-center gap-8">
+        {/* Left: Content */}
+        <div className="flex-1 text-center lg:text-left">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ delay: 0.2 }}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-violet-100 text-violet-700 text-sm font-medium mb-6"
+          >
+            <Sparkles className="w-4 h-4" />
+            {t('overview.badge')}
+          </motion.div>
+
+          <h1 className="text-3xl lg:text-4xl font-bold text-gray-800 mb-4 tracking-tight">
+            {t('overview.title')}
+            <br />
+            <span className="text-violet-600">{t('overview.subtitle')}</span>
+          </h1>
+
+          <p className="text-lg text-gray-500 mb-8 max-w-md mx-auto lg:mx-0">
+            {t('overview.description')}
+          </p>
+
+          <div className="flex flex-col sm:flex-row gap-3 justify-center lg:justify-start">
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={() => navigate('/chat')}
+              className={cn(
+                'inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl',
+                'bg-gradient-to-r from-violet-500 to-purple-600 text-white font-medium',
+                'shadow-[0_4px_16px_rgba(139,92,246,0.35)]',
+                'hover:shadow-[0_6px_20px_rgba(139,92,246,0.45)]',
+                'transition-shadow duration-200'
+              )}
+            >
+              {t('overview.startChat')}
+              <ArrowRight className="w-4 h-4" />
+            </motion.button>
+
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={() => navigate('/agents')}
+              className={cn(
+                'inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl',
+                'bg-white text-gray-700 font-medium',
+                'border-[3px] border-white',
+                'shadow-[0_2px_8px_rgba(139,92,246,0.12)]',
+                'hover:shadow-[0_4px_12px_rgba(139,92,246,0.2)]',
+                'transition-shadow duration-200'
+              )}
+            >
+              <Bot className="w-4 h-4 text-violet-500" />
+              {t('overview.createAgent')}
+            </motion.button>
+          </div>
+        </div>
+
+        {/* Right: Illustration */}
+        <div className="flex-1 flex justify-center">
+          <HeroIllustration />
+        </div>
+      </div>
+    </motion.div>
+  )
+}
+
+// ============================================
+// HERO ILLUSTRATION - Lottie Animation
+// ============================================
 function HeroIllustration() {
   return (
-    <svg viewBox="0 0 400 320" className="w-full h-auto max-w-md mx-auto" fill="none">
-      {/* Background Glow */}
-      <ellipse cx="200" cy="280" rx="120" ry="25" fill="url(#glow)" opacity="0.3" />
-
-      {/* AI Core Orb */}
-      <circle cx="200" cy="140" r="55" fill="url(#orbGradient)" />
-      <circle cx="200" cy="140" r="65" stroke="url(#orbGradient)" strokeWidth="2" fill="none" opacity="0.4" />
-      <circle cx="200" cy="140" r="80" stroke="url(#orbGradient)" strokeWidth="1" fill="none" opacity="0.2" />
-
-      {/* Orbiting Agents */}
-      {[0, 1, 2, 3].map((i) => {
-        const angle = (i * Math.PI) / 2;
-        const cx = 200 + 100 * Math.cos(angle);
-        const cy = 140 + 100 * Math.sin(angle);
-        return (
-          <g key={i}>
-            <circle cx={cx} cy={cy} r="16" fill="var(--surface-primary)" stroke="var(--border-default)" strokeWidth="1.5" />
-            <circle cx={cx} cy={cy} r="5" fill={i % 2 === 0 ? '#3B82F6' : '#10B981'} />
-          </g>
-        );
-      })}
-
-      {/* Floating Cards */}
-      <g opacity="0.8">
-        <rect x="50" y="180" width="70" height="45" rx="8" fill="var(--surface-secondary)" stroke="var(--border-default)" />
-        <circle cx="72" cy="202" r="6" fill="#10B981" />
-        <rect x="85" y="196" width="25" height="3" rx="1.5" fill="var(--text-muted)" />
-        <rect x="85" y="203" width="18" height="3" rx="1.5" fill="var(--text-subtle)" />
-      </g>
-
-      <g opacity="0.8">
-        <rect x="280" y="100" width="70" height="45" rx="8" fill="var(--surface-secondary)" stroke="var(--border-default)" />
-        <circle cx="302" cy="122" r="6" fill="#F59E0B" />
-        <rect x="315" y="116" width="25" height="3" rx="1.5" fill="var(--text-muted)" />
-        <rect x="315" y="123" width="18" height="3" rx="1.5" fill="var(--text-subtle)" />
-      </g>
-
-      {/* Gradients */}
-      <defs>
-        <radialGradient id="orbGradient" cx="50%" cy="50%">
-          <stop offset="0%" stopColor="#60A5FA" />
-          <stop offset="50%" stopColor="#3B82F6" />
-          <stop offset="100%" stopColor="#2563EB" />
-        </radialGradient>
-        <radialGradient id="glow" cx="50%" cy="50%">
-          <stop offset="0%" stopColor="#3B82F6" stopOpacity="0.4" />
-          <stop offset="100%" stopColor="#3B82F6" stopOpacity="0" />
-        </radialGradient>
-      </defs>
-    </svg>
-  );
+    <div className="relative w-64 h-64 lg:w-80 lg:h-80">
+      <Lottie
+        animationData={welcomeAnimation}
+        loop={true}
+        className="w-full h-full"
+      />
+    </div>
+  )
 }
 
-// Feature Item
-function Feature({ icon: Icon, titleKey, descriptionKey }: { icon: React.ElementType; titleKey: string; descriptionKey: string }) {
-  const { t } = useTranslation();
+// ============================================
+// STAT CARD COMPONENT
+// ============================================
+function StatCard({
+  icon: Icon,
+  label,
+  value,
+  trend,
+  color,
+}: {
+  icon: React.ElementType
+  label: string
+  value: string
+  trend?: string
+  color: 'violet' | 'blue' | 'amber' | 'green'
+}) {
+  const colorStyles = {
+    violet: 'bg-violet-100 text-violet-600',
+    blue: 'bg-blue-100 text-blue-600',
+    amber: 'bg-amber-100 text-amber-600',
+    green: 'bg-green-100 text-green-600',
+  }
+
   return (
-    <div className="flex gap-4 p-4">
-      <div className="w-10 h-10 rounded-lg bg-[var(--surface-secondary)] flex items-center justify-center shrink-0">
-        <Icon className="w-5 h-5 text-[var(--neon-cyan)]" />
+    <motion.div
+      whileHover={{ scale: 1.02, y: -4 }}
+      className={cn(
+        clay.card,
+        clay.cardShadow,
+        clay.cardHover,
+        clay.radius,
+        'p-5 transition-all duration-200'
+      )}
+    >
+      <div className="flex items-start justify-between">
+        <div className={cn('w-12 h-12 rounded-xl flex items-center justify-center', colorStyles[color])}>
+          <Icon className="w-6 h-6" />
+        </div>
+        {trend && (
+          <span className="text-xs font-medium text-green-600 bg-green-50 px-2 py-1 rounded-full">
+            {trend}
+          </span>
+        )}
+      </div>
+      <div className="mt-4">
+        <p className="text-2xl font-bold text-gray-800">{value}</p>
+        <p className="text-sm text-gray-500">{label}</p>
+      </div>
+    </motion.div>
+  )
+}
+
+// ============================================
+// QUICK ACTION CARD
+// ============================================
+function QuickActionCard({
+  icon: Icon,
+  title,
+  description,
+  path,
+  color,
+}: {
+  icon: React.ElementType
+  title: string
+  description: string
+  path: string
+  color: string
+}) {
+  const navigate = useNavigate()
+
+  return (
+    <motion.button
+      whileHover={{ scale: 1.02, y: -4 }}
+      whileTap={{ scale: 0.98 }}
+      onClick={() => navigate(path)}
+      className={cn(
+        'w-full text-left',
+        clay.card,
+        clay.cardShadow,
+        clay.cardHover,
+        clay.radius,
+        'p-5 transition-all duration-200 group'
+      )}
+    >
+      <div
+        className={cn(
+          'w-12 h-12 rounded-xl flex items-center justify-center mb-4',
+          'transition-transform duration-200 group-hover:scale-110',
+          color
+        )}
+      >
+        <Icon className="w-6 h-6 text-white" />
+      </div>
+      <h3 className="font-semibold text-gray-800 mb-1">{title}</h3>
+      <p className="text-sm text-gray-500">{description}</p>
+    </motion.button>
+  )
+}
+
+// ============================================
+// FEATURE ROW COMPONENT
+// ============================================
+function FeatureRow({
+  icon: Icon,
+  titleKey,
+  descriptionKey,
+}: {
+  icon: React.ElementType
+  titleKey: string
+  descriptionKey: string
+}) {
+  const { t } = useTranslation()
+
+  return (
+    <div className="flex gap-4 p-4 rounded-xl hover:bg-violet-50/50 transition-colors">
+      <div
+        className={cn(
+          'w-10 h-10 rounded-xl flex items-center justify-center shrink-0',
+          'bg-violet-100 text-violet-600'
+        )}
+      >
+        <Icon className="w-5 h-5" />
       </div>
       <div>
-        <h3 className="font-medium text-[var(--text-primary)] mb-1">{t(titleKey)}</h3>
-        <p className="text-sm text-[var(--text-muted)]">{t(descriptionKey)}</p>
+        <h3 className="font-medium text-gray-800 mb-1">{t(titleKey)}</h3>
+        <p className="text-sm text-gray-500">{t(descriptionKey)}</p>
       </div>
     </div>
-  );
+  )
 }
 
+// ============================================
+// MAIN OVERVIEW PAGE
+// ============================================
 export function Overview() {
-  const navigate = useNavigate();
-  const { t } = useTranslation();
+  const navigate = useNavigate()
+  const { t } = useTranslation()
 
   return (
-    <div className="flex-1 overflow-auto">
-      {/* Hero Section */}
-      <section className="px-6 py-16 lg:py-24">
-        <div className="max-w-5xl mx-auto">
-          <div className="grid lg:grid-cols-2 gap-12 items-center">
-            {/* Left: Content */}
-            <div className="text-center lg:text-left">
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5 }}
-              >
-                <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[var(--neon-cyan)]/10 text-[var(--neon-cyan)] text-sm font-medium mb-6">
-                  <Sparkles className="w-4 h-4" />
-                  {t('overview.badge')}
-                </span>
-              </motion.div>
+    <motion.div
+      className="flex-1 overflow-auto p-6"
+      variants={containerVariants}
+      initial="hidden"
+      animate="visible"
+    >
+      <div className="max-w-6xl mx-auto space-y-6">
+        {/* Hero Section */}
+        <HeroCard />
 
-              <motion.h1
-                className="text-4xl lg:text-5xl font-bold text-[var(--text-primary)] mb-4 tracking-tight"
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.1, duration: 0.5 }}
-              >
-                {t('overview.title')}
-                <br />
-                <span className="text-[var(--neon-cyan)]">{t('overview.subtitle')}</span>
-              </motion.h1>
+        {/* Stats Row */}
+        <motion.div variants={itemVariants} className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <StatCard
+            icon={Bot}
+            label={t('overview.stats.agents')}
+            value="12"
+            trend="+3"
+            color="violet"
+          />
+          <StatCard
+            icon={MessageSquare}
+            label={t('overview.stats.conversations')}
+            value="1,284"
+            trend="+12%"
+            color="blue"
+          />
+          <StatCard
+            icon={Activity}
+            label={t('overview.stats.active')}
+            value="5"
+            color="amber"
+          />
+          <StatCard
+            icon={TrendingUp}
+            label={t('overview.stats.efficiency')}
+            value="94%"
+            trend="+5%"
+            color="green"
+          />
+        </motion.div>
 
-              <motion.p
-                className="text-lg text-[var(--text-muted)] mb-8 max-w-md mx-auto lg:mx-0"
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.2, duration: 0.5 }}
-              >
-                {t('overview.description')}
-              </motion.p>
-
-              <motion.div
-                className="flex flex-col sm:flex-row gap-3 justify-center lg:justify-start"
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.3, duration: 0.5 }}
-              >
-                <button
-                  onClick={() => navigate('/chat')}
-                  className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-[var(--neon-cyan)] text-[var(--void)] font-medium hover:bg-[var(--neon-cyan-dim)] transition-colors"
-                >
-                  {t('overview.startChat')}
-                  <ArrowRight className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={() => navigate('/agents')}
-                  className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-[var(--surface-secondary)] text-[var(--text-primary)] font-medium border border-[var(--border-default)] hover:border-[var(--border-hover)] transition-colors"
-                >
-                  <Bot className="w-4 h-4" />
-                  {t('overview.createAgent')}
-                </button>
-              </motion.div>
+        {/* Quick Actions + Features Grid */}
+        <div className="grid lg:grid-cols-2 gap-6">
+          {/* Quick Actions */}
+          <motion.div
+            variants={itemVariants}
+            className={cn(
+              clay.card,
+              clay.cardShadow,
+              clay.radiusLg,
+              'p-6'
+            )}
+          >
+            <h2 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+              <Zap className="w-5 h-5 text-amber-500" />
+              {t('overview.quickActions')}
+            </h2>
+            <div className="grid grid-cols-2 gap-3">
+              <QuickActionCard
+                icon={MessageSquare}
+                title={t('overview.actions.chat')}
+                description={t('overview.actions.chatDesc')}
+                path="/chat"
+                color="bg-gradient-to-br from-violet-500 to-purple-600"
+              />
+              <QuickActionCard
+                icon={Hand}
+                title={t('overview.actions.sop')}
+                description={t('overview.actions.sopDesc')}
+                path="/hands"
+                color="bg-gradient-to-br from-amber-500 to-orange-600"
+              />
+              <QuickActionCard
+                icon={Workflow}
+                title={t('overview.actions.workflow')}
+                description={t('overview.actions.workflowDesc')}
+                path="/workflows"
+                color="bg-gradient-to-br from-blue-500 to-cyan-600"
+              />
+              <QuickActionCard
+                icon={Blocks}
+                title={t('overview.actions.channel')}
+                description={t('overview.actions.channelDesc')}
+                path="/channels"
+                color="bg-gradient-to-br from-green-500 to-emerald-600"
+              />
             </div>
+          </motion.div>
 
-            {/* Right: Illustration */}
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ delay: 0.2, duration: 0.5 }}
-            >
-              <HeroLottie />
-            </motion.div>
-          </div>
-        </div>
-      </section>
-
-      {/* Features Section */}
-      <section className="px-6 py-16 border-t border-[var(--border-subtle)]">
-        <div className="max-w-4xl mx-auto">
-          <div className="text-center mb-12">
-            <h2 className="text-2xl font-bold text-[var(--text-primary)] mb-3">
+          {/* Features */}
+          <motion.div
+            variants={itemVariants}
+            className={cn(
+              clay.card,
+              clay.cardShadow,
+              clay.radiusLg,
+              'p-6'
+            )}
+          >
+            <h2 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-violet-500" />
               {t('overview.features.title')}
             </h2>
-            <p className="text-[var(--text-muted)]">
-              {t('overview.features.subtitle')}
+            <div className="space-y-2">
+              <FeatureRow
+                icon={Bot}
+                titleKey="overview.features.aiAgents.title"
+                descriptionKey="overview.features.aiAgents.description"
+              />
+              <FeatureRow
+                icon={MessageSquare}
+                titleKey="overview.features.conversations.title"
+                descriptionKey="overview.features.conversations.description"
+              />
+              <FeatureRow
+                icon={Zap}
+                titleKey="overview.features.workflows.title"
+                descriptionKey="overview.features.workflows.description"
+              />
+              <FeatureRow
+                icon={Shield}
+                titleKey="overview.features.secure.title"
+                descriptionKey="overview.features.secure.description"
+              />
+            </div>
+          </motion.div>
+        </div>
+
+        {/* CTA Section */}
+        <motion.div
+          variants={itemVariants}
+          className={cn(
+            clay.card,
+            clay.cardShadow,
+            clay.radiusLg,
+            'p-8 text-center relative overflow-hidden'
+          )}
+        >
+          {/* Background decoration */}
+          <div className="absolute inset-0 bg-gradient-to-r from-violet-100/50 via-purple-100/50 to-violet-100/50" />
+
+          <div className="relative z-10">
+            <h2 className="text-2xl font-bold text-gray-800 mb-3">
+              {t('overview.cta.title')}
+            </h2>
+            <p className="text-gray-500 mb-6 max-w-md mx-auto">
+              {t('overview.cta.subtitle')}
             </p>
+            <div className="flex flex-col sm:flex-row gap-3 justify-center">
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => navigate('/chat')}
+                className={cn(
+                  'inline-flex items-center justify-center gap-2 px-8 py-3 rounded-xl',
+                  'bg-gradient-to-r from-violet-500 to-purple-600 text-white font-medium',
+                  'shadow-[0_4px_16px_rgba(139,92,246,0.35)]',
+                  'hover:shadow-[0_6px_20px_rgba(139,92,246,0.45)]',
+                  'transition-shadow duration-200'
+                )}
+              >
+                <MessageSquare className="w-5 h-5" />
+                {t('overview.cta.startChatting')}
+              </motion.button>
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => navigate('/settings')}
+                className={cn(
+                  'inline-flex items-center justify-center gap-2 px-8 py-3 rounded-xl',
+                  'bg-white text-gray-700 font-medium',
+                  'border-[3px] border-white',
+                  'shadow-[0_2px_8px_rgba(139,92,246,0.12)]',
+                  'hover:shadow-[0_4px_12px_rgba(139,92,246,0.2)]'
+                )}
+              >
+                {t('overview.cta.configure')}
+              </motion.button>
+            </div>
           </div>
-
-          <div className="grid md:grid-cols-2 gap-4">
-            <Feature
-              icon={Bot}
-              titleKey="overview.features.aiAgents.title"
-              descriptionKey="overview.features.aiAgents.description"
-            />
-            <Feature
-              icon={MessageSquare}
-              titleKey="overview.features.conversations.title"
-              descriptionKey="overview.features.conversations.description"
-            />
-            <Feature
-              icon={Zap}
-              titleKey="overview.features.workflows.title"
-              descriptionKey="overview.features.workflows.description"
-            />
-            <Feature
-              icon={Shield}
-              titleKey="overview.features.secure.title"
-              descriptionKey="overview.features.secure.description"
-            />
-            <Feature
-              icon={Cpu}
-              titleKey="overview.features.tools.title"
-              descriptionKey="overview.features.tools.description"
-            />
-            <Feature
-              icon={Globe}
-              titleKey="overview.features.integrations.title"
-              descriptionKey="overview.features.integrations.description"
-            />
-          </div>
-        </div>
-      </section>
-
-      {/* CTA Section */}
-      <section className="px-6 py-16">
-        <div className="max-w-3xl mx-auto text-center">
-          <h2 className="text-3xl font-bold text-[var(--text-primary)] mb-4">
-            {t('overview.cta.title')}
-          </h2>
-          <p className="text-[var(--text-muted)] mb-8">
-            {t('overview.cta.subtitle')}
-          </p>
-          <div className="flex flex-col sm:flex-row gap-3 justify-center">
-            <button
-              onClick={() => navigate('/chat')}
-              className="inline-flex items-center justify-center gap-2 px-8 py-3 rounded-xl bg-[var(--neon-cyan)] text-[var(--void)] font-medium hover:bg-[var(--neon-cyan-dim)] transition-colors"
-            >
-              <MessageSquare className="w-5 h-5" />
-              {t('overview.cta.startChatting')}
-            </button>
-            <button
-              onClick={() => navigate('/settings')}
-              className="inline-flex items-center justify-center gap-2 px-8 py-3 rounded-xl bg-[var(--surface-secondary)] text-[var(--text-primary)] font-medium border border-[var(--border-default)] hover:border-[var(--border-hover)] transition-colors"
-            >
-              {t('overview.cta.configure')}
-            </button>
-          </div>
-        </div>
-      </section>
-    </div>
-  );
+        </motion.div>
+      </div>
+    </motion.div>
+  )
 }
 
-export default Overview;
+export default Overview

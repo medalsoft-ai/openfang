@@ -22,6 +22,23 @@
     "description": "自律型 AI エージェントを構築、展開、管理します。お気に入りのツールに接続して、作業を任せましょう。",
     "startChat": "チャット開始",
     "createAgent": "エージェント作成",
+    "quickActions": "クイックアクション",
+    "actions": {
+      "chat": "チャット開始",
+      "chatDesc": "エージェントとの会話を開始",
+      "sop": "SOP",
+      "sopDesc": "標準作業手順を管理",
+      "workflow": "ワークフロー",
+      "workflowDesc": "自動化ワークフローを設計",
+      "channel": "チャンネル",
+      "channelDesc": "外部プラットフォームに接続"
+    },
+    "stats": {
+      "agents": "エージェント",
+      "conversations": "会話数",
+      "active": "アクティブタスク",
+      "efficiency": "効率"
+    },
     "features": {
       "title": "必要なものがすべて",
       "subtitle": "AI エージェントの作成と管理を行う完全なプラットフォーム",

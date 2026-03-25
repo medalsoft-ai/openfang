@@ -130,3 +130,73 @@ pub struct StepValidationError {
     pub field: String,
     pub message: String,
 }
+
+// --- Hand Execution API Types ---
+
+/// Response for GET /api/hands/{id}/steps/{step_id}/status
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct StepStatusResponse {
+    pub execution_id: String,
+    pub step_id: String,
+    pub status: String,
+    pub input: Option<serde_json::Value>,
+    pub output: Option<serde_json::Value>,
+    pub error: Option<String>,
+    pub started_at: Option<String>,
+    pub completed_at: Option<String>,
+    pub retry_count: i32,
+}
+
+/// Summary of a Hand execution
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ExecutionSummary {
+    pub id: String,
+    pub hand_id: String,
+    pub agent_id: String,
+    pub status: String,
+    pub current_step_id: Option<String>,
+    pub started_at: Option<String>,
+    pub completed_at: Option<String>,
+    pub created_at: String,
+}
+
+/// Detail of a step execution
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct StepExecutionDetail {
+    pub step_id: String,
+    pub step_name: String,
+    pub status: String,
+    pub input: Option<serde_json::Value>,
+    pub output: Option<serde_json::Value>,
+    pub error: Option<String>,
+    pub started_at: Option<String>,
+    pub completed_at: Option<String>,
+    pub retry_count: i32,
+}
+
+/// Detailed execution response with steps
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ExecutionDetail {
+    pub id: String,
+    pub hand_id: String,
+    pub agent_id: String,
+    pub status: String,
+    pub current_step_id: Option<String>,
+    pub started_at: Option<String>,
+    pub completed_at: Option<String>,
+    pub created_at: String,
+    pub steps: Vec<StepExecutionDetail>,
+}
+
+/// Request to execute a step
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct ExecuteStepRequest {
+    pub execution_id: String,
+    pub input: Option<serde_json::Value>,
+}
+
+/// Request to submit user input for wait-for-input step
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct SubmitInputRequest {
+    pub input: String,
+}

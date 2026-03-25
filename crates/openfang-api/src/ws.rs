@@ -291,6 +291,28 @@ async fn handle_agent_ws(
         }
     });
 
+    // Spawn background task: subscribe to step status changes for this agent
+    let sender_clone = Arc::clone(&sender);
+    let agent_id_clone = agent_id.to_string();
+    let state_clone = Arc::clone(&state);
+    let status_handle = tokio::spawn(async move {
+        // Subscribe to step status changes
+        let mut status_rx = state_clone.kernel.hand_executor.subscribe();
+
+        while let Ok(change) = status_rx.recv().await {
+            // Only forward if this status change is for our agent
+            if change.agent_id == agent_id_clone {
+                let msg = serde_json::json!({
+                    "type": "step_status_change",
+                    "data": change,
+                });
+                if send_json(&sender_clone, &msg).await.is_err() {
+                    break; // Client disconnected
+                }
+            }
+        }
+    });
+
     // Per-connection rate limiting: max 10 messages per 60 seconds
     let mut msg_times: Vec<std::time::Instant> = Vec::new();
     const MAX_PER_MIN: usize = 10;
@@ -380,6 +402,7 @@ async fn handle_agent_ws(
 
     // Cleanup
     update_handle.abort();
+    status_handle.abort();
     info!(agent_id = %id_str, "WebSocket disconnected");
 }
 

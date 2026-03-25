@@ -7,8 +7,8 @@
 ---
 
 **Project:** OpenFang
-**Generated:** 2026-03-24 14:25:37
-**Category:** Analytics Dashboard
+**Generated:** 2026-03-25 16:31:06
+**Category:** Developer Tool / IDE
 
 ---
 
@@ -18,13 +18,13 @@
 
 | Role | Hex | CSS Variable |
 |------|-----|--------------|
-| Primary | `#171717` | `--color-primary` |
-| Secondary | `#404040` | `--color-secondary` |
-| CTA/Accent | `#D4AF37` | `--color-cta` |
-| Background | `#FFFFFF` | `--color-background` |
-| Text | `#171717` | `--color-text` |
+| Primary | `#1E293B` | `--color-primary` |
+| Secondary | `#334155` | `--color-secondary` |
+| CTA/Accent | `#22C55E` | `--color-cta` |
+| Background | `#0F172A` | `--color-background` |
+| Text | `#F8FAFC` | `--color-text` |
 
-**Color Notes:** Minimal black + accent gold
+**Color Notes:** Code dark + run green
 
 ### Typography
 
@@ -61,108 +61,6 @@
 
 ---
 
-## Layout Separation (No Border Lines)
-
-**Core Principle:** Use elevation, background contrast, and whitespace instead of visible border lines.
-
-### Method 1: Shadow Elevation (Recommended for Sidebar/Float)
-
-```css
-/* Sidebar - floating with shadow */
-.sidebar {
-  background: #FFFFFF;
-  box-shadow: var(--shadow-lg);  /* Creates separation without border */
-  z-index: 20;
-}
-
-/* Chat input area - top shadow to show it floats above content */
-.chat-input-area {
-  background: #FFFFFF;
-  box-shadow: 0 -4px 20px rgba(0,0,0,0.05);  /* Shadow on top edge */
-}
-```
-
-### Method 2: Background Contrast
-
-```css
-/* Layout with natural separation via background colors */
-.layout {
-  background: #F5F5F7;  /* Light gray for outer frame */
-}
-
-.sidebar {
-  background: #FFFFFF;  /* White - contrasts with gray */
-  /* No border needed! */
-}
-
-.main-content {
-  background: #FFFFFF;  /* White */
-  margin: 16px;
-  border-radius: 16px;
-  box-shadow: var(--shadow-sm);
-}
-```
-
-### Method 3: Whitespace + Card Style (Bento Grid)
-
-```css
-/* Use gap and cards instead of borders */
-.container {
-  display: grid;
-  gap: 20px;          /* Space creates separation */
-  padding: 20px;
-  background: #F5F5F7;  /* Page background */
-}
-
-.section-card {
-  background: #FFFFFF;
-  border-radius: 20px;  /* 16-24px rounded corners */
-  padding: 24px;
-  /* No border! Separation comes from gap + shadow */
-  box-shadow: var(--shadow-md);
-}
-```
-
-### Method 4: Claymorphism (Double Shadow)
-
-```css
-/* For a softer, modern look */
-.clay-section {
-  background: #FFFFFF;
-  border-radius: 24px;
-  box-shadow:
-    8px 8px 16px rgba(0,0,0,0.08),     /* Outer shadow */
-    -8px -8px 16px rgba(255,255,255,0.8);  /* Inner highlight */
-}
-```
-
-### Applied to OpenFang Layout
-
-```tsx
-// Layout.tsx - No more border-r or border-t!
-<div className="flex h-screen bg-[#F5F5F7]">
-  {/* Sidebar - floating with shadow */}
-  <aside className="w-64 bg-white shadow-lg z-20">
-    {/* Sidebar content */}
-  </aside>
-
-  {/* Main area - nested structure with spacing */}
-  <main className="flex-1 flex flex-col p-4">
-    {/* Chat area card */}
-    <div className="flex-1 bg-white rounded-2xl shadow-md overflow-hidden">
-      {/* Messages */}
-    </div>
-
-    {/* Input area - floating above with top shadow */}
-    <div className="mt-4 bg-white rounded-2xl shadow-[0_-4px_20px_rgba(0,0,0,0.05)] p-4">
-      {/* Input */}
-    </div>
-  </main>
-</div>
-```
-
----
-
 ## Component Specs
 
 ### Buttons
@@ -170,7 +68,7 @@
 ```css
 /* Primary Button */
 .btn-primary {
-  background: #D4AF37;
+  background: #22C55E;
   color: white;
   padding: 12px 24px;
   border-radius: 8px;
@@ -187,8 +85,8 @@
 /* Secondary Button */
 .btn-secondary {
   background: transparent;
-  color: #171717;
-  border: 2px solid #171717;
+  color: #1E293B;
+  border: 2px solid #1E293B;
   padding: 12px 24px;
   border-radius: 8px;
   font-weight: 600;
@@ -201,7 +99,7 @@
 
 ```css
 .card {
-  background: #FFFFFF;
+  background: #0F172A;
   border-radius: 12px;
   padding: 24px;
   box-shadow: var(--shadow-md);
@@ -227,9 +125,9 @@
 }
 
 .input:focus {
-  border-color: #171717;
+  border-color: #1E293B;
   outline: none;
-  box-shadow: 0 0 0 3px #17171720;
+  box-shadow: 0 0 0 3px #1E293B20;
 }
 ```
 
@@ -255,28 +153,31 @@
 
 ## Style Guidelines
 
-**Style:** Data-Dense Dashboard
+**Style:** Vibrant & Block-based
 
-**Keywords:** Multiple charts/widgets, data tables, KPI cards, minimal padding, grid layout, space-efficient, maximum data visibility
+**Keywords:** Bold, energetic, playful, block layout, geometric shapes, high color contrast, duotone, modern, energetic
 
-**Best For:** Business intelligence dashboards, financial analytics, enterprise reporting, operational dashboards, data warehousing
+**Best For:** Startups, creative agencies, gaming, social media, youth-focused, entertainment, consumer
 
-**Key Effects:** Hover tooltips, chart zoom on click, row highlighting on hover, smooth filter animations, data loading spinners
+**Key Effects:** Large sections (48px+ gaps), animated patterns, bold hover (color shift), scroll-snap, large type (32px+), 200-300ms
 
 ### Page Pattern
 
-**Pattern Name:** Minimal Single Column
+**Pattern Name:** Horizontal Scroll Journey
 
-- **Conversion Strategy:** Single CTA focus. Large typography. Lots of whitespace. No nav clutter. Mobile-first.
-- **CTA Placement:** Center, large CTA button
-- **Section Order:** 1. Hero headline, 2. Short description, 3. Benefit bullets (3 max), 4. CTA, 5. Footer
+- **Conversion Strategy:** Immersive product discovery. High engagement. Keep navigation visible.
+28,Bento Grid Showcase,bento,  grid,  features,  modular,  apple-style,  showcase", 1. Hero, 2. Bento Grid (Key Features), 3. Detail Cards, 4. Tech Specs, 5. CTA, Floating Action Button or Bottom of Grid, Card backgrounds: #F5F5F7 or Glass. Icons: Vibrant brand colors. Text: Dark., Hover card scale (1.02), video inside cards, tilt effect, staggered reveal, Scannable value props. High information density without clutter. Mobile stack.
+29,Interactive 3D Configurator,3d,  configurator,  customizer,  interactive,  product", 1. Hero (Configurator), 2. Feature Highlight (synced), 3. Price/Specs, 4. Purchase, Inside Configurator UI + Sticky Bottom Bar, Neutral studio background. Product: Realistic materials. UI: Minimal overlay., Real-time rendering, material swap animation, camera rotate/zoom, light reflection, Increases ownership feeling. 360 view reduces return rates. Direct add-to-cart.
+30,AI-Driven Dynamic Landing,ai,  dynamic,  personalized,  adaptive,  generative", 1. Prompt/Input Hero, 2. Generated Result Preview, 3. How it Works, 4. Value Prop, Input Field (Hero) + 'Try it' Buttons, Adaptive to user input. Dark mode for compute feel. Neon accents., Typing text effects, shimmering generation loaders, morphing layouts, Immediate value demonstration. 'Show, don't tell'. Low friction start.
+- **CTA Placement:** Floating Sticky CTA or End of Horizontal Track
+- **Section Order:** 1. Intro (Vertical), 2. The Journey (Horizontal Track), 3. Detail Reveal, 4. Vertical Footer
 
 ---
 
 ## Anti-Patterns (Do NOT Use)
 
-- ❌ Ornate design
-- ❌ No filtering
+- ❌ Flat design without depth
+- ❌ Text-heavy pages
 
 ### Additional Forbidden Patterns
 

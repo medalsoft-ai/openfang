@@ -1,20 +1,17 @@
 import { Link, useLocation, Outlet, useNavigate } from 'react-router'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
-  Bot,
   MessageSquare,
   Settings,
-  Sun,
-  Moon,
   Hand,
   Workflow,
   Puzzle,
   Blocks,
   Check,
+  LayoutGrid,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { pageTransition } from '@/lib/animations'
-import { useTheme } from '@/hooks'
 import { useState, useRef, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -37,7 +34,7 @@ interface NavItem {
 }
 
 // ============================================
-// NAV ITEM BUTTON - Minimal Claymorphism Style
+// NAV ITEM BUTTON - Square Style (No Label)
 // ============================================
 function NavItemButton({
   item,
@@ -54,21 +51,22 @@ function NavItemButton({
     <motion.button
       onClick={onClick}
       initial={false}
-      animate={isActive ? { scale: 0.96 } : { scale: 1 }}
+      animate={isActive ? { scale: 0.95 } : { scale: 1 }}
       whileHover={{ scale: 1.05 }}
-      whileTap={{ scale: 0.94 }}
+      whileTap={{ scale: 0.92 }}
       className={cn(
-        'w-full flex flex-col items-center justify-center gap-1 p-2 rounded-xl transition-all duration-200 group relative',
+        'w-10 h-10 flex items-center justify-center rounded-xl transition-all duration-200 group relative',
         isActive
-          ? 'bg-violet-50 shadow-[inset_0_2px_4px_rgba(139,92,246,0.1)]'
-          : 'bg-white/50 hover:bg-white shadow-[0_2px_8px_rgba(139,92,246,0.08)] hover:shadow-[0_4px_12px_rgba(139,92,246,0.12)]'
+          ? 'bg-violet-100 shadow-[inset_0_2px_4px_rgba(139,92,246,0.15)]'
+          : 'bg-white/60 hover:bg-white shadow-[0_2px_8px_rgba(139,92,246,0.08)] hover:shadow-[0_4px_12px_rgba(139,92,246,0.15)]'
       )}
+      aria-label={item.label}
     >
       {/* Active indicator - left side */}
       {isActive && (
         <motion.div
           layoutId="navActiveIndicator"
-          className="absolute -left-0.5 top-1/2 -translate-y-1/2 w-1 h-5 rounded-r-full bg-violet-500"
+          className="absolute -left-0.5 top-1/2 -translate-y-1/2 w-1 h-4 rounded-r-full bg-violet-500"
           initial={false}
           transition={{ type: 'spring', stiffness: 400, damping: 30 }}
         />
@@ -79,7 +77,7 @@ function NavItemButton({
         <Icon
           className={cn(
             'w-5 h-5 transition-colors duration-200',
-            isActive ? 'text-violet-600' : 'text-gray-400 group-hover:text-violet-500'
+            isActive ? 'text-violet-600' : 'text-gray-500 group-hover:text-violet-500'
           )}
         />
 
@@ -87,7 +85,7 @@ function NavItemButton({
         {item.badge && (
           <div
             className={cn(
-              'absolute -top-1 -right-1 min-w-[14px] h-[14px] px-0.5 rounded-full flex items-center justify-center',
+              'absolute -top-1.5 -right-1.5 min-w-[14px] h-[14px] px-0.5 rounded-full flex items-center justify-center',
               'text-[8px] font-bold text-white',
               item.badgeColor || 'bg-violet-500'
             )}
@@ -96,95 +94,12 @@ function NavItemButton({
           </div>
         )}
       </div>
-
-      {/* Label */}
-      <span
-        className={cn(
-          'text-[10px] font-medium transition-colors duration-200',
-          isActive ? 'text-violet-700' : 'text-gray-400 group-hover:text-violet-500'
-        )}
-      >
-        {item.label}
-      </span>
     </motion.button>
   )
 }
 
 // ============================================
-// THEME TOGGLE - Compact Claymorphism Style
-// ============================================
-function ThemeToggle() {
-  const { t } = useTranslation()
-  const { resolvedTheme, toggleTheme } = useTheme()
-
-  return (
-    <motion.button
-      onClick={toggleTheme}
-      className={cn(
-        'flex items-center justify-center w-8 h-8 rounded-lg',
-        'bg-white border-2 border-white',
-        'shadow-[0_2px_8px_rgba(139,92,246,0.15),inset_0_1px_3px_rgba(255,255,255,0.8)]',
-        'text-violet-500 hover:text-violet-600',
-        'transition-all duration-200'
-      )}
-      whileHover={{ scale: 1.05 }}
-      whileTap={{ scale: 0.95 }}
-      aria-label={resolvedTheme === 'dark' ? t('layout.theme.light') : t('layout.theme.dark')}
-    >
-      <AnimatePresence mode="wait" initial={false}>
-        {resolvedTheme === 'dark' ? (
-          <motion.div
-            key="sun"
-            initial={{ y: -10, opacity: 0, rotate: -90 }}
-            animate={{ y: 0, opacity: 1, rotate: 0 }}
-            exit={{ y: 10, opacity: 0, rotate: 90 }}
-            transition={{ duration: 0.2 }}
-          >
-            <Sun className="w-4 h-4" />
-          </motion.div>
-        ) : (
-          <motion.div
-            key="moon"
-            initial={{ y: -10, opacity: 0, rotate: -90 }}
-            animate={{ y: 0, opacity: 1, rotate: 0 }}
-            exit={{ y: 10, opacity: 0, rotate: 90 }}
-            transition={{ duration: 0.2 }}
-          >
-            <Moon className="w-4 h-4" />
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </motion.button>
-  )
-}
-
-// ============================================
-// SETTINGS BUTTON - Compact Claymorphism Style
-// ============================================
-function SettingsButton() {
-  const { t } = useTranslation()
-  return (
-    <Link to="/settings">
-      <motion.button
-        className={cn(
-          'flex items-center justify-center w-8 h-8 rounded-lg',
-          'bg-white border-2 border-white',
-          'shadow-[0_2px_8px_rgba(139,92,246,0.15),inset_0_1px_3px_rgba(255,255,255,0.8)]',
-          'text-violet-500 hover:text-violet-600',
-          'transition-all duration-200'
-        )}
-        whileHover={{ scale: 1.05 }}
-        whileTap={{ scale: 0.95 }}
-        aria-label={t('layout.settings')}
-      >
-        <Settings className="w-4 h-4" />
-      </motion.button>
-    </Link>
-  )
-}
-
-// ============================================
-// LANGUAGE SWITCHER - Claymorphism Style
+// LANGUAGE SWITCHER - Text Only (No Flags)
 // ============================================
 function LanguageSwitcher() {
   const { t, i18n } = useTranslation()
@@ -202,10 +117,10 @@ function LanguageSwitcher() {
   }, [])
 
   const languages = [
-    { code: 'zh-CN', flag: '/flags/zh-CN.png', name: t('languages.zh-CN') },
-    { code: 'zh-TW', flag: '/flags/zh-TW.png', name: t('languages.zh-TW') },
-    { code: 'en', flag: '/flags/en.png', name: t('languages.en') },
-    { code: 'ja', flag: '/flags/ja.png', name: t('languages.ja') },
+    { code: 'zh-CN', label: '简', name: t('languages.zh-CN') },
+    { code: 'zh-TW', label: '繁', name: t('languages.zh-TW') },
+    { code: 'en', label: 'EN', name: t('languages.en') },
+    { code: 'ja', label: '日', name: t('languages.ja') },
   ]
 
   const currentLang = languages.find((l) => l.code === i18n.language) || languages[2]
@@ -215,20 +130,16 @@ function LanguageSwitcher() {
       <motion.button
         onClick={() => setIsOpen(!isOpen)}
         className={cn(
-          'flex items-center justify-center w-8 h-8 rounded-lg',
-          'bg-white border-2 border-white',
-          'shadow-[0_2px_8px_rgba(139,92,246,0.15),inset_0_1px_3px_rgba(255,255,255,0.8)]',
+          'w-8 h-8 flex items-center justify-center rounded-lg text-xs font-bold',
+          'bg-white/60 hover:bg-white',
+          'text-gray-600 hover:text-violet-600',
           'transition-all duration-200'
         )}
         whileHover={{ scale: 1.05 }}
         whileTap={{ scale: 0.95 }}
         aria-label={t('settings.system.language')}
       >
-        <img
-          src={currentLang.flag}
-          alt={currentLang.name}
-          className="w-4 h-4 rounded object-contain"
-        />
+        {currentLang.label}
       </motion.button>
 
       <AnimatePresence>
@@ -239,9 +150,9 @@ function LanguageSwitcher() {
             exit={{ opacity: 0, y: 8, scale: 0.95 }}
             transition={{ duration: 0.15 }}
             className={cn(
-              'absolute bottom-full left-0 mb-2 w-40 rounded-2xl overflow-hidden z-50',
-              'bg-white border-[3px] border-white',
-              'shadow-[0_8px_24px_rgba(139,92,246,0.25)]'
+              'absolute bottom-full left-0 mb-2 w-32 rounded-xl overflow-hidden z-50',
+              'bg-white border border-gray-100',
+              'shadow-[0_8px_24px_rgba(139,92,246,0.2)]'
             )}
           >
             {languages.map((lang) => (
@@ -252,19 +163,15 @@ function LanguageSwitcher() {
                   setIsOpen(false)
                 }}
                 className={cn(
-                  'w-full flex items-center justify-between px-3 py-2.5 text-sm transition-colors',
+                  'w-full flex items-center justify-between px-3 py-2 text-sm transition-colors',
                   i18n.language === lang.code
                     ? 'bg-violet-100 text-violet-700'
                     : 'text-gray-600 hover:bg-violet-50 hover:text-violet-600'
                 )}
               >
-                <span className="flex items-center gap-3">
-                  <img
-                    src={lang.flag}
-                    alt={lang.name}
-                    className="w-5 h-5 rounded object-contain"
-                  />
-                  <span className="text-sm">{lang.name}</span>
+                <span className="flex items-center gap-2">
+                  <span className="text-xs font-bold w-5 text-center">{lang.label}</span>
+                  <span className="text-xs">{lang.name}</span>
                 </span>
                 {i18n.language === lang.code && <Check className="w-3.5 h-3.5" />}
               </button>
@@ -284,8 +191,14 @@ export function Layout() {
   const location = useLocation()
   const navigate = useNavigate()
 
-  // Navigation items - 5 main sections
+  // Navigation items - main sections + settings
   const navItems: NavItem[] = [
+    {
+      id: 'overview',
+      icon: LayoutGrid,
+      label: 'Overview',
+      path: '/overview',
+    },
     {
       id: 'chat',
       icon: MessageSquare,
@@ -318,17 +231,25 @@ export function Layout() {
       label: 'Channel',
       path: '/channels',
     },
+    {
+      id: 'settings',
+      icon: Settings,
+      label: 'Settings',
+      path: '/settings',
+    },
   ]
 
   // Get current active nav based on pathname
   const getActiveNavId = () => {
     const path = location.pathname
+    if (path === '/' || path.startsWith('/overview')) return 'overview'
     if (path.startsWith('/chat')) return 'chat'
     if (path.startsWith('/hands')) return 'sop'
     if (path.startsWith('/workflows')) return 'workflow'
     if (path.startsWith('/skills')) return 'skills'
     if (path.startsWith('/channels')) return 'channel'
-    return 'chat'
+    if (path.startsWith('/settings')) return 'settings'
+    return 'overview'
   }
 
   const activeNavId = getActiveNavId()
@@ -342,31 +263,35 @@ export function Layout() {
       </div>
 
       {/* ============================================
-          SIDEBAR - Edge-to-edge, attached to left/top/bottom
-          Fixed width: 96px (w-24)
-          No border-radius, no shadow (part of background layer)
+          SIDEBAR - Narrow width: 64px (w-16)
+          Square menu items, no labels
           ============================================ */}
-      <aside className="w-24 flex flex-col bg-white/80 backdrop-blur-xl z-20 h-full">
+      <aside className="w-16 flex flex-col bg-white/80 backdrop-blur-xl z-20 h-full">
         {/* Logo - Attached to top */}
-        <div className="p-2 border-b border-gray-100/50">
-          <Link to="/" className="flex justify-center group">
+        <div className="h-16 flex items-center justify-center border-b border-gray-100/50">
+          <Link to="/" className="group">
             <motion.div
               className={cn(
-                'w-10 h-10 rounded-xl flex items-center justify-center',
+                'w-9 h-9 rounded-xl flex items-center justify-center',
                 'bg-gradient-to-br from-violet-500 to-purple-600',
                 'border-2 border-white',
-                'shadow-[0_4px_12px_rgba(139,92,246,0.35),inset_0_1px_3px_rgba(255,255,255,0.3)]'
+                'shadow-[0_4px_12px_rgba(139,92,246,0.35),inset_0_1px_3px_rgba(255,255,255,0.3)]',
+                'overflow-hidden'
               )}
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
             >
-              <Bot className="w-5 h-5 text-white" />
+              <img
+                src="/logo.png"
+                alt="OpenFang"
+                className="w-full h-full object-cover"
+              />
             </motion.div>
           </Link>
         </div>
 
-        {/* Main Navigation - 5 Items */}
-        <nav className="flex-1 overflow-y-auto px-2 py-2 no-scrollbar space-y-2">
+        {/* Main Navigation - Square Items */}
+        <nav className="flex-1 overflow-y-auto px-3 py-3 no-scrollbar space-y-2">
           {navItems.map((item) => (
             <NavItemButton
               key={item.id}
@@ -377,21 +302,9 @@ export function Layout() {
           ))}
         </nav>
 
-        {/* Bottom Actions - Attached to bottom */}
-        <div className="p-2 border-t border-gray-100/50 space-y-2">
-          {/* Quick Actions Grid */}
-          <div className="grid grid-cols-2 gap-1.5">
-            <ThemeToggle />
-            <LanguageSwitcher />
-          </div>
-          <div className="flex justify-center">
-            <SettingsButton />
-          </div>
-
-          {/* Version */}
-          <div className="text-[8px] text-violet-400 text-center font-medium">
-            {t('app.version')}
-          </div>
+        {/* Bottom - Language Switcher Only */}
+        <div className="p-3 border-t border-gray-100/50">
+          <LanguageSwitcher />
         </div>
       </aside>
 

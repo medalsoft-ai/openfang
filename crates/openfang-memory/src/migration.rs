@@ -372,6 +372,7 @@ fn migrate_v9(conn: &Connection) -> Result<(), rusqlite::Error> {
     )?;
     Ok(())
 }
+#[cfg(test)]
 mod tests {
     use super::*;
 

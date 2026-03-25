@@ -6,10 +6,11 @@ import { getWsBaseUrl } from '@/lib/tauri';
 export type ConnectionState = 'connected' | 'disconnected' | 'reconnecting' | 'connecting';
 
 export interface WebSocketMessage {
-  type: 'message' | 'thinking' | 'tool_call' | 'tool_result' | 'error' | 'done' | 'stream';
+  type: 'message' | 'thinking' | 'tool_call' | 'tool_result' | 'error' | 'done' | 'stream' | 'step_status_change';
   payload: unknown;
   timestamp: string;
   id?: string;
+  data?: unknown;
 }
 
 export interface BufferedMessage extends WebSocketMessage {

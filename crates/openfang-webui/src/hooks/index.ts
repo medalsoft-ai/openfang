@@ -52,3 +52,4 @@ export {
   useSequencedAnimation,
 } from './useMotion';
 export { useSessionWebSocket, type UseSessionWebSocketOptions, type UseSessionWebSocketReturn } from './useSessionWebSocket';
+export { useHandDraft, type UseHandDraftReturn } from './useHandDraft';

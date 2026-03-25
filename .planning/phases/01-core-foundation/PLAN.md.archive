@@ -1,0 +1,324 @@
+# Phase 1: Core Foundation
+
+## Goal
+Hand 拥有步骤机制，Agent 可以动态创建/修改，API 可获取，前端可展示
+
+## Requirements Addressed
+- HAND-STEP-01: View Hand steps (React Flow)
+- HAND-STEP-03: Agent creates Hand dynamically
+- HAND-STEP-04: Agent modifies Hand steps
+- HAND-STEP-06: Step types definition
+- API-01: GET /api/hands/{id}/steps
+- API-02: PUT /api/hands/{id}/steps
+- UI-01: React Flow integration (read-only)
+
+## Success Criteria
+1. HandDefinition 数据模型包含完整的 steps 字段（id, name, type, config, next_steps）
+2. 定义6种步骤类型数据结构：execute-tool, send-message, wait-for-input, condition, loop, sub-hand
+3. Agent 可以通过 tool call 创建新的 Hand（带初始步骤）
+4. Agent 可以通过 tool call 修改现有 Hand 的步骤（增删改）
+5. GET /api/hands/{id}/steps 返回步骤数据
+6. PUT /api/hands/{id}/steps 更新步骤（Agent 和用户共用同一 API）
+7. Hand 详情页使用 React Flow 渲染步骤流程图（只读模式）
+8. 步骤显示不同类型图标/颜色区分
+9. 变更持久化到存储（TOML 或 JSON）
+10. 新创建的 Hand 立即出现在 Hands 列表中
+
+## Design Decisions
+
+### D-01: Step Storage Format
+**Decision**: Extend TOML format with inline `steps` array
+**Rationale**:
+- Keeps Hand definition self-contained in single file
+- TOML supports nested arrays of tables with `[[steps]]` syntax
+- Backward compatible - existing Hands without steps work unchanged
+- Easier to version control and manually edit
+
+### D-02: Step Type Schema
+**Decision**: Use tagged union pattern with `type` discriminator
+**Schema**:
+```rust
+enum StepType {
+    ExecuteTool { tool_name: String, input: Value },
+    SendMessage { content: String, target_agent: Option<String> },
+    WaitForInput { prompt: String, timeout_secs: Option<u32> },
+    Condition { expression: String, true_branch: String, false_branch: String },
+    Loop { iterator: String, items: String, body: Vec<String> },
+    SubHand { hand_id: String, input_mapping: Value },
+}
+```
+
+### D-03: Agent Tool Design
+**Decision**: Two separate tools - `hand_create` and `hand_update_steps`
+**Rationale**:
+- Clear separation of concerns
+- `hand_create` for initial Hand creation with steps
+- `hand_update_steps` for CRUD operations on existing Hand steps
+- Both return the updated Hand definition for confirmation
+
+### D-04: React Flow Data Structure
+**Decision**: Transform steps to React Flow nodes/edges on frontend
+**Node Structure**:
+- Position: auto-calculated based on step order and branching
+- Type: custom node per step type (different colors/icons)
+- Data: step id, name, type, config summary
+**Edge Structure**:
+- Source: step id
+- Target: next_step id
+- Label: condition label for branch edges
+
+## Task Breakdown
+
+### Task 1.1: Define Step Types in openfang-hands
+**ID**: 1.1
+**Description**: Create step type definitions and extend HandDefinition
+**Files**:
+- `crates/openfang-hands/src/steps.rs` (new)
+- `crates/openfang-hands/src/lib.rs` (modify)
+- `crates/openfang-hands/src/registry.rs` (modify)
+
+**Changes**:
+1. Create `steps.rs` with:
+   - `HandStep` struct (id, name, type, config, next_steps)
+   - `StepType` enum with 6 variants
+   - `StepConfig` structs for each type's specific config
+   - Serialization/deserialization for TOML
+2. Add `steps: Vec<HandStep>` field to `HandDefinition`
+3. Update registry to persist steps when saving Hand definitions
+
+**Dependencies**: None
+**Verification**:
+- `cargo test --package openfang-hands` passes
+- TOML roundtrip test for Hand with steps passes
+**Estimated Effort**: 2-3 hours
+
+---
+
+### Task 1.2: Implement Steps API Endpoints
+**ID**: 1.2
+**Description**: Add GET and PUT endpoints for Hand steps
+**Files**:
+- `crates/openfang-api/src/routes.rs` (modify)
+- `crates/openfang-api/src/server.rs` (modify - add routes)
+- `crates/openfang-api/src/types.rs` (modify - add request/response types)
+
+**Changes**:
+1. Add `GetHandStepsResponse` and `UpdateHandStepsRequest` types
+2. Implement `get_hand_steps` handler:
+   - Path: GET /api/hands/{id}/steps
+   - Returns: List of steps with React Flow compatible format
+3. Implement `update_hand_steps` handler:
+   - Path: PUT /api/hands/{id}/steps
+   - Body: Complete steps array (replace entire flow)
+   - Validation: Check step graph is valid (no cycles, all reachable)
+   - Persistence: Save to TOML file
+4. Register routes in server.rs
+
+**Dependencies**: Task 1.1
+**Verification**:
+- `cargo build --package openfang-api` succeeds
+- Manual test: `curl http://127.0.0.1:4200/api/hands/{id}/steps` returns steps
+- Manual test: PUT updates steps and persists to file
+**Estimated Effort**: 2-3 hours
+
+---
+
+### Task 1.3: Create Agent Tools for Hand Management
+**ID**: 1.3
+**Description**: Implement hand_create and hand_update_steps tools
+**Files**:
+- `crates/openfang-runtime/src/tool_runner.rs` (modify)
+- `crates/openfang-runtime/src/tools/hand_tools.rs` (new)
+
+**Changes**:
+1. Create `hand_tools.rs` module:
+   - `hand_create` function: Creates new Hand with initial steps
+   - `hand_update_steps` function: CRUD operations on Hand steps
+   - Input validation and error handling
+   - Integration with HandRegistry
+2. Add tool definitions to `builtin_tool_definitions()`:
+   - `hand_create`: Input {name, description, category, steps}
+   - `hand_update_steps`: Input {hand_id, operation, steps}
+3. Add tool execution handlers in `execute_tool()`
+
+**Tool Schemas**:
+```json
+{
+  "hand_create": {
+    "name": "hand_create",
+    "description": "Create a new Hand (SOP) with an initial set of steps. Returns the new Hand ID.",
+    "input": {
+      "name": "string",
+      "description": "string",
+      "category": "string (content|security|productivity|development|communication|data)",
+      "icon": "string (emoji)",
+      "steps": [{"id": "string", "name": "string", "type": "string", "config": {}, "next_steps": ["string"]}]
+    }
+  },
+  "hand_update_steps": {
+    "name": "hand_update_steps",
+    "description": "Update steps of an existing Hand. Supports add, update, delete, reorder operations.",
+    "input": {
+      "hand_id": "string",
+      "operation": "string (add|update|delete|replace)",
+      "steps": [...]
+    }
+  }
+}
+```
+
+**Dependencies**: Task 1.1, Task 1.2
+**Verification**:
+- `cargo test --package openfang-runtime` passes
+- Agent can call `hand_create` and receive Hand ID
+- Agent can call `hand_update_steps` to modify steps
+- Changes persist and reflect in API
+**Estimated Effort**: 3-4 hours
+
+---
+
+### Task 1.4: Add TypeScript Types for Steps
+**ID**: 1.4
+**Description**: Define step types in frontend API types
+**Files**:
+- `crates/openfang-webui/src/api/types.ts` (modify)
+
+**Changes**:
+1. Add TypeScript interfaces:
+   - `HandStep` (id, name, type, config, nextSteps)
+   - `StepType` union type
+   - `StepConfig` variants for each type
+   - `ReactFlowNode` and `ReactFlowEdge` extensions
+2. Add API function types:
+   - `getHandSteps(handId: string): Promise<HandStep[]>`
+   - `updateHandSteps(handId: string, steps: HandStep[]): Promise<void>`
+
+**Dependencies**: None (can parallel with 1.1-1.3)
+**Verification**:
+- `pnpm type-check` passes
+- No TypeScript errors
+**Estimated Effort**: 1 hour
+
+---
+
+### Task 1.5: Implement React Flow Visualization
+**ID**: 1.5
+**Description**: Render Hand steps as React Flow diagram in Hands page
+**Files**:
+- `crates/openfang-webui/src/pages/Hands.tsx` (modify)
+- `crates/openfang-webui/src/components/flow/StepNode.tsx` (new)
+- `crates/openfang-webui/src/components/flow/FlowCanvas.tsx` (new)
+
+**Changes**:
+1. Create `StepNode.tsx` - Custom React Flow node component:
+   - Different colors/icons per step type
+   - Display step name and type
+   - Show config summary on hover
+2. Create `FlowCanvas.tsx` - React Flow wrapper:
+   - Transform HandStep[] to nodes/edges
+   - Auto-layout algorithm for node positioning
+   - Read-only mode (no drag/edit)
+   - Fit view to show all nodes
+3. Modify `Hands.tsx`:
+   - Add "Flow" tab to Hand detail view
+   - Fetch steps via API when Hand selected
+   - Render FlowCanvas with steps data
+
+**Node Type Colors**:
+- execute-tool: blue (#3b82f6)
+- send-message: green (#22c55e)
+- wait-for-input: yellow (#eab308)
+- condition: purple (#a855f7)
+- loop: orange (#f97316)
+- sub-hand: pink (#ec4899)
+
+**Dependencies**: Task 1.2, Task 1.4
+**Verification**:
+- Select Hand in UI shows Flow tab
+- Flow tab renders React Flow diagram
+- Different step types have different colors/icons
+- Diagram matches step structure from API
+**Estimated Effort**: 3-4 hours
+
+---
+
+### Task 1.6: Integration Testing
+**ID**: 1.6
+**Description**: End-to-end testing of complete flow
+**Files**:
+- Test only - no code changes
+
+**Test Scenarios**:
+1. **Create Hand via Agent**:
+   - Start OpenFang daemon
+   - Send message to agent: "Create a Hand named 'Test' with steps: 1) Send greeting 2) Wait for response"
+   - Verify agent calls `hand_create` tool
+   - Verify new Hand appears in list
+   - Verify steps are saved correctly
+
+2. **View Steps in UI**:
+   - Open Hands page
+   - Select newly created Hand
+   - Click "Flow" tab
+   - Verify React Flow renders steps correctly
+
+3. **Update Steps via Agent**:
+   - Send message: "Add a new step after step 1 that executes tool 'web_search'"
+   - Verify agent calls `hand_update_steps`
+   - Verify UI updates to show new step
+   - Verify TOML file updated
+
+4. **API Direct Test**:
+   - GET /api/hands/{id}/steps returns correct structure
+   - PUT /api/hands/{id}/steps updates correctly
+   - Invalid step graph returns error
+
+**Dependencies**: All previous tasks
+**Verification**:
+- All test scenarios pass
+- No console errors
+- No Rust panics
+**Estimated Effort**: 2 hours
+
+## Wave Structure
+
+| Wave | Tasks | Description |
+|------|-------|-------------|
+| 1 | 1.1, 1.4 | Data models (Rust + TypeScript) - parallel |
+| 2 | 1.2 | API endpoints - depends on 1.1 |
+| 3 | 1.3 | Agent tools - depends on 1.1, 1.2 |
+| 4 | 1.5 | React Flow UI - depends on 1.2, 1.4 |
+| 5 | 1.6 | Integration testing - depends on all |
+
+## Files Modified Summary
+
+| File | Lines | Purpose |
+|------|-------|---------|
+| `crates/openfang-hands/src/steps.rs` | +200 | New step type definitions |
+| `crates/openfang-hands/src/lib.rs` | +30 | Add steps field to HandDefinition |
+| `crates/openfang-hands/src/registry.rs` | +50 | Persist steps to TOML |
+| `crates/openfang-api/src/routes.rs` | +150 | New API endpoints |
+| `crates/openfang-api/src/server.rs` | +10 | Route registration |
+| `crates/openfang-api/src/types.rs` | +30 | Request/response types |
+| `crates/openfang-runtime/src/tools/hand_tools.rs` | +200 | Agent tool implementations |
+| `crates/openfang-runtime/src/tool_runner.rs` | +50 | Tool registration |
+| `crates/openfang-webui/src/api/types.ts` | +80 | TypeScript types |
+| `crates/openfang-webui/src/pages/Hands.tsx` | +100 | Flow tab integration |
+| `crates/openfang-webui/src/components/flow/StepNode.tsx` | +80 | Custom node component |
+| `crates/openfang-webui/src/components/flow/FlowCanvas.tsx` | +120 | React Flow wrapper |
+
+## Risk Assessment
+
+| Risk | Likelihood | Impact | Mitigation |
+|------|------------|--------|------------|
+| TOML serialization complexity for nested steps | Medium | Medium | Write comprehensive tests, use serde attributes |
+| React Flow layout algorithm issues | Medium | Low | Use dagre or elkjs for auto-layout |
+| Agent tool API design changes | Low | High | Keep tool schemas simple, version them |
+| Step graph validation complexity | Medium | Medium | Start with simple cycle detection |
+
+## Notes
+
+- React Flow is already installed in the frontend (@xyflow/react)
+- Hands page already has tab structure - add "Flow" tab alongside existing tabs
+- Consider future Phase 2 when designing - visual editor will need the same API
+- Step execution (Phase 3) will build on these data structures

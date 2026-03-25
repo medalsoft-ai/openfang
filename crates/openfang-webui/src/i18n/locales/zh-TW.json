@@ -22,6 +22,23 @@
     "description": "構建、部署和管理自主 AI 智慧體。連接到你喜歡的工具，讓它們為你工作。",
     "startChat": "開始對話",
     "createAgent": "建立智慧體",
+    "quickActions": "快速操作",
+    "actions": {
+      "chat": "開始對話",
+      "chatDesc": "與智慧體開始對話",
+      "sop": "SOP",
+      "sopDesc": "管理標準作業程序",
+      "workflow": "工作流程",
+      "workflowDesc": "設計自動化工作流程",
+      "channel": "渠道",
+      "channelDesc": "連接外部平台"
+    },
+    "stats": {
+      "agents": "智慧體",
+      "conversations": "對話數",
+      "active": "活躍任務",
+      "efficiency": "效率"
+    },
     "features": {
       "title": "一切所需",
       "subtitle": "建立和管理 AI 智慧體的完整平台",

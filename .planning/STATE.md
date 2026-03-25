@@ -8,7 +8,7 @@ progress:
   total_phases: 4
   completed_phases: 2
   total_plans: 15
-  completed_plans: 8
+  completed_plans: 11
 ---
 
 # State — Milestone v0.1 Dynamic Hand with steps
@@ -16,7 +16,7 @@ progress:
 ## Current Position
 
 Phase: 03 (execution-engine) — EXECUTING
-Plan: 2 of 5
+Plan: 4 of 5 (Wave 4 Complete ✓)
 
 ### Next: Phase 3 — Execution Engine
 
@@ -286,6 +286,23 @@ Plan: 2 of 5
 | 4 | Session to Hand | 从 Session 生成 Hand | 2 | Not Started |
 
 ## Phase 3 — Execution Engine
+
+### Plan 03-04: WebSocket Real-Time Status — COMPLETE ✓
+
+- **Files:**
+  - `crates/openfang-runtime/src/hand_executor.rs` — Added StepStatusChange struct and broadcast channel
+  - `crates/openfang-api/src/ws.rs` — WebSocket handler forwards step_status_change messages
+  - `crates/openfang-webui/src/components/flow/StepNode.tsx` — Status indicator with color/animation
+  - `crates/openfang-webui/src/components/flow/FlowCanvas.tsx` — stepStatuses prop
+  - `crates/openfang-webui/src/pages/Hands.tsx` — useSessionWebSocket for real-time updates
+  - `crates/openfang-webui/src/api/websocket.ts` — Added 'step_status_change' message type
+  - `crates/openfang-webui/src/api/sessionConnection.ts` — Added 'step_status_change' message type
+- **Deliverables:**
+  - Tokio broadcast channel for step status changes
+  - StepNode visual indicators (pulse for running, bounce for waiting)
+  - Real-time UI updates via WebSocket
+  - TypeScript typecheck: ✓
+  - Rust build: ✓
 
 ### Plan 03-01: Execution Store — COMPLETE ✓
 

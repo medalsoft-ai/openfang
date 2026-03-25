@@ -1,33 +1,52 @@
-// Skills - Multi-tab with ClawHub integration
+// Skills - Claymorphism Design System
+// Purple theme, soft 3D, rounded cards - consistent with Overview.tsx
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import { api } from '@/api/client';
 import type { Skill, ClawHubSkill, McpServersResponse } from '@/api/types';
-import { NeonText } from '@/components/motion/NeonText';
-import { SpotlightCard } from '@/components/motion/SpotlightCard';
 import { toaster } from '@/lib/toast';
 import {
-  Puzzle, Search, Zap, Check, X, Terminal,
-  Star, Download, Trash2, Code2, Box, Loader2,
-  Globe, Server, Plus, Eye, Sparkles, GitBranch,
-  TrendingUp, Calendar, ExternalLink, Copy
+  Puzzle, Search, Check, X, Code2, Loader2,
+  Globe, Server, Plus, Eye, Sparkles,
+  TrendingUp, Calendar, GitBranch, Download, Star,
+  Zap
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useTranslation } from 'react-i18next';
+
+// ============================================
+// CLAYMORPHISM DESIGN TOKENS
+// ============================================
+const clay = {
+  primary: '#8B5CF6',
+  primaryLight: '#A78BFA',
+  primaryDark: '#7C3AED',
+  bgGradient: 'from-gray-50 via-violet-50/30 to-purple-50/20',
+  card: 'bg-white border-[3px] border-white',
+  cardShadow: 'shadow-[0_4px_16px_rgba(139,92,246,0.15),inset_0_1px_3px_rgba(255,255,255,0.8)]',
+  cardHover: 'hover:shadow-[0_8px_24px_rgba(139,92,246,0.25)]',
+  active: 'bg-violet-50 shadow-[inset_0_2px_4px_rgba(139,92,246,0.15)]',
+  radius: 'rounded-2xl',
+  radiusLg: 'rounded-3xl',
+  textPrimary: 'text-gray-800',
+  textMuted: 'text-gray-500',
+  textViolet: 'text-violet-600',
+};
 
 interface SkillWithSource extends Skill {
   source: { type: string; slug?: string; version?: string };
 }
 
-// Runtime badge colors
-const runtimeColors: Record<string, string> = {
-  prompt: 'var(--neon-cyan)',
-  python: 'var(--neon-amber)',
-  nodejs: 'var(--neon-green)',
-  wasm: 'var(--neon-magenta)',
+// Runtime badge colors - violet theme
+const runtimeColors: Record<string, { bg: string; text: string; icon: string }> = {
+  prompt: { bg: 'bg-violet-100', text: 'text-violet-700', icon: 'text-violet-600' },
+  python: { bg: 'bg-amber-100', text: 'text-amber-700', icon: 'text-amber-600' },
+  nodejs: { bg: 'bg-emerald-100', text: 'text-emerald-700', icon: 'text-emerald-600' },
+  wasm: { bg: 'bg-rose-100', text: 'text-rose-700', icon: 'text-rose-600' },
 };
 
-// Categories from Alpine
+// Categories from ServiceMe Hub
 const categories = [
   { id: 'coding', name: 'Coding & IDEs' },
   { id: 'git', name: 'Git & GitHub' },
@@ -57,7 +76,9 @@ const quickStartSkills = [
   { name: 'security-checklist', description: 'OWASP-aligned security review checklist.', prompt_context: 'Security review checklist (OWASP aligned):\n- Input validation on all user inputs\n- Output encoding to prevent XSS\n- Parameterized queries to prevent SQL injection\n- Authentication and session management\n- Access control checks\n- CSRF protection\n- Security headers\n- Error handling without information leakage' },
 ];
 
-// Skill card component
+// ============================================
+// SKILL CARD COMPONENT
+// ============================================
 function SkillCard({
   skill,
   onToggle,
@@ -69,112 +90,88 @@ function SkillCard({
   onDelete?: () => void;
   onDetail?: () => void;
 }) {
-  const [isHovered, setIsHovered] = useState(false);
-  const color = runtimeColors[skill.runtime] || 'var(--neon-cyan)';
+  const colors = runtimeColors[skill.runtime] || runtimeColors.prompt;
 
   return (
     <motion.div
       layout
-      initial={{ opacity: 0, scale: 0.9 }}
-      animate={{ opacity: 1, scale: 1 }}
-      exit={{ opacity: 0, scale: 0.9 }}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
-      className="relative"
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, scale: 0.95 }}
+      whileHover={{ y: -4 }}
+      className={cn(
+        clay.card,
+        clay.cardShadow,
+        clay.cardHover,
+        clay.radius,
+        'transition-all duration-300'
+      )}
     >
-      <motion.div
-        className="absolute -top-2 left-1/2 w-px bg-gradient-to-b from-transparent to-current"
-        style={{ color }}
-        initial={{ height: 0 }}
-        animate={{ height: isHovered ? 8 : 0 }}
-      />
-
-      <SpotlightCard
-        glowColor={`${color}20`}
-        className="h-full"
-      >
-        <div className="p-5">
-          <div className="flex items-start justify-between mb-3">
-            <div
-              className="w-10 h-10 rounded-lg flex items-center justify-center"
-              style={{ backgroundColor: `${color}15` }}
-            >
-              <Code2 className="w-5 h-5" style={{ color }} />
-            </div>
-            <div className="flex items-center gap-2">
-              <span
-                className="px-2 py-0.5 rounded text-[10px] font-mono uppercase"
-                style={{
-                  backgroundColor: `${color}15`,
-                  color,
-                }}
-              >
-                {skill.runtime}
-              </span>
-              {skill.source?.type === 'builtin' && (
-                <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-[var(--surface-secondary)] text-[var(--text-muted)]">
-                  BUILTIN
-                </span>
-              )}
-            </div>
+      <div className="p-5">
+        {/* Header */}
+        <div className="flex items-start justify-between mb-4">
+          <div className={cn('w-12 h-12 rounded-xl flex items-center justify-center', colors.bg)}>
+            <Code2 className={cn('w-6 h-6', colors.icon)} />
           </div>
-
-          <h3 className="font-semibold text-[var(--text-primary)] mb-1">{skill.name}</h3>
-          <p className="text-sm text-[var(--text-muted)] mb-4 line-clamp-2">
-            {skill.description}
-          </p>
-
-          <div className="flex items-center justify-between pt-3 border-t border-[var(--border-subtle)]">
-            <span className="text-xs text-[var(--text-muted)]">
-              {skill.tools_count} tool{skill.tools_count !== 1 ? 's' : ''}
+          <div className="flex items-center gap-2">
+            <span className={cn('px-2.5 py-1 rounded-lg text-[10px] font-medium uppercase', colors.bg, colors.text)}>
+              {skill.runtime}
             </span>
-            <div className="flex items-center gap-2">
-              {onDetail && (
-                <motion.button
-                  onClick={onDetail}
-                  className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--neon-cyan)] hover:bg-[var(--neon-cyan)]/10"
-                  whileHover={{ scale: 1.1 }}
-                  whileTap={{ scale: 0.9 }}
-                >
-                  <Eye className="w-4 h-4" />
-                </motion.button>
-              )}
-              {onDelete && skill.source?.type !== 'builtin' && (
-                <motion.button
-                  onClick={onDelete}
-                  className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--neon-magenta)] hover:bg-[var(--neon-magenta)]/10"
-                  whileHover={{ scale: 1.1 }}
-                  whileTap={{ scale: 0.9 }}
-                >
-                  <Trash2 className="w-4 h-4" />
-                </motion.button>
-              )}
-              <motion.button
-                onClick={onToggle}
-                className={cn(
-                  'p-1.5 rounded-lg transition-colors',
-                  skill.enabled
-                    ? 'bg-[var(--neon-green)]/20 text-[var(--neon-green)]'
-                    : 'bg-[var(--surface-secondary)] text-[var(--text-muted)]'
-                )}
-                whileHover={{ scale: 1.1 }}
-                whileTap={{ scale: 0.9 }}
-              >
-                {skill.enabled ? (
-                  <Check className="w-4 h-4" />
-                ) : (
-                  <X className="w-4 h-4" />
-                )}
-              </motion.button>
-            </div>
+            {skill.source?.type === 'builtin' && (
+              <span className="px-2.5 py-1 rounded-lg text-[10px] font-medium bg-gray-100 text-gray-600">
+                BUILTIN
+              </span>
+            )}
           </div>
         </div>
-      </SpotlightCard>
+
+        {/* Content */}
+        <h3 className="font-semibold text-gray-800 mb-1">{skill.name}</h3>
+        <p className="text-sm text-gray-500 mb-4 line-clamp-2">{skill.description}</p>
+
+        {/* Footer */}
+        <div className="flex items-center justify-between pt-4 border-t border-gray-100">
+          <span className="text-xs text-gray-400">
+            {skill.tools_count} tool{skill.tools_count !== 1 ? 's' : ''}
+          </span>
+          <div className="flex items-center gap-1">
+            {onDetail && (
+              <button
+                onClick={onDetail}
+                className="p-2 rounded-lg text-gray-400 hover:text-violet-600 hover:bg-violet-50 transition-colors"
+              >
+                <Eye className="w-4 h-4" />
+              </button>
+            )}
+            {onDelete && skill.source?.type !== 'builtin' && (
+              <button
+                onClick={onDelete}
+                className="p-2 rounded-lg text-gray-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+            <button
+              onClick={onToggle}
+              className={cn(
+                'p-2 rounded-lg transition-colors',
+                skill.enabled
+                  ? 'bg-emerald-100 text-emerald-600'
+                  : 'bg-gray-100 text-gray-400 hover:bg-gray-200'
+              )}
+            >
+              {skill.enabled ? <Check className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+            </button>
+          </div>
+        </div>
+      </div>
     </motion.div>
   );
 }
 
-// ClawHub skill card
+// ============================================
+// SERVICEME HUB SKILL CARD
+// ============================================
 function ClawHubSkillCard({
   skill,
   onInstall,
@@ -186,73 +183,75 @@ function ClawHubSkillCard({
   onDetail: () => void;
   installing: boolean;
 }) {
-  const color = runtimeColors[skill.runtime || 'prompt'] || 'var(--neon-cyan)';
+  const colors = runtimeColors[skill.runtime || 'prompt'] || runtimeColors.prompt;
 
   return (
     <motion.div
       layout
-      initial={{ opacity: 0, scale: 0.9 }}
-      animate={{ opacity: 1, scale: 1 }}
-      exit={{ opacity: 0, scale: 0.9 }}
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, scale: 0.95 }}
+      whileHover={{ y: -4 }}
+      className={cn(
+        clay.card,
+        clay.cardShadow,
+        clay.cardHover,
+        clay.radius,
+        'transition-all duration-300'
+      )}
     >
-      <SpotlightCard
-        glowColor={`${color}10`}
-        className="h-full"
-      >
-        <div className="p-5">
-          <div className="flex items-start justify-between mb-3">
-            <div
-              className="w-10 h-10 rounded-lg flex items-center justify-center"
-              style={{ backgroundColor: `${color}15` }}
-            >
-              <Globe className="w-5 h-5" style={{ color }} />
+      <div className="p-5">
+        {/* Header */}
+        <div className="flex items-start justify-between mb-4">
+          <div className={cn('w-12 h-12 rounded-xl flex items-center justify-center', colors.bg)}>
+            <Globe className={cn('w-6 h-6', colors.icon)} />
+          </div>
+          {skill.stars !== undefined && skill.stars > 0 && (
+            <div className="flex items-center gap-1 text-xs text-amber-600 bg-amber-50 px-2 py-1 rounded-lg">
+              <Star className="w-3 h-3 fill-amber-600" />
+              {skill.stars}
             </div>
-            {skill.stars !== undefined && skill.stars > 0 && (
-              <div className="flex items-center gap-1 text-xs text-[var(--neon-amber)]">
-                <Star className="w-3 h-3" />
-                {skill.stars}
-              </div>
-            )}
-          </div>
-
-          <h3 className="font-semibold text-[var(--text-primary)] mb-1">{skill.name}</h3>
-          <p className="text-sm text-[var(--text-muted)] mb-4 line-clamp-2">
-            {skill.description}
-          </p>
-
-          <div className="flex items-center gap-3 text-xs text-[var(--text-muted)] mb-4">
-            {skill.author && <span>@{skill.author}</span>}
-            {skill.downloads !== undefined && (
-              <span className="flex items-center gap-1">
-                <Download className="w-3 h-3" />
-                {formatDownloads(skill.downloads)}
-              </span>
-            )}
-          </div>
-
-          <div className="flex items-center gap-2 pt-3 border-t border-[var(--border-subtle)]">
-            <button
-              onClick={onDetail}
-              className="flex-1 py-2 rounded-lg bg-[var(--surface-secondary)] text-[var(--text-secondary)] hover:bg-[var(--surface-tertiary)] text-sm font-medium"
-            >
-              Details
-            </button>
-            <button
-              onClick={onInstall}
-              disabled={installing || skill.installed}
-              className={cn(
-                'flex-1 py-2 rounded-lg text-sm font-medium flex items-center justify-center gap-2',
-                skill.installed
-                  ? 'bg-[var(--neon-green)]/10 text-[var(--neon-green)]'
-                  : 'bg-[var(--neon-cyan)]/10 text-[var(--neon-cyan)] hover:bg-[var(--neon-cyan)]/20'
-              )}
-            >
-              {installing && <Loader2 className="w-4 h-4 animate-spin" />}
-              {skill.installed ? 'Installed' : 'Install'}
-            </button>
-          </div>
+          )}
         </div>
-      </SpotlightCard>
+
+        {/* Content */}
+        <h3 className="font-semibold text-gray-800 mb-1">{skill.name}</h3>
+        <p className="text-sm text-gray-500 mb-4 line-clamp-2">{skill.description}</p>
+
+        {/* Meta */}
+        <div className="flex items-center gap-3 text-xs text-gray-400 mb-4">
+          {skill.author && <span>@{skill.author}</span>}
+          {skill.downloads !== undefined && (
+            <span className="flex items-center gap-1">
+              <Download className="w-3 h-3" />
+              {formatDownloads(skill.downloads)}
+            </span>
+          )}
+        </div>
+
+        {/* Actions */}
+        <div className="flex items-center gap-2 pt-4 border-t border-gray-100">
+          <button
+            onClick={onDetail}
+            className="flex-1 py-2 rounded-xl bg-gray-100 text-gray-600 hover:bg-gray-200 text-sm font-medium transition-colors"
+          >
+            Details
+          </button>
+          <button
+            onClick={onInstall}
+            disabled={installing || skill.installed}
+            className={cn(
+              'flex-1 py-2 rounded-xl text-sm font-medium flex items-center justify-center gap-2 transition-colors',
+              skill.installed
+                ? 'bg-emerald-100 text-emerald-600'
+                : 'bg-violet-100 text-violet-600 hover:bg-violet-200'
+            )}
+          >
+            {installing && <Loader2 className="w-4 h-4 animate-spin" />}
+            {skill.installed ? 'Installed' : 'Install'}
+          </button>
+        </div>
+      </div>
     </motion.div>
   );
 }
@@ -264,7 +263,11 @@ function formatDownloads(n: number): string {
   return n.toString();
 }
 
+// ============================================
+// MAIN SKILLS COMPONENT
+// ============================================
 export function Skills() {
+  const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<'installed' | 'clawhub' | 'mcp' | 'create'>('installed');
   const queryClient = useQueryClient();
 
@@ -272,7 +275,7 @@ export function Skills() {
   const [search, setSearch] = useState('');
   const [activeFilter, setActiveFilter] = useState<'all' | 'enabled' | 'builtin'>('all');
 
-  // ClawHub state
+  // ServiceMe Hub state
   const [clawhubSearch, setClawhubSearch] = useState('');
   const [clawhubResults, setClawhubResults] = useState<ClawHubSkill[]>([]);
   const [clawhubBrowseResults, setClawhubBrowseResults] = useState<ClawHubSkill[]>([]);
@@ -341,7 +344,7 @@ export function Skills() {
     onError: (err) => toaster.error('Failed to create skill: ' + (err as Error).message),
   });
 
-  // ClawHub search with debounce
+  // ServiceMe Hub search with debounce
   const onSearchInput = useCallback((value: string) => {
     setClawhubSearch(value);
     if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
@@ -363,7 +366,7 @@ export function Skills() {
     }, 350);
   }, []);
 
-  // ClawHub browse with cache
+  // ServiceMe Hub browse with cache
   const browseClawHub = useCallback(async (sort: typeof clawhubSort) => {
     setClawhubSort(sort);
     const ckey = `browse:${sort}`;
@@ -387,7 +390,7 @@ export function Skills() {
     setClawhubLoading(false);
   }, []);
 
-  // Install from ClawHub
+  // Install from ServiceMe Hub
   const installFromClawHub = useCallback(async (slug: string) => {
     setInstallingSlug(slug);
     try {
@@ -398,7 +401,6 @@ export function Skills() {
         toaster.success(`Skill "${data.name}" installed successfully`);
       }
       queryClient.invalidateQueries({ queryKey: ['skills'] });
-      // Update detail modal if open
       if (detailSkill && detailSkill.slug === slug) {
         setDetailSkill({ ...detailSkill, installed: true });
       }
@@ -472,8 +474,10 @@ export function Skills() {
       skill.description.toLowerCase().includes(q);
   });
 
-  // ClawHub display results
+  // ServiceMe Hub display results
   const clawhubDisplayResults = clawhubSearch ? clawhubResults : clawhubBrowseResults;
+
+  const enabledCount = skills.filter(s => s.enabled).length;
 
   return (
     <div className="h-full overflow-auto p-6">
@@ -485,19 +489,19 @@ export function Skills() {
           animate={{ opacity: 1, y: 0 }}
         >
           <div>
-            <h1 className="text-3xl font-bold">
-              <NeonText color="amber">Skills</NeonText>
-            </h1>
-            <p className="text-[var(--text-muted)] mt-1">
-              {skills.length} skill{skills.length !== 1 ? 's' : ''} • {skills.filter(s => s.enabled).length} enabled
+            <h1 className="text-3xl font-bold text-gray-800">Skills</h1>
+            <p className="text-gray-500 mt-1">
+              {skills.length} skill{skills.length !== 1 ? 's' : ''} • {enabledCount} enabled
             </p>
           </div>
 
           {/* Tabs */}
-          <div className="flex bg-[var(--surface-secondary)] rounded-lg p-1">
+          <div className={cn(
+            'flex bg-white rounded-2xl p-1.5 border-[3px] border-white shadow-[0_4px_16px_rgba(139,92,246,0.15)]'
+          )}>
             {[
               { id: 'installed', label: 'Installed', icon: Puzzle },
-              { id: 'clawhub', label: 'ClawHub', icon: Globe },
+              { id: 'clawhub', label: 'ServiceMe Hub', icon: Globe },
               { id: 'mcp', label: 'MCP', icon: Server },
               { id: 'create', label: 'Create', icon: Plus },
             ].map(({ id, label, icon: Icon }) => (
@@ -505,10 +509,10 @@ export function Skills() {
                 key={id}
                 onClick={() => setActiveTab(id as typeof activeTab)}
                 className={cn(
-                  'flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors',
+                  'flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-all',
                   activeTab === id
-                    ? 'bg-[var(--neon-amber)]/20 text-[var(--neon-amber)]'
-                    : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
+                    ? 'bg-violet-500 text-white shadow-lg shadow-violet-500/25'
+                    : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
                 )}
               >
                 <Icon className="w-4 h-4" />
@@ -526,16 +530,16 @@ export function Skills() {
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
             >
-              <div className="flex bg-[var(--surface-secondary)] rounded-lg p-1">
+              <div className="flex bg-white rounded-xl p-1 shadow-[0_2px_8px_rgba(139,92,246,0.1)]">
                 {(['all', 'enabled', 'builtin'] as const).map((filter) => (
                   <button
                     key={filter}
                     onClick={() => setActiveFilter(filter)}
                     className={cn(
-                      'px-3 py-1.5 rounded-md text-sm capitalize transition-colors',
+                      'px-4 py-2 rounded-lg text-sm capitalize font-medium transition-all',
                       activeFilter === filter
-                        ? 'bg-[var(--neon-amber)]/20 text-[var(--neon-amber)]'
-                        : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
+                        ? 'bg-violet-100 text-violet-700'
+                        : 'text-gray-500 hover:text-gray-700'
                     )}
                   >
                     {filter}
@@ -544,33 +548,36 @@ export function Skills() {
               </div>
 
               <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)]" />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                 <input
                   type="text"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder="Search skills..."
-                  className="bg-[var(--surface-secondary)] border border-[var(--border-default)] rounded-lg pl-9 pr-4 py-2 text-[var(--text-primary)] text-sm placeholder-[var(--text-primary)]/30 w-48"
+                  className="bg-white border-2 border-white shadow-[0_2px_8px_rgba(139,92,246,0.1)] rounded-xl pl-10 pr-4 py-2.5 text-gray-800 text-sm placeholder:text-gray-400 w-56 focus:outline-none focus:border-violet-200"
                 />
               </div>
             </motion.div>
 
             {isLoading ? (
               <div className="flex items-center justify-center h-64">
-                <Loader2 className="w-8 h-8 animate-spin text-[var(--neon-amber)]" />
+                <div className="w-8 h-8 border-2 border-violet-500 border-t-transparent rounded-full animate-spin" />
               </div>
             ) : filteredSkills.length === 0 ? (
               <motion.div className="text-center py-20" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-                <div className="w-20 h-20 rounded-3xl bg-[var(--surface-secondary)] flex items-center justify-center mx-auto mb-6">
-                  <Puzzle className="w-10 h-10 text-[var(--text-muted)]" />
+                <div className={cn(
+                  'w-20 h-20 rounded-3xl bg-white flex items-center justify-center mx-auto mb-6',
+                  clay.cardShadow
+                )}>
+                  <Puzzle className="w-10 h-10 text-gray-300" />
                 </div>
-                <h3 className="text-xl font-semibold text-[var(--text-primary)] mb-2">No skills found</h3>
-                <p className="text-[var(--text-muted)]">
+                <h3 className="text-xl font-semibold text-gray-800 mb-2">No skills found</h3>
+                <p className="text-gray-500">
                   {search ? 'Try a different search term' : 'Install skills to extend agent capabilities'}
                 </p>
               </motion.div>
             ) : (
-              <motion.div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4" layout>
+              <motion.div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5" layout>
                 <AnimatePresence mode="popLayout">
                   {filteredSkills.map((skill) => (
                     <SkillCard
@@ -590,24 +597,27 @@ export function Skills() {
           </>
         )}
 
-        {/* ClawHub Tab */}
+        {/* ServiceMe Hub Tab */}
         {activeTab === 'clawhub' && (
           <>
             {/* Search & Sort */}
             <div className="flex flex-wrap items-center gap-4 mb-6">
               <div className="relative flex-1 max-w-md">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)]" />
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
                 <input
                   type="text"
                   value={clawhubSearch}
                   onChange={(e) => onSearchInput(e.target.value)}
-                  placeholder="Search ClawHub..."
-                  className="w-full bg-[var(--surface-secondary)] border border-[var(--border-default)] rounded-lg pl-9 pr-4 py-2 text-[var(--text-primary)] text-sm"
+                  placeholder="Search ServiceMe Hub..."
+                  className={cn(
+                    'w-full bg-white border-[3px] border-white shadow-[0_2px_8px_rgba(139,92,246,0.1)] rounded-xl pl-12 pr-4 py-3',
+                    'text-gray-800 placeholder:text-gray-400 focus:outline-none focus:border-violet-200'
+                  )}
                 />
                 {clawhubSearch && (
                   <button
                     onClick={() => { setClawhubSearch(''); setClawhubResults([]); }}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
                   >
                     <X className="w-4 h-4" />
                   </button>
@@ -615,7 +625,7 @@ export function Skills() {
               </div>
 
               {!clawhubSearch && (
-                <div className="flex bg-[var(--surface-secondary)] rounded-lg p-1">
+                <div className="flex bg-white rounded-xl p-1 shadow-[0_2px_8px_rgba(139,92,246,0.1)]">
                   {[
                     { id: 'trending', label: 'Trending', icon: TrendingUp },
                     { id: 'downloads', label: 'Downloads', icon: Download },
@@ -626,10 +636,10 @@ export function Skills() {
                       key={id}
                       onClick={() => browseClawHub(id as typeof clawhubSort)}
                       className={cn(
-                        'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm transition-colors',
+                        'flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all',
                         clawhubSort === id
-                          ? 'bg-[var(--neon-cyan)]/20 text-[var(--neon-cyan)]'
-                          : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
+                          ? 'bg-violet-100 text-violet-700'
+                          : 'text-gray-500 hover:text-gray-700'
                       )}
                     >
                       <Icon className="w-3.5 h-3.5" />
@@ -647,7 +657,7 @@ export function Skills() {
                   <button
                     key={cat.id}
                     onClick={() => onSearchInput(cat.name)}
-                    className="px-3 py-1.5 rounded-lg bg-[var(--surface-secondary)] text-[var(--text-muted)] hover:text-[var(--text-secondary)] text-xs"
+                    className="px-4 py-2 rounded-xl bg-white text-gray-600 hover:text-violet-600 hover:bg-violet-50 text-sm font-medium shadow-[0_2px_8px_rgba(139,92,246,0.1)] transition-all"
                   >
                     {cat.name}
                   </button>
@@ -658,23 +668,26 @@ export function Skills() {
             {/* Results */}
             {clawhubLoading ? (
               <div className="flex items-center justify-center h-64">
-                <Loader2 className="w-8 h-8 animate-spin text-[var(--neon-cyan)]" />
+                <div className="w-8 h-8 border-2 border-violet-500 border-t-transparent rounded-full animate-spin" />
               </div>
             ) : clawhubDisplayResults.length === 0 ? (
               <motion.div className="text-center py-20" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-                <div className="w-20 h-20 rounded-3xl bg-[var(--surface-secondary)] flex items-center justify-center mx-auto mb-6">
-                  <Globe className="w-10 h-10 text-[var(--text-muted)]" />
+                <div className={cn(
+                  'w-20 h-20 rounded-3xl bg-white flex items-center justify-center mx-auto mb-6',
+                  clay.cardShadow
+                )}>
+                  <Globe className="w-10 h-10 text-gray-300" />
                 </div>
-                <h3 className="text-xl font-semibold text-[var(--text-primary)] mb-2">
-                  {clawhubSearch ? 'No results' : 'Browse ClawHub'}
+                <h3 className="text-xl font-semibold text-gray-800 mb-2">
+                  {clawhubSearch ? 'No results' : 'Browse ServiceMe Hub'}
                 </h3>
-                <p className="text-[var(--text-muted)]">
+                <p className="text-gray-500">
                   {clawhubSearch ? 'Try a different search term' : 'Discover and install skills from the community'}
                 </p>
               </motion.div>
             ) : (
               <>
-                <motion.div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4" layout>
+                <motion.div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5" layout>
                   <AnimatePresence mode="popLayout">
                     {clawhubDisplayResults.map((skill) => (
                       <ClawHubSkillCard
@@ -700,7 +713,7 @@ export function Skills() {
                         } catch {}
                         setClawhubLoading(false);
                       }}
-                      className="px-6 py-2 rounded-lg bg-[var(--surface-secondary)] text-[var(--text-secondary)] hover:bg-[var(--surface-tertiary)]"
+                      className="px-6 py-3 rounded-xl bg-white text-gray-600 hover:bg-violet-50 hover:text-violet-600 font-medium shadow-[0_2px_8px_rgba(139,92,246,0.1)] transition-all"
                     >
                       Load More
                     </button>
@@ -714,22 +727,27 @@ export function Skills() {
         {/* MCP Tab */}
         {activeTab === 'mcp' && (
           <div className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
               {/* Configured Servers */}
-              <div className="p-6 rounded-2xl bg-[var(--surface-secondary)] border border-[var(--border-default)]">
-                <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-4 flex items-center gap-2">
-                  <Server className="w-5 h-5 text-[var(--neon-cyan)]" />
-                  Configured ({mcpData?.total_configured || 0})
-                </h3>
+              <div className={cn(clay.card, clay.cardShadow, clay.radius, 'p-6')}>
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-12 h-12 rounded-xl bg-violet-100 flex items-center justify-center">
+                    <Server className="w-6 h-6 text-violet-600" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-800">Configured</h3>
+                    <p className="text-sm text-gray-500">{mcpData?.total_configured || 0} servers</p>
+                  </div>
+                </div>
                 {mcpData?.configured.length === 0 ? (
-                  <p className="text-[var(--text-muted)]">No MCP servers configured</p>
+                  <p className="text-gray-500">No MCP servers configured</p>
                 ) : (
                   <div className="space-y-3">
                     {mcpData?.configured.map((server) => (
-                      <div key={server.name} className="p-3 rounded-lg bg-[var(--surface-tertiary)]">
-                        <div className="font-medium text-[var(--text-primary)]">{server.name}</div>
+                      <div key={server.name} className="p-4 rounded-xl bg-gray-50">
+                        <div className="font-medium text-gray-800">{server.name}</div>
                         {server.command && (
-                          <div className="text-xs text-[var(--text-muted)] font-mono mt-1">
+                          <div className="text-xs text-gray-500 font-mono mt-1">
                             {server.command} {server.args?.join(' ')}
                           </div>
                         )}
@@ -740,20 +758,25 @@ export function Skills() {
               </div>
 
               {/* Connected Servers */}
-              <div className="p-6 rounded-2xl bg-[var(--surface-secondary)] border border-[var(--border-default)]">
-                <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-4 flex items-center gap-2">
-                  <Zap className="w-5 h-5 text-[var(--neon-green)]" />
-                  Connected ({mcpData?.total_connected || 0})
-                </h3>
+              <div className={cn(clay.card, clay.cardShadow, clay.radius, 'p-6')}>
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-12 h-12 rounded-xl bg-emerald-100 flex items-center justify-center">
+                    <Zap className="w-6 h-6 text-emerald-600" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-800">Connected</h3>
+                    <p className="text-sm text-gray-500">{mcpData?.total_connected || 0} servers</p>
+                  </div>
+                </div>
                 {mcpData?.connected.length === 0 ? (
-                  <p className="text-[var(--text-muted)]">No MCP servers connected</p>
+                  <p className="text-gray-500">No MCP servers connected</p>
                 ) : (
                   <div className="space-y-3">
                     {mcpData?.connected.map((server) => (
-                      <div key={server.name} className="p-3 rounded-lg bg-[var(--neon-green)]/10 border border-[var(--neon-green)]/20">
-                        <div className="font-medium text-[var(--neon-green)]">{server.name}</div>
+                      <div key={server.name} className="p-4 rounded-xl bg-emerald-50 border border-emerald-100">
+                        <div className="font-medium text-emerald-700">{server.name}</div>
                         {server.tools && server.tools.length > 0 && (
-                          <div className="text-xs text-[var(--text-muted)] mt-1">
+                          <div className="text-xs text-emerald-600 mt-1">
                             {server.tools.length} tools available
                           </div>
                         )}
@@ -771,70 +794,79 @@ export function Skills() {
           <div className="max-w-2xl">
             {/* Quick Start */}
             <div className="mb-8">
-              <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-4 flex items-center gap-2">
-                <Sparkles className="w-5 h-5 text-[var(--neon-amber)]" />
+              <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center">
+                  <Sparkles className="w-4 h-4 text-amber-600" />
+                </div>
                 Quick Start
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {quickStartSkills.map((skill) => (
-                  <div
+                  <motion.div
                     key={skill.name}
-                    className="p-4 rounded-xl bg-[var(--surface-secondary)] border border-[var(--border-default)] hover:border-[var(--neon-cyan)]/50 transition-all group"
+                    whileHover={{ y: -2 }}
+                    className={cn(
+                      clay.card,
+                      clay.cardShadow,
+                      clay.cardHover,
+                      clay.radius,
+                      'p-4 cursor-pointer group transition-all'
+                    )}
+                    onClick={() => createQuickStart(skill)}
                   >
-                    <h4 className="font-medium text-[var(--text-primary)] mb-1">{skill.name}</h4>
-                    <p className="text-sm text-[var(--text-muted)] mb-3">{skill.description}</p>
-                    <button
-                      onClick={() => createQuickStart(skill)}
-                      className="text-sm text-[var(--neon-cyan)] hover:underline opacity-0 group-hover:opacity-100 transition-opacity"
-                    >
+                    <h4 className="font-medium text-gray-800 mb-1">{skill.name}</h4>
+                    <p className="text-sm text-gray-500 mb-3">{skill.description}</p>
+                    <span className="text-sm text-violet-600 font-medium group-hover:underline">
                       Create Skill →
-                    </button>
-                  </div>
+                    </span>
+                  </motion.div>
                 ))}
               </div>
             </div>
 
             {/* Custom Skill Form */}
-            <div className="p-6 rounded-2xl bg-[var(--surface-secondary)] border border-[var(--border-default)]">
-              <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-4 flex items-center gap-2">
-                <Plus className="w-5 h-5 text-[var(--neon-cyan)]" />
+            <div className={cn(clay.card, clay.cardShadow, clay.radius, 'p-6')}>
+              <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-violet-100 flex items-center justify-center">
+                  <Plus className="w-4 h-4 text-violet-600" />
+                </div>
                 Create Custom Skill
               </h3>
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm text-[var(--text-secondary)] mb-2">Name</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Name</label>
                   <input
                     type="text"
                     value={createForm.name}
                     onChange={(e) => setCreateForm({ ...createForm, name: e.target.value })}
                     placeholder="my-custom-skill"
-                    className="w-full bg-[var(--surface-tertiary)] border border-[var(--border-default)] rounded-lg px-4 py-2 text-[var(--text-primary)]"
+                    className="w-full px-4 py-3 rounded-xl bg-gray-50 border-2 border-transparent focus:border-violet-200 focus:bg-white transition-all text-gray-800 placeholder:text-gray-400"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm text-[var(--text-secondary)] mb-2">Description</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Description</label>
                   <input
                     type="text"
                     value={createForm.description}
                     onChange={(e) => setCreateForm({ ...createForm, description: e.target.value })}
                     placeholder="What does this skill do?"
-                    className="w-full bg-[var(--surface-tertiary)] border border-[var(--border-default)] rounded-lg px-4 py-2 text-[var(--text-primary)]"
+                    className="w-full px-4 py-3 rounded-xl bg-gray-50 border-2 border-transparent focus:border-violet-200 focus:bg-white transition-all text-gray-800 placeholder:text-gray-400"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm text-[var(--text-secondary)] mb-2">Prompt Context</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Prompt Context</label>
                   <textarea
                     value={createForm.prompt_context}
                     onChange={(e) => setCreateForm({ ...createForm, prompt_context: e.target.value })}
                     placeholder="Instructions to add to agent context..."
                     rows={6}
-                    className="w-full bg-[var(--surface-tertiary)] border border-[var(--border-default)] rounded-lg px-4 py-2 text-[var(--text-primary)] resize-none"
+                    className="w-full px-4 py-3 rounded-xl bg-gray-50 border-2 border-transparent focus:border-violet-200 focus:bg-white transition-all text-gray-800 placeholder:text-gray-400 resize-none"
                   />
                 </div>
                 <button
                   onClick={() => createMutation.mutate(createForm)}
                   disabled={createMutation.isPending || !createForm.name}
-                  className="w-full py-2 rounded-lg bg-[var(--neon-cyan)] text-[var(--void)] font-medium disabled:opacity-50 flex items-center justify-center gap-2"
+                  className="w-full py-3 rounded-xl bg-violet-500 text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 hover:bg-violet-600 transition-colors shadow-lg shadow-violet-500/25"
                 >
                   {createMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
                   Create Skill
@@ -852,49 +884,52 @@ export function Skills() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-[var(--void)]/80 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+            className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
             onClick={() => { setDetailSkill(null); setShowSkillCode(false); setSkillCode(''); }}
           >
             <motion.div
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="w-full max-w-2xl bg-[var(--surface-primary)] border border-[var(--border-default)] rounded-2xl p-6 max-h-[90vh] overflow-y-auto"
+              className={cn(
+                'w-full max-w-2xl bg-white border-[3px] border-white rounded-3xl p-6 max-h-[90vh] overflow-y-auto',
+                clay.cardShadow
+              )}
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex items-start justify-between mb-6">
                 <div>
-                  <h2 className="text-xl font-bold text-[var(--text-primary)]">{detailSkill.name}</h2>
+                  <h2 className="text-xl font-bold text-gray-800">{detailSkill.name}</h2>
                   {detailSkill.author && (
-                    <p className="text-sm text-[var(--text-muted)]">by @{detailSkill.author}</p>
+                    <p className="text-sm text-gray-500">by @{detailSkill.author}</p>
                   )}
                 </div>
                 <button
                   onClick={() => { setDetailSkill(null); setShowSkillCode(false); setSkillCode(''); }}
-                  className="p-2 rounded-lg hover:bg-[var(--surface-secondary)]"
+                  className="p-2 rounded-xl hover:bg-gray-100 transition-colors"
                 >
-                  <X className="w-5 h-5 text-[var(--text-muted)]" />
+                  <X className="w-5 h-5 text-gray-400" />
                 </button>
               </div>
 
-              <p className="text-[var(--text-secondary)] mb-6">{detailSkill.description}</p>
+              <p className="text-gray-600 mb-6">{detailSkill.description}</p>
 
-              <div className="flex flex-wrap gap-4 mb-6 text-sm text-[var(--text-muted)]">
+              <div className="flex flex-wrap gap-4 mb-6 text-sm text-gray-500">
                 {detailSkill.version && (
-                  <span className="flex items-center gap-1">
+                  <span className="flex items-center gap-1 bg-gray-100 px-3 py-1.5 rounded-lg">
                     <GitBranch className="w-4 h-4" />
                     v{detailSkill.version}
                   </span>
                 )}
                 {detailSkill.downloads !== undefined && (
-                  <span className="flex items-center gap-1">
+                  <span className="flex items-center gap-1 bg-gray-100 px-3 py-1.5 rounded-lg">
                     <Download className="w-4 h-4" />
                     {formatDownloads(detailSkill.downloads)} downloads
                   </span>
                 )}
                 {detailSkill.stars !== undefined && detailSkill.stars > 0 && (
-                  <span className="flex items-center gap-1">
-                    <Star className="w-4 h-4" />
+                  <span className="flex items-center gap-1 bg-amber-50 text-amber-600 px-3 py-1.5 rounded-lg">
+                    <Star className="w-4 h-4 fill-amber-600" />
                     {detailSkill.stars} stars
                   </span>
                 )}
@@ -903,7 +938,7 @@ export function Skills() {
               {detailSkill.tags && detailSkill.tags.length > 0 && (
                 <div className="flex flex-wrap gap-2 mb-6">
                   {detailSkill.tags.map((tag) => (
-                    <span key={tag} className="px-2 py-1 rounded-lg bg-[var(--surface-secondary)] text-xs text-[var(--text-muted)]">
+                    <span key={tag} className="px-3 py-1.5 rounded-lg bg-violet-50 text-violet-600 text-xs font-medium">
                       {tag}
                     </span>
                   ))}
@@ -914,15 +949,15 @@ export function Skills() {
               {showSkillCode && (
                 <div className="mb-6">
                   <div className="flex items-center justify-between mb-2">
-                    <h4 className="text-sm font-medium text-[var(--text-secondary)]">Source Code</h4>
+                    <h4 className="text-sm font-medium text-gray-700">Source Code</h4>
                     <button
                       onClick={() => viewSkillCode(detailSkill.slug)}
-                      className="text-xs text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+                      className="text-xs text-gray-500 hover:text-gray-700"
                     >
                       Hide
                     </button>
                   </div>
-                  <pre className="p-4 rounded-lg bg-[var(--surface-secondary)] text-sm text-[var(--text-secondary)] overflow-x-auto max-h-64 overflow-y-auto">
+                  <pre className="p-4 rounded-xl bg-gray-50 text-sm text-gray-600 overflow-x-auto max-h-64 overflow-y-auto">
                     <code>{skillCode}</code>
                   </pre>
                 </div>
@@ -931,7 +966,7 @@ export function Skills() {
               <div className="flex gap-3">
                 <button
                   onClick={() => viewSkillCode(detailSkill.slug)}
-                  className="flex-1 py-2 rounded-lg bg-[var(--surface-secondary)] text-[var(--text-secondary)] hover:bg-[var(--surface-tertiary)] font-medium"
+                  className="flex-1 py-3 rounded-xl bg-gray-100 text-gray-600 hover:bg-gray-200 font-medium transition-colors"
                 >
                   {showSkillCode ? 'Hide Code' : 'View Code'}
                 </button>
@@ -939,10 +974,10 @@ export function Skills() {
                   onClick={() => installFromClawHub(detailSkill.slug)}
                   disabled={installingSlug === detailSkill.slug || isSkillInstalled(detailSkill.slug)}
                   className={cn(
-                    'flex-1 py-2 rounded-lg font-medium flex items-center justify-center gap-2',
+                    'flex-1 py-3 rounded-xl font-medium flex items-center justify-center gap-2 transition-colors',
                     isSkillInstalled(detailSkill.slug)
-                      ? 'bg-[var(--neon-green)]/10 text-[var(--neon-green)]'
-                      : 'bg-[var(--neon-cyan)] text-[var(--void)]'
+                      ? 'bg-emerald-100 text-emerald-600'
+                      : 'bg-violet-500 text-white hover:bg-violet-600 shadow-lg shadow-violet-500/25'
                   )}
                 >
                   {installingSlug === detailSkill.slug && <Loader2 className="w-4 h-4 animate-spin" />}

@@ -4,9 +4,10 @@ import { getWsBaseUrl } from '@/lib/tauri';
 export type ConnectionState = 'connected' | 'disconnected' | 'reconnecting';
 
 export interface WebSocketMessage {
-  type: 'message' | 'thinking' | 'tool_call' | 'tool_result' | 'error' | 'done';
+  type: 'message' | 'thinking' | 'tool_call' | 'tool_result' | 'error' | 'done' | 'step_status_change';
   payload: unknown;
   timestamp: string;
+  data?: unknown;
 }
 
 export interface WebSocketCallbacks {

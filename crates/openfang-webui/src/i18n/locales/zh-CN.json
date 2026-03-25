@@ -22,6 +22,23 @@
     "description": "构建、部署和管理自主 AI 智能体。连接到你喜欢的工具，让它们为你工作。",
     "startChat": "开始对话",
     "createAgent": "创建智能体",
+    "quickActions": "快速操作",
+    "actions": {
+      "chat": "开始对话",
+      "chatDesc": "与智能体开始对话",
+      "sop": "SOP",
+      "sopDesc": "管理标准作业程序",
+      "workflow": "工作流",
+      "workflowDesc": "设计自动化工作流",
+      "channel": "渠道",
+      "channelDesc": "连接外部平台"
+    },
+    "stats": {
+      "agents": "智能体",
+      "conversations": "对话数",
+      "active": "活跃任务",
+      "efficiency": "效率"
+    },
     "features": {
       "title": "一切所需",
       "subtitle": "创建和管理 AI 智能体的完整平台",

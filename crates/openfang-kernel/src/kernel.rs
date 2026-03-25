@@ -26,6 +26,8 @@ use openfang_runtime::llm_driver::{
 use openfang_runtime::python_runtime::{self, PythonConfig};
 use openfang_runtime::routing::ModelRouter;
 use openfang_runtime::sandbox::{SandboxConfig, WasmSandbox};
+use openfang_runtime::execution_store::ExecutionStore;
+use openfang_runtime::hand_executor::HandExecutor;
 use openfang_runtime::tool_runner::builtin_tool_definitions;
 use openfang_types::agent::*;
 use openfang_types::capability::Capability;
@@ -117,6 +119,10 @@ pub struct OpenFangKernel {
         Option<Arc<dyn openfang_runtime::embedding::EmbeddingDriver + Send + Sync>>,
     /// Hand registry — curated autonomous capability packages.
     pub hand_registry: openfang_hands::registry::HandRegistry,
+    /// Execution store for Hand execution state tracking.
+    pub execution_store: ExecutionStore,
+    /// Hand executor for coordinating Hand workflow execution.
+    pub hand_executor: Arc<HandExecutor>,
     /// Credential resolver — vault → dotenv → env var priority chain.
     pub credential_resolver: std::sync::Mutex<openfang_extensions::credentials::CredentialResolver>,
     /// Extension/integration registry (bundled MCP templates + install state).
@@ -999,6 +1005,10 @@ impl OpenFangKernel {
         let initial_broadcast = config.broadcast.clone();
         let auto_reply_engine = crate::auto_reply::AutoReplyEngine::new(config.auto_reply.clone());
 
+        // Initialize execution store and hand executor
+        let execution_store = ExecutionStore::new(memory.usage_conn());
+        let hand_executor = Arc::new(HandExecutor::new(execution_store.clone()));
+
         let kernel = Self {
             config,
             registry: AgentRegistry::new(),
@@ -1029,6 +1039,8 @@ impl OpenFangKernel {
             pairing,
             embedding_driver,
             hand_registry,
+            execution_store,
+            hand_executor,
             credential_resolver: std::sync::Mutex::new(credential_resolver),
             extension_registry: std::sync::RwLock::new(extension_registry),
             extension_health,

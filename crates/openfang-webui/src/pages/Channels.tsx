@@ -1,17 +1,33 @@
-// Channels - Connection Nexus Style
+// Channels - Claymorphism Design System
+// Purple theme, soft 3D, rounded cards - consistent with Overview.tsx
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import { api } from '@/api/client';
-import { NeonText } from '@/components/motion/NeonText';
-import { SpotlightCard } from '@/components/motion/SpotlightCard';
-import { cyberColors } from '@/lib/animations';
 import {
   Radio, Loader2, CheckCircle2, AlertCircle, XCircle, Settings,
-  Trash2, RefreshCw, Copy, ExternalLink, ChevronRight, ChevronLeft,
+  Trash2, RefreshCw, Copy, ChevronRight, ChevronLeft,
   Search, Signal, Wifi, WifiOff, FlaskConical
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useTranslation } from 'react-i18next';
+
+// ============================================
+// CLAYMORPHISM DESIGN TOKENS
+// ============================================
+const clay = {
+  primary: '#8B5CF6',
+  primaryLight: '#A78BFA',
+  primaryDark: '#7C3AED',
+  bgGradient: 'from-gray-50 via-violet-50/30 to-purple-50/20',
+  card: 'bg-white border-[3px] border-white',
+  cardShadow: 'shadow-[0_4px_16px_rgba(139,92,246,0.15),inset_0_1px_3px_rgba(255,255,255,0.8)]',
+  cardShadowHover: 'hover:shadow-[0_8px_24px_rgba(139,92,246,0.25)]',
+  radius: 'rounded-2xl',
+  radiusLg: 'rounded-3xl',
+  textPrimary: 'text-[var(--text-primary)]',
+  textMuted: 'text-[var(--text-secondary)]',
+};
 
 interface Channel {
   name: string;
@@ -41,22 +57,30 @@ interface ChannelField {
   advanced?: boolean;
 }
 
+// Category colors - violet theme
 const categories = [
-  { key: 'all', label: 'All', color: 'var(--neon-cyan)' },
-  { key: 'messaging', label: 'Messaging', color: 'var(--neon-green)' },
-  { key: 'social', label: 'Social', color: 'var(--neon-amber)' },
-  { key: 'enterprise', label: 'Enterprise', color: 'var(--neon-magenta)' },
-  { key: 'developer', label: 'Developer', color: 'var(--chart-purple)' },
-  { key: 'notifications', label: 'Notifications', color: 'var(--chart-teal)' },
+  { key: 'all', label: 'All', color: 'violet' },
+  { key: 'messaging', label: 'Messaging', color: 'emerald' },
+  { key: 'social', label: 'Social', color: 'amber' },
+  { key: 'enterprise', label: 'Enterprise', color: 'violet' },
+  { key: 'developer', label: 'Developer', color: 'purple' },
+  { key: 'notifications', label: 'Notifications', color: 'violet' },
 ];
+
+const categoryColors: Record<string, { bg: string; text: string }> = {
+  violet: { bg: 'bg-[var(--primary-100)]', text: 'text-[var(--primary)]' },
+  emerald: { bg: 'bg-emerald-100', text: 'text-emerald-600' },
+  amber: { bg: 'bg-amber-100', text: 'text-amber-600' },
+  purple: { bg: 'bg-purple-100', text: 'text-purple-600' },
+};
 
 // Status indicator with signal animation
 function StatusIndicator({ status }: { status: 'connected' | 'configured' | 'not_configured' | 'error' }) {
   const configs = {
-    connected: { color: 'var(--neon-green)', icon: Signal, pulse: true },
-    configured: { color: 'var(--neon-amber)', icon: Wifi, pulse: false },
-    not_configured: { color: 'var(--text-muted)', icon: WifiOff, pulse: false },
-    error: { color: 'var(--neon-magenta)', icon: AlertCircle, pulse: false },
+    connected: { color: 'text-emerald-600', bg: 'bg-emerald-100', icon: Signal, pulse: true },
+    configured: { color: 'text-amber-600', bg: 'bg-amber-100', icon: Wifi, pulse: false },
+    not_configured: { color: 'text-[var(--text-muted)]', bg: 'bg-[var(--surface-secondary)]', icon: WifiOff, pulse: false },
+    error: { color: 'text-rose-600', bg: 'bg-rose-100', icon: AlertCircle, pulse: false },
   };
 
   const config = configs[status];
@@ -66,19 +90,21 @@ function StatusIndicator({ status }: { status: 'connected' | 'configured' | 'not
     <div className="flex items-center gap-2">
       {config.pulse && (
         <span className="relative flex h-2 w-2">
-          <span className="animate-ping absolute inline-flex h-full w-full rounded-full" style={{ backgroundColor: config.color }} />
-          <span className="relative inline-flex rounded-full h-2 w-2" style={{ backgroundColor: config.color }} />
+          <span className={cn("animate-ping absolute inline-flex h-full w-full rounded-full", config.bg.replace('bg-', 'bg-'))} style={{ backgroundColor: 'currentColor' }} />
+          <span className={cn("relative inline-flex rounded-full h-2 w-2", config.bg)} />
         </span>
       )}
-      <Icon className="w-4 h-4" style={{ color: config.color }} />
-      <span className="text-xs font-mono uppercase" style={{ color: config.color }}>
+      <Icon className={cn("w-4 h-4", config.color)} />
+      <span className={cn("text-xs font-medium capitalize", config.color)}>
         {status.replace('_', ' ')}
       </span>
     </div>
   );
 }
 
-// Channel card with nexus connection effect
+// ============================================
+// CHANNEL CARD COMPONENT
+// ============================================
 function ChannelCard({
   channel,
   onConfigure
@@ -93,79 +119,82 @@ function ChannelCard({
     : 'not_configured';
 
   const difficultyColors: Record<string, string> = {
-    Easy: 'var(--neon-green)',
-    Medium: 'var(--neon-amber)',
-    Hard: 'var(--neon-magenta)',
+    Easy: 'text-emerald-600',
+    Medium: 'text-amber-600',
+    Hard: 'text-rose-600',
   };
 
   return (
     <motion.div
       layout
-      initial={{ opacity: 0, scale: 0.9 }}
-      animate={{ opacity: 1, scale: 1 }}
-      exit={{ opacity: 0, scale: 0.9 }}
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, scale: 0.95 }}
       whileHover={{ y: -4 }}
+      onClick={onConfigure}
+      className={cn(
+        clay.card,
+        clay.cardShadow,
+        clay.cardShadowHover,
+        clay.radius,
+        'cursor-pointer h-full transition-all duration-300'
+      )}
     >
-      <SpotlightCard
-        glowColor={status === 'connected' ? 'rgba(0, 255, 136, 0.15)' : 'rgba(255,255,255,0.05)'}
-        onClick={onConfigure}
-        className="cursor-pointer h-full"
-      >
-        <div className="p-5 h-full flex flex-col">
-          {/* Header */}
-          <div className="flex items-start justify-between mb-4">
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-xl bg-[var(--surface-secondary)] flex items-center justify-center text-2xl">
-                {channel.icon}
-              </div>
-              <div>
-                <h3 className="font-semibold text-[var(--text-primary)]">{channel.display_name}</h3>
-                <p className="text-xs text-[var(--text-muted)] capitalize">{channel.category}</p>
-              </div>
+      <div className="p-6 h-full flex flex-col">
+        {/* Header */}
+        <div className="flex items-start justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 rounded-xl bg-[var(--surface-secondary)] flex items-center justify-center text-2xl">
+              {channel.icon}
             </div>
-            <StatusIndicator status={status} />
+            <div>
+              <h3 className="font-semibold text-[var(--text-primary)]">{channel.display_name}</h3>
+              <p className="text-xs text-[var(--text-secondary)] capitalize">{channel.category}</p>
+            </div>
           </div>
-
-          {/* Description */}
-          <p className="text-sm text-[var(--text-muted)] mb-4 flex-1 line-clamp-2">
-            {channel.description}
-          </p>
-
-          {/* Footer */}
-          <div className="flex items-center justify-between pt-4 border-t border-[var(--border-subtle)]">
-            <span
-              className="text-xs font-mono"
-              style={{ color: difficultyColors[channel.difficulty] || 'var(--chart-gray)' }}
-            >
-              {channel.difficulty}
-            </span>
-            <motion.button
-              onClick={(e) => {
-                e.stopPropagation();
-                onConfigure();
-              }}
-              className={cn(
-                'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium',
-                status === 'connected'
-                  ? 'bg-[var(--neon-green)]/10 text-[var(--neon-green)]'
-                  : status === 'configured'
-                  ? 'bg-[var(--neon-amber)]/10 text-[var(--neon-amber)]'
-                  : 'bg-[var(--surface-secondary)] text-[var(--text-secondary)]'
-              )}
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-            >
-              <Settings className="w-3.5 h-3.5" />
-              {status === 'connected' ? 'Manage' : 'Configure'}
-            </motion.button>
-          </div>
+          <StatusIndicator status={status} />
         </div>
-      </SpotlightCard>
+
+        {/* Description */}
+        <p className="text-sm text-[var(--text-secondary)] mb-4 flex-1 line-clamp-2">
+          {channel.description}
+        </p>
+
+        {/* Footer */}
+        <div className="flex items-center justify-between pt-4 border-t border-[var(--border-subtle)]">
+          <span className={cn("text-xs font-medium", difficultyColors[channel.difficulty] || 'text-[var(--text-muted)]')}>
+            {channel.difficulty}
+          </span>
+          <motion.button
+            onClick={(e) => {
+              e.stopPropagation();
+              onConfigure();
+            }}
+            className={cn(
+              'flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium transition-colors',
+              status === 'connected'
+                ? 'bg-emerald-100 text-emerald-600'
+                : status === 'configured'
+                ? 'bg-amber-100 text-amber-600'
+                : 'bg-[var(--surface-secondary)] text-[var(--text-secondary)] hover:bg-[var(--surface-tertiary)]'
+            )}
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+          >
+            <Settings className="w-3.5 h-3.5" />
+            {status === 'connected' ? 'Manage' : 'Configure'}
+          </motion.button>
+        </div>
+      </div>
     </motion.div>
   );
 }
 
+// ============================================
+// MAIN CHANNELS COMPONENT
+// ============================================
 export function Channels() {
+  const { t } = useTranslation();
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [setupModal, setSetupModal] = useState<Channel | null>(null);
@@ -244,10 +273,8 @@ export function Channels() {
           animate={{ opacity: 1, y: 0 }}
         >
           <div>
-            <h1 className="text-3xl font-bold">
-              <NeonText color="cyan">Channels</NeonText>
-            </h1>
-            <p className="text-[var(--text-muted)] mt-1">
+            <h1 className="text-3xl font-bold text-[var(--text-primary)]">Channels</h1>
+            <p className="text-[var(--text-secondary)] mt-1">
               {configuredCount} of {channels.length} connected
             </p>
           </div>
@@ -255,7 +282,7 @@ export function Channels() {
           <motion.button
             onClick={() => refetch()}
             disabled={isLoading}
-            className="p-2 rounded-lg bg-[var(--surface-secondary)] text-[var(--text-secondary)] hover:bg-[var(--surface-tertiary)]"
+            className="p-3 rounded-xl bg-white shadow-[0_2px_8px_rgba(139,92,246,0.1)] text-[var(--text-secondary)] hover:bg-violet-50 hover:text-[var(--primary)] transition-colors"
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
           >
@@ -265,28 +292,27 @@ export function Channels() {
 
         {/* Category tabs */}
         <motion.div
-          className="flex flex-wrap gap-1 mb-6 bg-[var(--surface-secondary)] rounded-xl p-1 w-fit"
+          className="flex flex-wrap gap-1 mb-6 bg-white rounded-2xl p-1.5 shadow-[0_2px_8px_rgba(139,92,246,0.1)] w-fit"
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
         >
-          {categories.map((cat) => (
-            <button
-              key={cat.key}
-              onClick={() => setCategoryFilter(cat.key)}
-              className={cn(
-                'px-4 py-2 rounded-lg text-sm font-medium capitalize transition-colors',
-                categoryFilter === cat.key
-                  ? 'text-[var(--text-primary)]'
-                  : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
-              )}
-              style={{
-                backgroundColor: categoryFilter === cat.key ? `${cat.color}20` : 'transparent',
-                color: categoryFilter === cat.key ? cat.color : undefined,
-              }}
-            >
-              {cat.label}
-            </button>
-          ))}
+          {categories.map((cat) => {
+            const colors = categoryColors[cat.color];
+            return (
+              <button
+                key={cat.key}
+                onClick={() => setCategoryFilter(cat.key)}
+                className={cn(
+                  'px-4 py-2 rounded-xl text-sm font-medium capitalize transition-all',
+                  categoryFilter === cat.key
+                    ? cn(colors.bg, colors.text)
+                    : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-secondary)]'
+                )}
+              >
+                {cat.label}
+              </button>
+            );
+          })}
         </motion.div>
 
         {/* Search */}
@@ -301,14 +327,17 @@ export function Channels() {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search channels..."
-            className="w-full bg-[var(--surface-secondary)] border border-[var(--border-default)] rounded-xl pl-12 pr-4 py-3 text-[var(--text-primary)] placeholder-[var(--text-primary)]/30"
+            className={cn(
+              'w-full bg-white border-[3px] border-white shadow-[0_2px_8px_rgba(139,92,246,0.1)] rounded-xl pl-12 pr-4 py-3',
+              'text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-violet-200 transition-all'
+            )}
           />
         </motion.div>
 
         {/* Loading */}
         {isLoading && (
           <div className="flex items-center justify-center h-64">
-            <div className="w-8 h-8 border-2 border-[var(--neon-cyan)] border-t-transparent rounded-full animate-spin" />
+            <div className="w-8 h-8 border-2 border-violet-500 border-t-transparent rounded-full animate-spin" />
           </div>
         )}
 
@@ -319,12 +348,14 @@ export function Channels() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
           >
-            <AlertCircle className="w-12 h-12 text-[var(--neon-magenta)] mx-auto mb-4" />
+            <div className="w-12 h-12 rounded-2xl bg-rose-100 flex items-center justify-center mx-auto mb-4">
+              <AlertCircle className="w-6 h-6 text-rose-600" />
+            </div>
             <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-2">Failed to load</h3>
-            <p className="text-[var(--text-muted)] mb-4">{error.message || 'Could not load channels'}</p>
+            <p className="text-[var(--text-secondary)] mb-4">{error.message || 'Could not load channels'}</p>
             <button
               onClick={() => refetch()}
-              className="px-4 py-2 rounded-lg bg-[var(--surface-secondary)] text-[var(--text-secondary)] hover:bg-[var(--surface-tertiary)]"
+              className="px-4 py-2 rounded-xl bg-[var(--surface-secondary)] text-[var(--text-secondary)] hover:bg-[var(--surface-tertiary)] font-medium transition-colors"
             >
               Retry
             </button>
@@ -334,7 +365,7 @@ export function Channels() {
         {/* Grid */}
         {!isLoading && !error && (
           <motion.div
-            className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4"
+            className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5"
             layout
           >
             <AnimatePresence mode="popLayout">
@@ -356,11 +387,14 @@ export function Channels() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
           >
-            <div className="w-20 h-20 rounded-3xl bg-[var(--surface-secondary)] flex items-center justify-center mx-auto mb-6">
+            <div className={cn(
+              'w-20 h-20 rounded-3xl bg-white flex items-center justify-center mx-auto mb-6',
+              clay.cardShadow
+            )}>
               <Radio className="w-10 h-10 text-[var(--text-muted)]" />
             </div>
             <h3 className="text-xl font-semibold text-[var(--text-primary)] mb-2">No channels found</h3>
-            <p className="text-[var(--text-muted)]">Try a different search or category</p>
+            <p className="text-[var(--text-secondary)]">Try a different search or category</p>
           </motion.div>
         )}
       </div>
@@ -382,7 +416,9 @@ export function Channels() {
   );
 }
 
-// Setup modal component with 3-step wizard
+// ============================================
+// SETUP MODAL COMPONENT
+// ============================================
 function SetupModal({
   channel,
   onClose,
@@ -494,15 +530,15 @@ function SetupModal({
             className={cn(
               'w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium transition-colors',
               s === step
-                ? 'bg-[var(--neon-cyan)] text-[var(--void)]'
+                ? 'bg-[var(--primary)] text-white'
                 : s < step
-                ? 'bg-[var(--neon-green)] text-[var(--void)]'
-                : 'bg-[var(--surface-tertiary)] text-[var(--text-muted)]'
+                ? 'bg-emerald-500 text-white'
+                : 'bg-[var(--surface-secondary)] text-[var(--text-muted)]'
             )}
           >
             {s < step ? <CheckCircle2 className="w-4 h-4" /> : s}
           </div>
-          {s < 3 && <div className="w-8 h-px bg-[var(--border-default)] mx-1" />}
+          {s < 3 && <div className="w-8 h-px bg-[var(--surface-tertiary)] mx-1" />}
         </div>
       ))}
     </div>
@@ -516,14 +552,17 @@ function SetupModal({
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 bg-[var(--void)]/80 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+      className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
       onClick={onClose}
     >
       <motion.div
         initial={{ scale: 0.95, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.95, opacity: 0 }}
-        className="bg-[var(--surface-secondary)] border border-[var(--border-default)] rounded-2xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto"
+        className={cn(
+          'bg-white border-[3px] border-white rounded-3xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto',
+          clay.cardShadow
+        )}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -533,7 +572,7 @@ function SetupModal({
           </div>
           <div>
             <h2 className="text-xl font-bold text-[var(--text-primary)]">{channel.display_name}</h2>
-            <p className="text-sm text-[var(--text-muted)]">{stepLabels[step - 1]}</p>
+            <p className="text-sm text-[var(--text-secondary)]">{stepLabels[step - 1]}</p>
           </div>
         </div>
 
@@ -549,9 +588,9 @@ function SetupModal({
                 <h4 className="text-sm font-medium text-[var(--text-primary)]">Configuration</h4>
                 {basicFields.map((field) => (
                   <div key={field.key}>
-                    <label className="block text-xs text-[var(--text-muted)] mb-1.5">
+                    <label className="block text-xs text-[var(--text-secondary)] mb-1.5">
                       {field.label}
-                      {field.required && <span className="text-[var(--neon-magenta)] ml-1">*</span>}
+                      {field.required && <span className="text-rose-500 ml-1">*</span>}
                     </label>
                     <input
                       type={field.type === 'secret' ? 'password' : 'text'}
@@ -560,7 +599,7 @@ function SetupModal({
                         setFormValues((prev) => ({ ...prev, [field.key]: e.target.value }))
                       }
                       placeholder={field.env_var ? `Env: ${field.env_var}` : ''}
-                      className="w-full bg-[var(--surface-secondary)] border border-[var(--border-default)] rounded-lg px-4 py-2.5 text-[var(--text-primary)] text-sm placeholder-[var(--text-primary)]/30"
+                      className="w-full bg-[var(--surface-secondary)] border border-[var(--border-default)] rounded-xl px-4 py-2.5 text-[var(--text-primary)] text-sm focus:outline-none focus:border-violet-300"
                     />
                   </div>
                 ))}
@@ -569,7 +608,7 @@ function SetupModal({
                 {advancedFields.length > 0 && (
                   <button
                     onClick={() => setShowAdvanced(!showAdvanced)}
-                    className="text-xs text-[var(--neon-cyan)] hover:underline"
+                    className="text-xs text-[var(--primary)] hover:underline"
                   >
                     {showAdvanced ? 'Hide Advanced' : 'Show Advanced'}
                   </button>
@@ -578,9 +617,9 @@ function SetupModal({
                 {/* Advanced fields */}
                 {showAdvanced && advancedFields.map((field) => (
                   <div key={field.key}>
-                    <label className="block text-xs text-[var(--text-muted)] mb-1.5">
+                    <label className="block text-xs text-[var(--text-secondary)] mb-1.5">
                       {field.label}
-                      {field.required && <span className="text-[var(--neon-magenta)] ml-1">*</span>}
+                      {field.required && <span className="text-rose-500 ml-1">*</span>}
                       <span className="ml-1 text-[var(--text-muted)]">(Advanced)</span>
                     </label>
                     <input
@@ -590,7 +629,7 @@ function SetupModal({
                         setFormValues((prev) => ({ ...prev, [field.key]: e.target.value }))
                       }
                       placeholder={field.env_var ? `Env: ${field.env_var}` : ''}
-                      className="w-full bg-[var(--surface-secondary)] border border-[var(--border-default)] rounded-lg px-4 py-2.5 text-[var(--text-primary)] text-sm placeholder-[var(--text-primary)]/30"
+                      className="w-full bg-[var(--surface-secondary)] border border-[var(--border-default)] rounded-xl px-4 py-2.5 text-[var(--text-primary)] text-sm focus:outline-none focus:border-violet-300"
                     />
                   </div>
                 ))}
@@ -601,16 +640,16 @@ function SetupModal({
             {channel.config_template && (
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs text-[var(--text-muted)]">Config Template</span>
+                  <span className="text-xs text-[var(--text-secondary)]">Config Template</span>
                   <button
                     onClick={() => navigator.clipboard.writeText(channel.config_template!)}
-                    className="text-xs text-[var(--neon-cyan)] hover:underline flex items-center gap-1"
+                    className="text-xs text-[var(--primary)] hover:underline flex items-center gap-1"
                   >
                     <Copy className="w-3 h-3" />
                     Copy
                   </button>
                 </div>
-                <pre className="p-3 rounded-lg bg-[var(--void)]/30 text-xs text-[var(--text-secondary)] font-mono overflow-x-auto">
+                <pre className="p-3 rounded-xl bg-[var(--surface-secondary)] text-xs text-[var(--text-secondary)] font-mono overflow-x-auto">
                   {channel.config_template}
                 </pre>
               </div>
@@ -623,20 +662,20 @@ function SetupModal({
           <div className="space-y-4 text-center">
             {!isWhatsApp ? (
               <>
-                <div className="w-16 h-16 rounded-full bg-[var(--neon-amber)]/20 flex items-center justify-center mx-auto">
-                  <FlaskConical className="w-8 h-8 text-[var(--neon-amber)]" />
+                <div className="w-16 h-16 rounded-full bg-amber-100 flex items-center justify-center mx-auto">
+                  <FlaskConical className="w-8 h-8 text-amber-600" />
                 </div>
                 <h4 className="text-lg font-medium text-[var(--text-primary)]">Test Connection</h4>
-                <p className="text-sm text-[var(--text-muted)]">
+                <p className="text-sm text-[var(--text-secondary)]">
                   Verify that your configuration is correct by testing the connection.
                 </p>
                 {testResult && (
                   <div
                     className={cn(
-                      'p-3 rounded-lg text-sm',
+                      'p-3 rounded-xl text-sm',
                       testResult.success
-                        ? 'bg-[var(--neon-green)]/10 text-[var(--neon-green)]'
-                        : 'bg-[var(--neon-magenta)]/10 text-[var(--neon-magenta)]'
+                        ? 'bg-emerald-100 text-emerald-600'
+                        : 'bg-rose-100 text-rose-600'
                     )}
                   >
                     {testResult.message || (testResult.success ? 'Connection successful!' : 'Connection failed')}
@@ -645,29 +684,29 @@ function SetupModal({
                 <motion.button
                   onClick={handleTest}
                   disabled={testing}
-                  className="px-6 py-2.5 rounded-lg bg-[var(--neon-amber)] text-[var(--void)] font-medium disabled:opacity-50"
+                  className="px-6 py-2.5 rounded-xl bg-amber-500 text-white font-medium disabled:opacity-50 flex items-center justify-center gap-2 mx-auto"
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
                 >
                   {testing ? (
-                    <Loader2 className="w-4 h-4 animate-spin inline mr-2" />
+                    <Loader2 className="w-4 h-4 animate-spin" />
                   ) : (
-                    <CheckCircle2 className="w-4 h-4 inline mr-2" />
+                    <CheckCircle2 className="w-4 h-4" />
                   )}
                   Test Connection
                 </motion.button>
               </>
             ) : (
               <>
-                <div className="w-16 h-16 rounded-full bg-[var(--neon-green)]/20 flex items-center justify-center mx-auto">
-                  <Signal className="w-8 h-8 text-[var(--neon-green)]" />
+                <div className="w-16 h-16 rounded-full bg-emerald-100 flex items-center justify-center mx-auto">
+                  <Signal className="w-8 h-8 text-emerald-600" />
                 </div>
                 <h4 className="text-lg font-medium text-[var(--text-primary)]">WhatsApp QR Login</h4>
-                <p className="text-sm text-[var(--text-muted)]">
+                <p className="text-sm text-[var(--text-secondary)]">
                   Scan the QR code with your WhatsApp app to connect.
                 </p>
                 {qrSession?.qr_code ? (
-                  <div className="p-4 rounded-xl bg-white">
+                  <div className="p-4 rounded-xl bg-white border-2 border-[var(--border-subtle)]">
                     <img
                       src={`data:image/png;base64,${qrSession.qr_code}`}
                       alt="WhatsApp QR Code"
@@ -676,12 +715,12 @@ function SetupModal({
                   </div>
                 ) : qrPolling ? (
                   <div className="flex items-center justify-center py-8">
-                    <Loader2 className="w-8 h-8 text-[var(--neon-cyan)] animate-spin" />
+                    <Loader2 className="w-8 h-8 text-violet-500 animate-spin" />
                   </div>
                 ) : (
                   <motion.button
                     onClick={handleStartQR}
-                    className="px-6 py-2.5 rounded-lg bg-[var(--neon-green)] text-[var(--void)] font-medium"
+                    className="px-6 py-2.5 rounded-xl bg-emerald-500 text-white font-medium"
                     whileHover={{ scale: 1.02 }}
                     whileTap={{ scale: 0.98 }}
                   >
@@ -696,14 +735,14 @@ function SetupModal({
         {/* Step 3: Ready */}
         {step === 3 && (
           <div className="space-y-4 text-center">
-            <div className="w-16 h-16 rounded-full bg-[var(--neon-green)]/20 flex items-center justify-center mx-auto">
-              <CheckCircle2 className="w-8 h-8 text-[var(--neon-green)]" />
+            <div className="w-16 h-16 rounded-full bg-emerald-100 flex items-center justify-center mx-auto">
+              <CheckCircle2 className="w-8 h-8 text-emerald-600" />
             </div>
             <h4 className="text-lg font-medium text-[var(--text-primary)]">All Set!</h4>
-            <p className="text-sm text-[var(--text-muted)]">
+            <p className="text-sm text-[var(--text-secondary)]">
               {channel.display_name} is now configured and ready to use.
             </p>
-            <div className="flex items-center justify-center gap-2 text-sm text-[var(--neon-green)]">
+            <div className="flex items-center justify-center gap-2 text-sm text-emerald-600">
               <Signal className="w-4 h-4" />
               <span>Connected</span>
             </div>
@@ -715,7 +754,7 @@ function SetupModal({
           {step === 1 && channel.configured && (
             <motion.button
               onClick={handleRemove}
-              className="px-4 py-2.5 rounded-lg bg-[var(--neon-magenta)]/10 text-[var(--neon-magenta)] font-medium"
+              className="px-4 py-2.5 rounded-xl bg-rose-100 text-rose-600 font-medium"
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
             >
@@ -728,21 +767,21 @@ function SetupModal({
             <>
               <button
                 onClick={onClose}
-                className="flex-1 px-4 py-2.5 rounded-lg bg-[var(--surface-secondary)] text-[var(--text-secondary)] hover:bg-[var(--surface-tertiary)]"
+                className="flex-1 py-2.5 rounded-xl bg-[var(--surface-secondary)] text-[var(--text-secondary)] hover:bg-[var(--surface-tertiary)] font-medium transition-colors"
               >
                 Cancel
               </button>
               <motion.button
                 onClick={handleSave}
                 disabled={saving}
-                className="flex-1 px-4 py-2.5 rounded-lg bg-[var(--neon-cyan)] text-[var(--void)] font-medium disabled:opacity-50"
+                className="flex-1 py-2.5 rounded-xl bg-[var(--primary)] text-white font-medium disabled:opacity-50 flex items-center justify-center gap-2"
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
               >
                 {saving ? (
-                  <Loader2 className="w-4 h-4 animate-spin inline mr-2" />
+                  <Loader2 className="w-4 h-4 animate-spin" />
                 ) : (
-                  <ChevronRight className="w-4 h-4 inline mr-2" />
+                  <ChevronRight className="w-4 h-4" />
                 )}
                 Continue
               </motion.button>
@@ -751,7 +790,7 @@ function SetupModal({
             <>
               <button
                 onClick={() => setStep(1)}
-                className="flex-1 px-4 py-2.5 rounded-lg bg-[var(--surface-secondary)] text-[var(--text-secondary)] hover:bg-[var(--surface-tertiary)]"
+                className="flex-1 py-2.5 rounded-xl bg-[var(--surface-secondary)] text-[var(--text-secondary)] hover:bg-[var(--surface-tertiary)] font-medium transition-colors"
               >
                 <ChevronLeft className="w-4 h-4 inline mr-2" />
                 Back
@@ -759,7 +798,7 @@ function SetupModal({
               {!isWhatsApp && (
                 <button
                   onClick={() => setStep(3)}
-                  className="px-4 py-2.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+                  className="px-4 py-2.5 rounded-xl text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
                 >
                   Skip
                 </button>
@@ -769,14 +808,14 @@ function SetupModal({
             <>
               <button
                 onClick={() => setStep(1)}
-                className="flex-1 px-4 py-2.5 rounded-lg bg-[var(--surface-secondary)] text-[var(--text-secondary)] hover:bg-[var(--surface-tertiary)]"
+                className="flex-1 py-2.5 rounded-xl bg-[var(--surface-secondary)] text-[var(--text-secondary)] hover:bg-[var(--surface-tertiary)] font-medium transition-colors"
               >
                 <Settings className="w-4 h-4 inline mr-2" />
                 Edit Config
               </button>
               <motion.button
                 onClick={handleFinish}
-                className="flex-1 px-4 py-2.5 rounded-lg bg-[var(--neon-green)] text-[var(--void)] font-medium"
+                className="flex-1 py-2.5 rounded-xl bg-emerald-500 text-white font-medium"
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
               >
