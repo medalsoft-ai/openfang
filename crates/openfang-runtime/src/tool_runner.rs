@@ -1210,17 +1210,82 @@ pub fn builtin_tool_definitions() -> Vec<ToolDefinition> {
                     "icon": { "type": "string", "description": "Emoji icon for the Hand (optional)" },
                     "steps": {
                         "type": "array",
-                        "description": "Initial steps for the Hand",
+                        "description": "Initial steps for the Hand. Each step type requires specific config fields - see the step type descriptions below.",
                         "items": {
                             "type": "object",
                             "properties": {
-                                "id": { "type": "string", "description": "Unique step identifier" },
+                                "id": { "type": "string", "description": "Unique step identifier (e.g., 'step_01')" },
                                 "name": { "type": "string", "description": "Human-readable step name" },
-                                "type": { "type": "string", "description": "Step type: execute-tool, send-message, wait-for-input, condition, loop, sub-hand" },
-                                "config": { "type": "object", "description": "Step-specific configuration" },
+                                "type": {
+                                    "type": "string",
+                                    "description": "Step type. Each type requires specific config fields:",
+                                    "enum": ["execute-tool", "send-message", "wait-for-input", "condition", "loop", "sub-hand"]
+                                },
+                                "config": {
+                                    "type": "object",
+                                    "description": "Step-specific configuration. REQUIRED fields vary by type:",
+                                    "properties": {
+                                        "execute-tool": {
+                                            "type": "object",
+                                            "description": "Execute a tool",
+                                            "properties": {
+                                                "toolName": { "type": "string", "description": "REQUIRED: Name of the tool to execute" },
+                                                "input": { "type": "object", "description": "Optional: Input parameters for the tool" }
+                                            },
+                                            "required": ["toolName"]
+                                        },
+                                        "send-message": {
+                                            "type": "object",
+                                            "description": "Send a message",
+                                            "properties": {
+                                                "content": { "type": "string", "description": "REQUIRED: Message content" },
+                                                "targetAgent": { "type": "string", "description": "Optional: Target agent ID" }
+                                            },
+                                            "required": ["content"]
+                                        },
+                                        "wait-for-input": {
+                                            "type": "object",
+                                            "description": "Wait for user input",
+                                            "properties": {
+                                                "prompt": { "type": "string", "description": "REQUIRED: Prompt to show the user" },
+                                                "timeoutSecs": { "type": "integer", "description": "Optional: Timeout in seconds" }
+                                            },
+                                            "required": ["prompt"]
+                                        },
+                                        "condition": {
+                                            "type": "object",
+                                            "description": "Conditional branch",
+                                            "properties": {
+                                                "expression": { "type": "string", "description": "REQUIRED: Condition expression" },
+                                                "trueBranch": { "type": "string", "description": "REQUIRED: Step ID if true" },
+                                                "falseBranch": { "type": "string", "description": "REQUIRED: Step ID if false" }
+                                            },
+                                            "required": ["expression", "trueBranch", "falseBranch"]
+                                        },
+                                        "loop": {
+                                            "type": "object",
+                                            "description": "Loop over items",
+                                            "properties": {
+                                                "iterator": { "type": "string", "description": "REQUIRED: Iterator variable name" },
+                                                "items": { "type": "string", "description": "REQUIRED: Items to iterate over" },
+                                                "body": { "type": "array", "items": { "type": "string" }, "description": "Step IDs in the loop body" }
+                                            },
+                                            "required": ["iterator", "items"]
+                                        },
+                                        "sub-hand": {
+                                            "type": "object",
+                                            "description": "Execute another Hand",
+                                            "properties": {
+                                                "handId": { "type": "string", "description": "REQUIRED: ID of the Hand to execute" },
+                                                "inputMapping": { "type": "object", "description": "Optional: Input parameter mapping" }
+                                            },
+                                            "required": ["handId"]
+                                        }
+                                    }
+                                },
                                 "nextSteps": { "type": "array", "items": { "type": "string" }, "description": "REQUIRED: IDs of steps to execute next. CRITICAL: Every step must have this field. For non-final steps, list the next step ID(s). For the final step, use empty array []. Omitting this field breaks the step chain." }
                             },
-                            "required": ["id", "name", "type", "nextSteps"]
+                            "required": ["id", "name", "type", "config", "nextSteps"]
                         }
                     }
                 },

@@ -26,6 +26,15 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
 
 // Agent status badge
 function StatusBadge({ status, state }: { status?: Agent['status']; state?: string }) {
@@ -481,6 +490,13 @@ export function Agents() {
   const [newModelValue, setNewModelValue] = useState('');
   const [modelChanging, setModelChanging] = useState(false);
 
+  // Confirmation dialog states
+  const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
+  const [confirmDialogTitle, setConfirmDialogTitle] = useState('');
+  const [confirmDialogMessage, setConfirmDialogMessage] = useState('');
+  const [agentToDelete, setAgentToDelete] = useState<Agent | null>(null);
+  const [stopAllConfirmOpen, setStopAllConfirmOpen] = useState(false);
+
   // Fetch agents
   const { data: agents = [], isLoading } = useQuery<Agent[]>({
     queryKey: ['agents'],
@@ -566,8 +582,12 @@ export function Agents() {
   const stopAllAgents = useCallback(async () => {
     const running = agents.filter(a => a.status === 'running');
     if (running.length === 0) return;
-    if (!confirm(`Stop ${running.length} running agent(s)?`)) return;
+    setStopAllConfirmOpen(true);
+  }, [agents]);
 
+  // Actually stop all agents after confirmation
+  const doStopAllAgents = useCallback(async () => {
+    const running = agents.filter(a => a.status === 'running');
     const errors: string[] = [];
     for (const agent of running) {
       try {
@@ -582,6 +602,7 @@ export function Agents() {
     } else {
       toaster.success(`${running.length} agent(s) stopped`);
     }
+    setStopAllConfirmOpen(false);
   }, [agents, queryClient]);
 
   // Default TOML template
@@ -1048,9 +1069,10 @@ ${t.system_prompt}
                   agent={agent}
                   onSelect={() => chatWithAgent(agent)}
                   onDelete={() => {
-                    if (confirm(`Stop agent "${agent.name}"? The agent will be shut down.`)) {
-                      stopAgentMutation.mutate(agent.id);
-                    }
+                    setAgentToDelete(agent);
+                    setConfirmDialogTitle('Stop Agent');
+                    setConfirmDialogMessage(`Stop agent "${agent.name}"? The agent will be shut down.`);
+                    setConfirmDialogOpen(true);
                   }}
                   onDetail={() => showDetail(agent)}
                 />
@@ -1136,10 +1158,10 @@ ${t.system_prompt}
             onClone={() => cloneMutation.mutate({ id: detailAgent.id, newName: detailAgent.name + '-copy' })}
             onClearHistory={() => clearHistoryMutation.mutate(detailAgent.id)}
             onStop={() => {
-              if (confirm(`Stop agent "${detailAgent.name}"? The agent will be shut down.`)) {
-                stopAgentMutation.mutate(detailAgent.id);
-                setDetailAgent(null);
-              }
+              setAgentToDelete(detailAgent);
+              setConfirmDialogTitle('Stop Agent');
+              setConfirmDialogMessage(`Stop agent "${detailAgent.name}"? The agent will be shut down.`);
+              setConfirmDialogOpen(true);
             }}
             openFile={openFile}
             onChangeModel={() => {
@@ -1248,6 +1270,65 @@ ${t.system_prompt}
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Stop Agent Confirmation Dialog */}
+      <Dialog open={confirmDialogOpen} onOpenChange={setConfirmDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{confirmDialogTitle}</DialogTitle>
+            <DialogDescription>{confirmDialogMessage}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex gap-3 sm:justify-end">
+            <Button
+              variant="outline"
+              onClick={() => setConfirmDialogOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                if (agentToDelete) {
+                  stopAgentMutation.mutate(agentToDelete.id);
+                  if (detailAgent?.id === agentToDelete.id) {
+                    setDetailAgent(null);
+                  }
+                  setAgentToDelete(null);
+                }
+                setConfirmDialogOpen(false);
+              }}
+            >
+              Stop Agent
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Stop All Agents Confirmation Dialog */}
+      <Dialog open={stopAllConfirmOpen} onOpenChange={setStopAllConfirmOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Stop All Agents</DialogTitle>
+            <DialogDescription>
+              Stop {agents.filter(a => a.status === 'running').length} running agent(s)? All agents will be shut down.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex gap-3 sm:justify-end">
+            <Button
+              variant="outline"
+              onClick={() => setStopAllConfirmOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={doStopAllAgents}
+            >
+              Stop All
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 
@@ -1428,16 +1509,25 @@ function CreateWizardModal({
               </div>
               <div>
                 <label className="block text-sm text-[var(--text-secondary)] mb-2">Archetype</label>
-                <select
+                <Select
                   value={spawnIdentity.archetype}
-                  onChange={(e) => setSpawnIdentity({ ...spawnIdentity, archetype: e.target.value })}
-                  className="w-full bg-[var(--surface-tertiary)] border border-[var(--border-default)] rounded-lg px-4 py-3 text-[var(--text-primary)]"
+                  onValueChange={(value) => setSpawnIdentity({ ...spawnIdentity, archetype: value })}
                 >
-                  <option value="">Choose...</option>
-                  {archetypeOptions.map((a) => (
-                    <option key={a} value={a.toLowerCase()}>{a}</option>
-                  ))}
-                </select>
+                  <SelectTrigger className="w-full bg-[var(--surface-tertiary)] border border-[var(--border-default)] rounded-lg px-4 py-3 text-[var(--text-primary)] h-auto">
+                    <SelectValue placeholder="Choose archetype..." />
+                  </SelectTrigger>
+                  <SelectContent className="bg-[var(--surface-secondary)] border-[var(--border-default)]">
+                    {archetypeOptions.map((a) => (
+                      <SelectItem
+                        key={a}
+                        value={a.toLowerCase()}
+                        className="text-[var(--text-primary)] focus:bg-[var(--surface-tertiary)] focus:text-[var(--text-primary)]"
+                      >
+                        {a}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
           )}
@@ -1447,26 +1537,39 @@ function CreateWizardModal({
             <div className="space-y-5">
               <div>
                 <label className="block text-sm text-[var(--text-secondary)] mb-2">Provider</label>
-                <select
+                <Select
                   value={spawnForm.provider}
-                  onChange={(e) => setSpawnForm({ ...spawnForm, provider: e.target.value })}
-                  className={cn(
-                    "w-full bg-[var(--surface-tertiary)] border rounded-lg px-4 py-3 text-[var(--text-primary)]",
-                    isCurrentProviderConfigured ? "border-[var(--border-default)]" : "border-amber-500/50"
-                  )}
+                  onValueChange={(value) => setSpawnForm({ ...spawnForm, provider: value })}
                 >
-                  <option value="anthropic">Anthropic</option>
-                  <option value="openai">OpenAI</option>
-                  <option value="groq">Groq</option>
-                  <option value="ollama">Ollama</option>
-                  <option value="google">Google</option>
-                  <option value="mistral">Mistral</option>
-                  <option value="xai">xAI</option>
-                  <option value="deepseek">DeepSeek</option>
-                  <option value="cerebras">Cerebras</option>
-                  <option value="sambanova">SambaNova</option>
-                  <option value="together">Together</option>
-                </select>
+                  <SelectTrigger
+                    className={cn(
+                      "w-full bg-[var(--surface-tertiary)] border rounded-lg px-4 py-3 text-[var(--text-primary)] h-auto",
+                      isCurrentProviderConfigured ? "border-[var(--border-default)]" : "border-amber-500/50"
+                    )}
+                  >
+                    <SelectValue placeholder="Select provider" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-[var(--surface-secondary)] border-[var(--border-default)]">
+                    {providers.map((p) => (
+                      <SelectItem
+                        key={p.id}
+                        value={p.id}
+                        className="text-[var(--text-primary)] focus:bg-[var(--surface-tertiary)] focus:text-[var(--text-primary)]"
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className={cn(
+                            "w-2 h-2 rounded-full",
+                            p.auth_status === 'configured' ? "bg-green-500" : "bg-amber-500"
+                          )} />
+                          <span className="capitalize">{p.id}</span>
+                          {p.auth_status === 'configured' && (
+                            <span className="text-xs text-green-400 ml-1">(configured)</span>
+                          )}
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
                 {/* Provider status indicator */}
                 <div className="flex items-center gap-2 mt-2 text-xs">
                   <span className={cn(
@@ -1546,19 +1649,58 @@ function CreateWizardModal({
             <div className="space-y-5">
               <div>
                 <label className="block text-sm text-[var(--text-secondary)] mb-3">Tool Profile</label>
-                <select
+                <Select
                   value={spawnForm.profile}
-                  onChange={(e) => setSpawnForm({ ...spawnForm, profile: e.target.value })}
-                  className="w-full bg-[var(--surface-tertiary)] border border-[var(--border-default)] rounded-lg px-4 py-3 text-[var(--text-primary)]"
+                  onValueChange={(value) => setSpawnForm({ ...spawnForm, profile: value })}
                 >
-                  <option value="minimal">Minimal — Read-only file access</option>
-                  <option value="coding">Coding — Files + shell + web fetch</option>
-                  <option value="research">Research — Web search + file read/write</option>
-                  <option value="messaging">Messaging — Agents + memory access</option>
-                  <option value="automation">Automation — All tools except custom</option>
-                  <option value="full">Full — All 35+ tools</option>
-                  <option value="custom">Custom (manual capabilities)</option>
-                </select>
+                  <SelectTrigger className="w-full bg-[var(--surface-tertiary)] border border-[var(--border-default)] rounded-lg px-4 py-3 text-[var(--text-primary)] h-auto">
+                    <SelectValue placeholder="Select profile" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-[var(--surface-secondary)] border-[var(--border-default)] max-h-[300px]">
+                    <SelectItem value="minimal" className="text-[var(--text-primary)] focus:bg-[var(--surface-tertiary)] focus:text-[var(--text-primary)]">
+                      <div className="flex flex-col items-start">
+                        <span>Minimal</span>
+                        <span className="text-xs text-[var(--text-muted)]">Read-only file access</span>
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="coding" className="text-[var(--text-primary)] focus:bg-[var(--surface-tertiary)] focus:text-[var(--text-primary)]">
+                      <div className="flex flex-col items-start">
+                        <span>Coding</span>
+                        <span className="text-xs text-[var(--text-muted)]">Files + shell + web fetch</span>
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="research" className="text-[var(--text-primary)] focus:bg-[var(--surface-tertiary)] focus:text-[var(--text-primary)]">
+                      <div className="flex flex-col items-start">
+                        <span>Research</span>
+                        <span className="text-xs text-[var(--text-muted)]">Web search + file read/write</span>
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="messaging" className="text-[var(--text-primary)] focus:bg-[var(--surface-tertiary)] focus:text-[var(--text-primary)]">
+                      <div className="flex flex-col items-start">
+                        <span>Messaging</span>
+                        <span className="text-xs text-[var(--text-muted)]">Agents + memory access</span>
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="automation" className="text-[var(--text-primary)] focus:bg-[var(--surface-tertiary)] focus:text-[var(--text-primary)]">
+                      <div className="flex flex-col items-start">
+                        <span>Automation</span>
+                        <span className="text-xs text-[var(--text-muted)]">All tools except custom</span>
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="full" className="text-[var(--text-primary)] focus:bg-[var(--surface-tertiary)] focus:text-[var(--text-primary)]">
+                      <div className="flex flex-col items-start">
+                        <span>Full</span>
+                        <span className="text-xs text-[var(--text-muted)]">All 35+ tools</span>
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="custom" className="text-[var(--text-primary)] focus:bg-[var(--surface-tertiary)] focus:text-[var(--text-primary)]">
+                      <div className="flex flex-col items-start">
+                        <span>Custom</span>
+                        <span className="text-xs text-[var(--text-muted)]">Manual capabilities</span>
+                      </div>
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
 
               {/* Custom capabilities checkboxes */}

@@ -167,7 +167,7 @@ fn load_dotenv_files() {
     let home = if let Ok(h) = std::env::var("OPENFANG_HOME") {
         // Expand ~/ to user's home directory
         eprintln!("DEBUG: OPENFANG_HOME = {:?}", h);
-        if h.starts_with("~/") {
+        if let Some(stripped) = h.strip_prefix("~/") {
             let user_home = std::env::var("HOME")
                 .or_else(|_| std::env::var("USERPROFILE"))
                 .unwrap_or_default();
@@ -175,7 +175,7 @@ fn load_dotenv_files() {
             if user_home.is_empty() {
                 return;
             }
-            std::path::PathBuf::from(user_home).join(&h[2..])
+            std::path::PathBuf::from(user_home).join(stripped)
         } else {
             eprintln!("DEBUG: Not expanding, using as-is");
             std::path::PathBuf::from(h)

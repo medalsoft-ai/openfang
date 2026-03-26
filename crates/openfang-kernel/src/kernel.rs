@@ -6310,33 +6310,46 @@ impl KernelHandle for OpenFangKernel {
             _ => return Err(format!("Invalid category: {}", category)),
         };
 
-        // Parse steps from JSON
-        let steps: Vec<HandStep> = steps_json
-            .as_array()
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|s| {
-                        let id = s.get("id")?.as_str()?;
-                        let name = s.get("name")?.as_str()?;
-                        let step_type_str = s.get("type")?.as_str()?;
-                        let config = s.get("config").cloned().unwrap_or_default();
-                        let next_steps: Vec<String> = s
-                            .get("nextSteps")
-                            .and_then(|n| n.as_array())
-                            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
-                            .unwrap_or_default();
+        // Parse steps from JSON with detailed error reporting
+        let steps: Vec<HandStep> = if let Some(arr) = steps_json.as_array() {
+            let mut parsed_steps = Vec::new();
+            for (idx, s) in arr.iter().enumerate() {
+                let id = s
+                    .get("id")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| format!("Step {}: missing or invalid 'id' field", idx))?;
+                let name = s
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| format!("Step {}: missing or invalid 'name' field", idx))?;
+                let step_type_str = s
+                    .get("type")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| format!("Step {}: missing or invalid 'type' field", idx))?;
+                let config = s.get("config").cloned().unwrap_or_default();
+                let next_steps: Vec<String> = s
+                    .get("nextSteps")
+                    .and_then(|n| n.as_array())
+                    .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                    .unwrap_or_default();
 
-                        let step_type = parse_step_type_from_json(step_type_str, config).ok()?;
-                        Some(HandStep {
-                            id: id.to_string(),
-                            name: name.to_string(),
-                            step_type,
-                            next_steps,
-                        })
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
+                let step_type = parse_step_type_from_json(step_type_str, config).map_err(|e| {
+                    format!(
+                        "Step {} ({}): failed to parse type '{}': {}",
+                        idx, id, step_type_str, e
+                    )
+                })?;
+                parsed_steps.push(HandStep {
+                    id: id.to_string(),
+                    name: name.to_string(),
+                    step_type,
+                    next_steps,
+                });
+            }
+            parsed_steps
+        } else {
+            Vec::new()
+        };
 
         // Create Hand definition
         let hand_def = HandDefinition {
@@ -6396,6 +6409,48 @@ impl KernelHandle for OpenFangKernel {
     ) -> Result<serde_json::Value, String> {
         use openfang_hands::steps::HandStep;
 
+        // Helper function to parse steps with detailed error reporting
+        let parse_steps_with_errors = |steps_json: &serde_json::Value| -> Result<Vec<HandStep>, String> {
+            let arr = steps_json
+                .as_array()
+                .ok_or_else(|| "steps must be an array".to_string())?;
+            let mut parsed_steps = Vec::new();
+            for (idx, s) in arr.iter().enumerate() {
+                let id = s
+                    .get("id")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| format!("Step {}: missing or invalid 'id' field", idx))?;
+                let name = s
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| format!("Step {}: missing or invalid 'name' field", idx))?;
+                let step_type_str = s
+                    .get("type")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| format!("Step {}: missing or invalid 'type' field", idx))?;
+                let config = s.get("config").cloned().unwrap_or_default();
+                let next_steps: Vec<String> = s
+                    .get("nextSteps")
+                    .and_then(|n| n.as_array())
+                    .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                    .unwrap_or_default();
+
+                let step_type = parse_step_type_from_json(step_type_str, config).map_err(|e| {
+                    format!(
+                        "Step {} ({}): failed to parse type '{}': {}",
+                        idx, id, step_type_str, e
+                    )
+                })?;
+                parsed_steps.push(HandStep {
+                    id: id.to_string(),
+                    name: name.to_string(),
+                    step_type,
+                    next_steps,
+                });
+            }
+            Ok(parsed_steps)
+        };
+
         // Get existing hand
         let mut hand_def = self
             .hand_registry
@@ -6406,61 +6461,11 @@ impl KernelHandle for OpenFangKernel {
 
         match operation {
             "add" => {
-                let new_steps: Vec<HandStep> = steps_json
-                    .as_array()
-                    .map(|arr| {
-                        arr.iter()
-                            .filter_map(|s| {
-                                let id = s.get("id")?.as_str()?;
-                                let name = s.get("name")?.as_str()?;
-                                let step_type_str = s.get("type")?.as_str()?;
-                                let config = s.get("config").cloned().unwrap_or_default();
-                                let next_steps: Vec<String> = s
-                                    .get("nextSteps")
-                                    .and_then(|n| n.as_array())
-                                    .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
-                                    .unwrap_or_default();
-
-                                let step_type = parse_step_type_from_json(step_type_str, config).ok()?;
-                                Some(HandStep {
-                                    id: id.to_string(),
-                                    name: name.to_string(),
-                                    step_type,
-                                    next_steps,
-                                })
-                            })
-                            .collect()
-                    })
-                    .unwrap_or_default();
+                let new_steps = parse_steps_with_errors(&steps_json)?;
                 hand_def.steps.extend(new_steps);
             }
             "update" => {
-                let updates: Vec<HandStep> = steps_json
-                    .as_array()
-                    .map(|arr| {
-                        arr.iter()
-                            .filter_map(|s| {
-                                let id = s.get("id")?.as_str()?;
-                                let name = s.get("name")?.as_str()?;
-                                let step_type_str = s.get("type")?.as_str()?;
-                                let config = s.get("config").cloned().unwrap_or_default();
-                                let next_steps: Vec<String> = s
-                                    .get("nextSteps")
-                                    .and_then(|n| n.as_array())
-                                    .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
-                                    .unwrap_or_default();
-
-                                let step_type = parse_step_type_from_json(step_type_str, config).ok()?;
-                                Some(HandStep {
-                                    id: id.to_string(),
-                                    name: name.to_string(),
-                                    step_type,
-                                    next_steps,
-                                })
-                            })
-                            .collect()
-                    })
-                    .unwrap_or_default();
+                let updates = parse_steps_with_errors(&steps_json)?;
                 for update in updates {
                     if let Some(existing) = hand_def.steps.iter_mut().find(|s| s.id == update.id) {
                         *existing = update;
@@ -6471,32 +6476,7 @@ impl KernelHandle for OpenFangKernel {
                 hand_def.steps.retain(|s| !step_ids_to_delete.contains(&s.id));
             }
             "replace" => {
-                let new_steps: Vec<HandStep> = steps_json
-                    .as_array()
-                    .map(|arr| {
-                        arr.iter()
-                            .filter_map(|s| {
-                                let id = s.get("id")?.as_str()?;
-                                let name = s.get("name")?.as_str()?;
-                                let step_type_str = s.get("type")?.as_str()?;
-                                let config = s.get("config").cloned().unwrap_or_default();
-                                let next_steps: Vec<String> = s
-                                    .get("nextSteps")
-                                    .and_then(|n| n.as_array())
-                                    .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
-                                    .unwrap_or_default();
-
-                                let step_type = parse_step_type_from_json(step_type_str, config).ok()?;
-                                Some(HandStep {
-                                    id: id.to_string(),
-                                    name: name.to_string(),
-                                    step_type,
-                                    next_steps,
-                                })
-                            })
-                            .collect()
-                    })
-                    .unwrap_or_default();
+                let new_steps = parse_steps_with_errors(&steps_json)?;
                 hand_def.steps = new_steps;
             }
             _ => return Err(format!("Unknown operation: {}", operation)),

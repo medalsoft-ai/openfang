@@ -1095,7 +1095,7 @@ export function Hands() {
       // Create a new session for Hand execution
       const session = await api.createSession(instance.agent_id, `Hand: ${displayHand?.name || handId}`, handId);
       return {
-        execution_id: session.id,
+        execution_id: session.session_id,
         hand_id: handId,
         agent_id: instance.agent_id,
       };
