@@ -165,7 +165,21 @@ async fn run_embedded_server(
 /// System env vars take priority — existing vars are NOT overridden.
 fn load_dotenv_files() {
     let home = if let Ok(h) = std::env::var("OPENFANG_HOME") {
-        std::path::PathBuf::from(h)
+        // Expand ~/ to user's home directory
+        eprintln!("DEBUG: OPENFANG_HOME = {:?}", h);
+        if h.starts_with("~/") {
+            let user_home = std::env::var("HOME")
+                .or_else(|_| std::env::var("USERPROFILE"))
+                .unwrap_or_default();
+            eprintln!("DEBUG: Expanding ~/, HOME = {:?}", user_home);
+            if user_home.is_empty() {
+                return;
+            }
+            std::path::PathBuf::from(user_home).join(&h[2..])
+        } else {
+            eprintln!("DEBUG: Not expanding, using as-is");
+            std::path::PathBuf::from(h)
+        }
     } else {
         let user_home = std::env::var("HOME")
             .or_else(|_| std::env::var("USERPROFILE"))
@@ -175,6 +189,7 @@ fn load_dotenv_files() {
         }
         std::path::PathBuf::from(user_home).join(".openfang")
     };
+    eprintln!("DEBUG: Final home path = {:?}", home);
 
     for filename in &[".env", "secrets.env"] {
         let path = home.join(filename);
