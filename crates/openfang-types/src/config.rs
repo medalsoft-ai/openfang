@@ -1433,9 +1433,17 @@ impl std::fmt::Debug for KernelConfig {
 /// Resolve the OpenFang home directory.
 ///
 /// Priority: `OPENFANG_HOME` env var > `~/.openfang`.
+/// Note: If `OPENFANG_HOME` starts with `~/`, it will be expanded to the user's home directory.
 fn openfang_home_dir() -> PathBuf {
     if let Ok(home) = std::env::var("OPENFANG_HOME") {
-        return PathBuf::from(home);
+        let path = if home.starts_with("~/") {
+            dirs::home_dir()
+                .map(|h| h.join(&home[2..]))
+                .unwrap_or_else(|| PathBuf::from(&home))
+        } else {
+            PathBuf::from(home)
+        };
+        return path;
     }
     dirs::home_dir()
         .unwrap_or_else(std::env::temp_dir)

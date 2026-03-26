@@ -8,7 +8,6 @@ import {
   ReactFlow,
   Background,
   Controls,
-  MiniMap,
   useNodesState,
   useEdgesState,
   Position,
@@ -24,7 +23,6 @@ import { FlowCanvas } from '@/components/flow/FlowCanvas';
 import { StepPalette } from '@/components/flow/StepPalette';
 import { PropertyPanel } from '@/components/flow/PropertyPanel';
 import { ValidationPanel } from '@/components/flow/ValidationPanel';
-import { ChatEditor } from '@/components/flow/ChatEditor';
 import { useHandDraft } from '@/hooks/useHandDraft';
 import { useSessionWebSocket } from '@/hooks/useSessionWebSocket';
 import { validateSteps, type ValidationResult } from '@/utils/stepValidation';
@@ -54,7 +52,6 @@ import {
   List,
   GitBranch,
   Layout,
-  Zap,
   Package,
   ChevronDown,
   ChevronUp,
@@ -64,6 +61,7 @@ import {
   CheckCircle,
   XCircle,
   PauseCircle,
+  Zap,
 } from 'lucide-react';
 
 // ============================================
@@ -975,7 +973,7 @@ export function Hands() {
   const queryClient = useQueryClient();
   const [selectedHand, setSelectedHand] = useState<Hand | null>(null);
   const [showEditor, setShowEditor] = useState(false);
-  const [activeTab, setActiveTab] = useState<'details' | 'flow' | 'chat'>('details');
+  const [activeTab, setActiveTab] = useState<'details' | 'flow'>('details');
   const [steps, setSteps] = useState<LocalHandStep[]>([]);
   const [stepsLoading, setStepsLoading] = useState(false);
 
@@ -1084,6 +1082,16 @@ export function Hands() {
     onSuccess: () => {
       toaster.success(t('sop.deactivated', 'Hand deactivated'));
       refetchActive();
+    },
+  });
+
+  const startExecutionMutation = useMutation({
+    mutationFn: (handId: string) => api.startHandExecution(handId),
+    onSuccess: (data) => {
+      toaster.success(t('sop.executionStarted', 'Execution started: {{executionId}}', { executionId: data.execution_id.slice(0, 8) }));
+    },
+    onError: (error: Error) => {
+      toaster.error(t('sop.executionFailed', 'Failed to start: {{message}}', { message: error.message }));
     },
   });
 
@@ -1289,14 +1297,28 @@ export function Hands() {
 
                 {/* Activate/Stop Button */}
                 {activeInstance ? (
-                  <button
-                    onClick={() => deactivateMutation.mutate(activeInstance.instance_id)}
-                    disabled={deactivateMutation.isPending}
-                    className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-red-50 text-red-600 text-xs font-medium hover:bg-red-100 disabled:opacity-50 transition-colors"
-                  >
-                    <Square className="w-3.5 h-3.5" />
-                    {t('sop.stop', 'Stop')}
-                  </button>
+                  <>
+                    <button
+                      onClick={() => startExecutionMutation.mutate(displayHand.id)}
+                      disabled={startExecutionMutation.isPending}
+                      className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-gradient-to-r from-emerald-500 to-teal-600 text-white text-xs font-medium shadow-lg shadow-emerald-500/25 hover:shadow-emerald-500/40 disabled:opacity-50 disabled:shadow-none transition-all"
+                    >
+                      {startExecutionMutation.isPending ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Play className="w-3.5 h-3.5" />
+                      )}
+                      {t('sop.startExecution', 'Start Execution')}
+                    </button>
+                    <button
+                      onClick={() => deactivateMutation.mutate(activeInstance.instance_id)}
+                      disabled={deactivateMutation.isPending}
+                      className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-red-50 text-red-600 text-xs font-medium hover:bg-red-100 disabled:opacity-50 transition-colors"
+                    >
+                      <Square className="w-3.5 h-3.5" />
+                      {t('sop.stop', 'Stop')}
+                    </button>
+                  </>
                 ) : (
                   <button
                     onClick={handleActivate}
@@ -1372,21 +1394,6 @@ export function Hands() {
                       >
                         <GitBranch className="w-4 h-4" />
                         {t('sop.flow', 'Flow')}
-                      </button>
-                      <button
-                        className={cn(
-                          'flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all',
-                          activeTab === 'chat'
-                            ? 'bg-white text-[var(--primary-dark)] shadow-sm'
-                            : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
-                        )}
-                        onClick={() => {
-                          setActiveTab('chat');
-                          setIsEditing(false);
-                        }}
-                      >
-                        <Zap className="w-4 h-4" />
-                        {t('sop.chatEdit', 'Chat Edit')}
                       </button>
                     </div>
 
@@ -1477,17 +1484,6 @@ export function Hands() {
                       </div>
                     )}
 
-                    {activeTab === 'chat' && (
-                      <div className="flex-1 rounded-2xl bg-white shadow-[0_4px_20px_rgba(139,92,246,0.06)] border border-white/50 flex flex-col overflow-hidden">
-                        <ChatEditor
-                          handId={displayHand.id}
-                          handName={displayHand.name}
-                          draftSteps={draftSteps}
-                          onStepsChange={handleStepsChange}
-                          onSwitchToFlow={() => setActiveTab('flow')}
-                        />
-                      </div>
-                    )}
                   </>
                 )}
               </div>

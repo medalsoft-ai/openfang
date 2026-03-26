@@ -340,6 +340,7 @@ pub async fn execute_tool(
         "hand_deactivate" => tool_hand_deactivate(input, kernel).await,
         "hand_create" => tool_hand_create(input, kernel).await,
         "hand_update_steps" => tool_hand_update_steps(input, kernel).await,
+        "hand_start_execution" => tool_hand_start_execution(input, kernel, caller_agent_id).await,
 
         // A2A outbound tools (cross-instance agent communication)
         "a2a_discover" => tool_a2a_discover(input).await,
@@ -527,7 +528,100 @@ pub async fn execute_tool(
     }
 }
 
-/// Get definitions for all built-in tools.
+/// Get a list of all built-in tool names.
+///
+/// This is useful for validating tool names in hand definitions
+/// and other configuration contexts.
+pub fn list_builtin_tool_names() -> Vec<&'static str> {
+    vec![
+        // Filesystem tools
+        "file_read",
+        "file_write",
+        "file_list",
+        "apply_patch",
+        // Web tools
+        "web_fetch",
+        "web_search",
+        // Shell tool
+        "shell_exec",
+        // Inter-agent tools
+        "agent_send",
+        "agent_spawn",
+        "agent_list",
+        "agent_kill",
+        // Shared memory tools
+        "memory_store",
+        "memory_recall",
+        // Collaboration tools
+        "agent_find",
+        "task_post",
+        "task_claim",
+        "task_complete",
+        "task_list",
+        "event_publish",
+        // Scheduling tools
+        "schedule_create",
+        "schedule_list",
+        "schedule_delete",
+        // Knowledge graph tools
+        "knowledge_add_entity",
+        "knowledge_add_relation",
+        "knowledge_query",
+        // Image analysis tool
+        "image_analyze",
+        // Location tool
+        "location_get",
+        // Browser automation tools
+        "browser_navigate",
+        "browser_click",
+        "browser_type",
+        "browser_screenshot",
+        "browser_read_page",
+        "browser_close",
+        "browser_scroll",
+        "browser_wait",
+        "browser_run_js",
+        "browser_back",
+        // Media understanding tools
+        "media_describe",
+        "media_transcribe",
+        // Image generation tool
+        "image_generate",
+        // Cron scheduling tools
+        "cron_create",
+        "cron_list",
+        "cron_cancel",
+        // Channel send tool
+        "channel_send",
+        // Hand tools
+        "hand_list",
+        "hand_activate",
+        "hand_status",
+        "hand_deactivate",
+        "hand_create",
+        "hand_update_steps",
+        // A2A outbound tools
+        "a2a_discover",
+        "a2a_send",
+        // TTS/STT tools
+        "text_to_speech",
+        "speech_to_text",
+        // Docker sandbox tool
+        "docker_exec",
+        // Persistent process tools
+        "process_start",
+        "process_poll",
+        "process_write",
+        "process_kill",
+        "process_list",
+        // System time tool
+        "system_time",
+        // Canvas / A2UI tool
+        "canvas_present",
+    ]
+}
+
+// Get definitions for all built-in tools.
 pub fn builtin_tool_definitions() -> Vec<ToolDefinition> {
     vec![
         // --- Filesystem tools ---
@@ -1104,7 +1198,7 @@ pub fn builtin_tool_definitions() -> Vec<ToolDefinition> {
         },
         ToolDefinition {
             name: "hand_create".to_string(),
-            description: "Create a new Hand (SOP) with an initial set of steps. Returns the new Hand ID.".to_string(),
+            description: "Create a new Hand (SOP) with an initial set of steps. Returns the new Hand ID. IMPORTANT: To create a valid step chain, EVERY step MUST include the 'nextSteps' field (array of step IDs to execute next). Use empty array [] for the final step. Steps without nextSteps will be unreachable and ignored.".to_string(),
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -1122,9 +1216,9 @@ pub fn builtin_tool_definitions() -> Vec<ToolDefinition> {
                                 "name": { "type": "string", "description": "Human-readable step name" },
                                 "type": { "type": "string", "description": "Step type: execute-tool, send-message, wait-for-input, condition, loop, sub-hand" },
                                 "config": { "type": "object", "description": "Step-specific configuration" },
-                                "nextSteps": { "type": "array", "items": { "type": "string" }, "description": "IDs of steps to execute next" }
+                                "nextSteps": { "type": "array", "items": { "type": "string" }, "description": "REQUIRED: IDs of steps to execute next. CRITICAL: Every step must have this field. For non-final steps, list the next step ID(s). For the final step, use empty array []. Omitting this field breaks the step chain." }
                             },
-                            "required": ["id", "name", "type"]
+                            "required": ["id", "name", "type", "nextSteps"]
                         }
                     }
                 },
@@ -1149,9 +1243,9 @@ pub fn builtin_tool_definitions() -> Vec<ToolDefinition> {
                                 "name": { "type": "string", "description": "Human-readable step name" },
                                 "type": { "type": "string", "description": "Step type: execute-tool, send-message, wait-for-input, condition, loop, sub-hand" },
                                 "config": { "type": "object", "description": "Step-specific configuration" },
-                                "nextSteps": { "type": "array", "items": { "type": "string" }, "description": "IDs of steps to execute next" }
+                                "nextSteps": { "type": "array", "items": { "type": "string" }, "description": "REQUIRED: IDs of steps to execute next. CRITICAL: Every step must have this field. For non-final steps, list the next step ID(s). For the final step, use empty array []. Omitting this field breaks the step chain." }
                             },
-                            "required": ["id", "name", "type"]
+                            "required": ["id", "name", "type", "nextSteps"]
                         }
                     },
                     "step_ids_to_delete": {
@@ -1161,6 +1255,17 @@ pub fn builtin_tool_definitions() -> Vec<ToolDefinition> {
                     }
                 },
                 "required": ["hand_id", "operation"]
+            }),
+        },
+        ToolDefinition {
+            name: "hand_start_execution".to_string(),
+            description: "Start Hand execution for an agent. Creates an execution state and automatically begins executing the first step. If hand_id is not provided, attempts to auto-detect from the agent's context. The agent will receive step execution prompts and should use hand_report_step to report progress.".to_string(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "hand_id": { "type": "string", "description": "The ID of the Hand to execute. Optional if the agent is already associated with a Hand." },
+                    "agent_id": { "type": "string", "description": "The ID of the agent to execute the Hand. Defaults to the calling agent if not provided." }
+                }
             }),
         },
         // --- A2A outbound tools ---
@@ -3388,6 +3493,39 @@ async fn tool_hand_update_steps(
     let step_count = result["step_count"].as_u64().unwrap_or(0);
 
     Ok(format!("{} (Total steps: {})", message, step_count))
+}
+
+async fn tool_hand_start_execution(
+    input: &serde_json::Value,
+    kernel: Option<&Arc<dyn KernelHandle>>,
+    caller_agent_id: Option<&str>,
+) -> Result<String, String> {
+    let kh = require_kernel(kernel)?;
+
+    // If hand_id not provided, try to get it from agent's context
+    let hand_id = if let Some(hid) = input["hand_id"].as_str() {
+        hid.to_string()
+    } else if let Some(agent_id) = caller_agent_id {
+        // Auto-detect hand_id from agent
+        kh.get_hand_id_for_agent(agent_id)
+            .ok_or("Agent is not associated with a Hand. Please provide 'hand_id' parameter.")?
+    } else {
+        return Err("Missing 'hand_id' parameter and no caller agent context available".to_string());
+    };
+
+    let agent_id = input["agent_id"]
+        .as_str()
+        .or(caller_agent_id)
+        .ok_or("Missing 'agent_id' parameter and no caller agent context available")?;
+
+    let execution_id = kh
+        .hand_start_execution(&hand_id, agent_id)
+        .await?;
+
+    Ok(format!(
+        "Hand execution started!\n  Hand: {}\n  Agent: {}\n  Execution ID: {}\n\nThe first step is now being executed. Watch for step status updates via step_status_change events.",
+        hand_id, agent_id, execution_id
+    ))
 }
 
 #[cfg(test)]

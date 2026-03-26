@@ -80,7 +80,17 @@ export const StepNode: React.FC<{ data: StepNodeData; selected?: boolean }> = ({
         title={`Status: ${status}`}
       />
 
-      <Handle type="target" position={Position.Top} style={{ background: config.color }} />
+      <Handle
+        type="target"
+        position={Position.Top}
+        style={{
+          background: '#fff',
+          border: `3px solid ${config.color}`,
+          width: '12px',
+          height: '12px',
+          top: '-6px',
+        }}
+      />
 
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
         <span style={{ fontSize: '16px' }}>{config.icon}</span>
@@ -126,7 +136,17 @@ export const StepNode: React.FC<{ data: StepNodeData; selected?: boolean }> = ({
         )}
       </div>
 
-      <Handle type="source" position={Position.Bottom} style={{ background: config.color }} />
+      <Handle
+        type="source"
+        position={Position.Bottom}
+        style={{
+          background: '#fff',
+          border: `3px solid ${config.color}`,
+          width: '12px',
+          height: '12px',
+          bottom: '-6px',
+        }}
+      />
     </div>
   );
 };

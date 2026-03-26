@@ -1,10 +1,9 @@
-import React, { useMemo, useCallback, useRef } from 'react';
+import React, { useMemo, useCallback, useRef, useState, useEffect } from 'react';
 import {
   ReactFlow,
   ReactFlowProvider,
   Background,
   Controls,
-  MiniMap,
   useNodesState,
   useEdgesState,
   useReactFlow,
@@ -15,6 +14,7 @@ import {
   type ReactFlowInstance,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
+import { Maximize2, Minimize2 } from 'lucide-react';
 
 import { StepNode } from './StepNode';
 
@@ -46,54 +46,82 @@ interface FlowCanvasProps {
   onStepDelete?: (stepId: string) => void;
 }
 
-// Simple layout algorithm - positions nodes in a tree structure
+// Vertical top-to-bottom layout - each branch is a vertical column
 function calculateLayout(steps: HandStep[]): Map<string, { x: number; y: number }> {
   const positions = new Map<string, { x: number; y: number }>();
   const stepMap = new Map(steps.map(s => [s.id, s]));
 
+  if (steps.length === 0) return positions;
+
   // Find root nodes (not targeted by any other step)
   const allTargets = new Set(steps.flatMap(s => s.nextSteps ?? []));
   const roots = steps.filter(s => !allTargets.has(s.id));
+  const startNodes = roots.length > 0 ? roots : steps;
 
+  const VERTICAL_SPACING = 100;   // Vertical distance between nodes
+  const COLUMN_WIDTH = 220;       // Horizontal distance between columns
+
+  // Layout each root and its descendants as a vertical column
+  let currentColumnX = 0;
   const visited = new Set<string>();
-  let currentY = 0;
 
-  function layoutNode(stepId: string, depth: number, parentX?: number): number {
-    if (visited.has(stepId)) return positions.get(stepId)!.x;
-    visited.add(stepId);
+  function layoutBranch(rootId: string, columnX: number): number {
+    let currentY = 0;
+    const queue: string[] = [rootId];
+    const branchNodes: string[] = [];
 
-    const step = stepMap.get(stepId);
-    if (!step) return 0;
+    // BFS to get all nodes in this branch
+    while (queue.length > 0) {
+      const nodeId = queue.shift()!;
+      if (visited.has(nodeId)) continue;
+      if (!stepMap.has(nodeId)) continue;
 
-    // Calculate horizontal position based on depth and siblings
-    const xOffset = depth * 200;
-    const x = parentX !== undefined ? parentX : xOffset;
+      visited.add(nodeId);
+      branchNodes.push(nodeId);
 
-    positions.set(stepId, { x, y: currentY });
-    currentY += 100;
+      const step = stepMap.get(nodeId)!;
+      // Only follow children that haven't been visited (belong to this branch)
+      (step.nextSteps ?? []).forEach(childId => {
+        if (!visited.has(childId) && stepMap.has(childId)) {
+          queue.push(childId);
+        }
+      });
+    }
 
-    // Layout children
-    let childX = x;
-    (step.nextSteps ?? []).forEach((childId, index) => {
-      if (index > 0) childX += 150;
-      layoutNode(childId, depth + 1, childX);
+    // Position nodes vertically in this column
+    branchNodes.forEach((nodeId, index) => {
+      positions.set(nodeId, { x: columnX, y: index * VERTICAL_SPACING });
     });
 
-    return x;
+    return branchNodes.length;
   }
 
-  // Layout from each root
-  roots.forEach((root, index) => {
-    layoutNode(root.id, 0, index * 300);
+  // Layout each root as a separate column
+  startNodes.forEach((root, index) => {
+    const columnX = index * COLUMN_WIDTH;
+    layoutBranch(root.id, columnX);
   });
 
-  // Handle disconnected nodes
-  steps.forEach(step => {
-    if (!positions.has(step.id)) {
-      positions.set(step.id, { x: 0, y: currentY });
-      currentY += 100;
-    }
-  });
+  // Handle any disconnected/orphan nodes (not visited by above)
+  const orphans = steps.filter(s => !visited.has(s.id));
+  if (orphans.length > 0) {
+    const orphanColumnX = startNodes.length * COLUMN_WIDTH;
+    orphans.forEach((step, index) => {
+      positions.set(step.id, { x: orphanColumnX, y: index * VERTICAL_SPACING });
+    });
+  }
+
+  // Center the whole layout around x=0
+  const allX = Array.from(positions.values()).map(p => p.x);
+  if (allX.length > 0) {
+    const minX = Math.min(...allX);
+    const maxX = Math.max(...allX);
+    const centerOffset = (minX + maxX) / 2;
+
+    positions.forEach((pos, id) => {
+      positions.set(id, { x: pos.x - centerOffset, y: pos.y });
+    });
+  }
 
   return positions;
 }
@@ -112,7 +140,86 @@ const FlowCanvasInner: React.FC<FlowCanvasProps> = ({
 }) => {
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
   const { screenToFlowPosition } = useReactFlow();
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const positions = useMemo(() => calculateLayout(steps), [steps]);
+
+  // Toggle element fullscreen (with Tauri fallback)
+  const toggleFullscreen = useCallback(async () => {
+    const element = reactFlowWrapper.current;
+    console.log('[FlowCanvas] Toggle fullscreen clicked, element:', element);
+    if (!element) {
+      console.warn('[FlowCanvas] No element ref found');
+      return;
+    }
+
+    try {
+      // Try standard browser fullscreen API first
+      if (!document.fullscreenElement) {
+        console.log('[FlowCanvas] Entering fullscreen...');
+        if (element.requestFullscreen) {
+          await element.requestFullscreen();
+          console.log('[FlowCanvas] Entered fullscreen via requestFullscreen');
+        } else {
+          // Fallback for webkit browsers
+          const webkitElement = element as HTMLElement & { webkitRequestFullscreen?: () => Promise<void> };
+          if (webkitElement.webkitRequestFullscreen) {
+            await webkitElement.webkitRequestFullscreen();
+            console.log('[FlowCanvas] Entered fullscreen via webkitRequestFullscreen');
+          }
+        }
+        setIsFullscreen(true);
+      } else {
+        console.log('[FlowCanvas] Exiting fullscreen...');
+        if (document.exitFullscreen) {
+          await document.exitFullscreen();
+        } else {
+          const webkitDoc = document as Document & { webkitExitFullscreen?: () => Promise<void> };
+          if (webkitDoc.webkitExitFullscreen) {
+            await webkitDoc.webkitExitFullscreen();
+          }
+        }
+        console.log('[FlowCanvas] Exited fullscreen');
+        setIsFullscreen(false);
+      }
+    } catch (error) {
+      console.error('[FlowCanvas] Fullscreen error:', error);
+      // Fallback: try Tauri window maximize
+      try {
+        const { isTauri } = await import('@/lib/tauri');
+        if (isTauri()) {
+          const { getCurrentWindow } = await import('@tauri-apps/api/window');
+          const window = getCurrentWindow();
+          const isMaximized = await window.isMaximized();
+          if (isMaximized) {
+            await window.unmaximize();
+            setIsFullscreen(false);
+          } else {
+            await window.maximize();
+            setIsFullscreen(true);
+          }
+        }
+      } catch (tauriError) {
+        console.error('[FlowCanvas] Tauri fallback error:', tauriError);
+      }
+    }
+  }, []);
+
+  // Listen for fullscreen change events (e.g., ESC key)
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      const doc = document as Document & {
+        webkitFullscreenElement?: Element;
+      };
+      setIsFullscreen(!!(document.fullscreenElement || doc.webkitFullscreenElement));
+    };
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+      document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
+    };
+  }, []);
 
   const initialNodes: Node[] = useMemo(() => {
     return steps.map(step => ({
@@ -132,8 +239,11 @@ const FlowCanvasInner: React.FC<FlowCanvasProps> = ({
 
   const initialEdges: Edge[] = useMemo(() => {
     const edges: Edge[] = [];
+    const stepIds = new Set(steps.map(s => s.id));
     steps.forEach(step => {
       (step.nextSteps ?? []).forEach((nextId, index) => {
+        // Only create edge if target step exists
+        if (!stepIds.has(nextId)) return;
         edges.push({
           id: `${step.id}-${nextId}`,
           source: step.id,
@@ -141,6 +251,18 @@ const FlowCanvasInner: React.FC<FlowCanvasProps> = ({
           label: index > 0 ? `branch ${index}` : undefined,
           type: 'smoothstep',
           animated: true,
+          style: {
+            stroke: '#3b82f6',
+            strokeWidth: 2,
+          },
+          markerEnd: {
+            type: 'arrowclosed',
+            color: '#3b82f6',
+          },
+          labelStyle: {
+            fill: '#3b82f6',
+            fontSize: 12,
+          },
         });
       });
     });
@@ -273,7 +395,28 @@ const FlowCanvasInner: React.FC<FlowCanvasProps> = ({
   }
 
   return (
-    <div ref={reactFlowWrapper} style={{ height: '100%', width: '100%' }}>
+    <div
+      ref={reactFlowWrapper}
+      className="flow-canvas-wrapper"
+      style={{
+        height: '100%',
+        width: '100%',
+        backgroundColor: isFullscreen ? '#fafafa' : undefined,
+      }}
+    >
+      {/* CSS for fullscreen mode */}
+      <style>{`
+        .flow-canvas-wrapper:fullscreen {
+          width: 100vw !important;
+          height: 100vh !important;
+          background: #fafafa !important;
+        }
+        .flow-canvas-wrapper:-webkit-full-screen {
+          width: 100vw !important;
+          height: 100vh !important;
+          background: #fafafa !important;
+        }
+      `}</style>
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -296,16 +439,43 @@ const FlowCanvasInner: React.FC<FlowCanvasProps> = ({
       >
         <Background color="#ddd" gap={16} />
         <Controls />
-        <MiniMap
-          nodeStrokeColor={(n) => {
-            if (n.type === 'stepNode') return '#3b82f6';
-            return '#eee';
-          }}
-          nodeColor={(n) => {
-            if (n.type === 'stepNode') return '#3b82f6';
-            return '#fff';
-          }}
-        />
+        {/* Custom Fullscreen Button */}
+        <div style={{
+          position: 'absolute',
+          left: 10,
+          bottom: 10,
+          zIndex: 100,
+        }}>
+          <button
+            onClick={toggleFullscreen}
+            title={isFullscreen ? '退出全屏' : '全屏显示'}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: 28,
+              height: 28,
+              borderRadius: 4,
+              border: '1px solid #bbb',
+              background: '#fefefe',
+              cursor: 'pointer',
+              padding: 0,
+              boxShadow: '0 2px 4px rgba(0,0,0,0.15)',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = '#f0f0f0';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = '#fefefe';
+            }}
+          >
+            {isFullscreen ? (
+              <Minimize2 size={14} color="#333" />
+            ) : (
+              <Maximize2 size={14} color="#333" />
+            )}
+          </button>
+        </div>
       </ReactFlow>
     </div>
   );

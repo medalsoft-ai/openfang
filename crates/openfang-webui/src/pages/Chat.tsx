@@ -4,12 +4,15 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import { api } from '@/api/client';
 import { useSessionWebSocket } from '@/hooks/useSessionWebSocket';
+import { useGenerationState, formatMessageTime, isAssistantRole, isSystemRole, isUserRole, type PartialGeneration, type StepStatus } from '@/hooks/useGenerationState';
 import type { Agent, Session, Message, ToolCall } from '@/api/types';
 import { useLocalStorage } from '@/hooks/useLocalStorage';
 import { cn } from '@/lib/utils';
 import { ChatInput } from '@/components/chat/ChatInput';
 import { ToolCallsTimeline } from '@/components/chat/ToolCallsTimeline';
 import { useTranslation } from 'react-i18next';
+import { CanvasCard } from '@/components/chat/CanvasCard';
+import { StepStatusContainer } from '@/components/chat/StepStatusCard';
 import {
   Send, Bot, User, Plus, MessageSquare,
   Loader2, Sparkles, Clock, MoreHorizontal,
@@ -52,27 +55,6 @@ interface AgentDetails extends Agent {
   tools?: ExtendedTool[];
   mcp_servers?: string[];
   system_prompt?: string;
-}
-
-// Partial generation state for streaming
-interface PartialGeneration {
-  content: string;
-  toolCalls?: ToolCall[];
-  tool_calls?: ToolCall[]; // Alpine-compatible alias
-  statusMessage?: string; // For showing typing/thinking status
-  toolTextDetected?: boolean; // Track if we detected tool call in text
-  canvas?: {
-    id: string;
-    title: string;
-    html: string;
-  };
-}
-
-// Pending user message for optimistic update
-interface PendingMessage {
-  id: string;
-  content: string;
-  timestamp: string;
 }
 
 // Extended message for WebSocket streaming
@@ -289,41 +271,31 @@ function ToolCallsTimelineGroup({
 function MessageBubble({
   message,
   isLast,
-  partialGeneration
+  partialGeneration,
+  stepStatuses
 }: {
   message: Message;
   isLast: boolean;
   partialGeneration?: PartialGeneration | null;
+  stepStatuses?: StepStatus[];
 }) {
-  const isUser = message.role === 'user' || message.role === 'User';
-  const isAssistant = message.role === 'assistant' || message.role === 'Assistant';
-  const isSystem = message.role === 'system' || message.role === 'System';
+  const isUser = isUserRole(message.role || '');
+  const isAssistant = isAssistantRole(message.role || '');
+  const isSystem = isSystemRole(message.role || '');
 
   const showPartial = isLast && isAssistant && partialGeneration;
   const rawContent = showPartial ? partialGeneration!.content : (message.content || message.text || '');
   const displayContent = filterSystemGuidance(rawContent);
   const displayToolCalls = showPartial ? partialGeneration!.toolCalls : message.tools;
+  const displayCanvas = showPartial ? partialGeneration!.canvas : null;
+  const displayStepStatuses = showPartial && stepStatuses && stepStatuses.length > 0 ? stepStatuses : null;
 
   // Skip rendering if this is a system-only message (no visible content after filtering)
   if (isSystemOnlyMessage(rawContent) && !displayToolCalls?.length) {
     return null;
   }
 
-  const timestamp = useMemo(() => {
-    if (!message.timestamp) return '';
-    let date: Date;
-    const ts = message.timestamp;
-    if (typeof ts === 'string' && ts.includes('T')) {
-      date = new Date(ts);
-    } else if (typeof ts === 'number' || /^\d+$/.test(ts)) {
-      const numTs = typeof ts === 'number' ? ts : parseInt(ts, 10);
-      date = new Date(numTs < 946684800000 ? numTs * 1000 : numTs);
-    } else {
-      date = new Date(ts);
-    }
-    if (isNaN(date.getTime())) return '';
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  }, [message.timestamp]);
+  const timestamp = useMemo(() => formatMessageTime(message.timestamp), [message.timestamp]);
 
   if (isSystem) {
     return (
@@ -414,6 +386,23 @@ function MessageBubble({
 
           {!isUser && displayToolCalls && displayToolCalls.length > 0 && (
             <ToolCallsDisplay toolCalls={displayToolCalls} />
+          )}
+
+          {/* Canvas display */}
+          {!isUser && displayCanvas && (
+            <CanvasCard
+              id={displayCanvas.id}
+              title={displayCanvas.title}
+              html={displayCanvas.html}
+            />
+          )}
+
+          {/* Step status display */}
+          {!isUser && displayStepStatuses && displayStepStatuses.length > 0 && (
+            <StepStatusContainer
+              steps={displayStepStatuses}
+              isComplete={displayStepStatuses.every(s => s.status === 'completed' || s.status === 'failed' || s.status === 'skipped')}
+            />
           )}
         </div>
 
@@ -578,10 +567,23 @@ export default function Chat() {
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const pendingMessageRef = useRef<string | null>(null);
 
-  // UI State
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [partialGeneration, setPartialGeneration] = useState<PartialGeneration | null>(null);
-  const [pendingUserMessage, setPendingUserMessage] = useState<PendingMessage | null>(null);
+  // Generation State Management (centralized hook)
+  const {
+    state,
+    isGenerating,
+    pendingUserMessage,
+    partialGeneration,
+    stepStatuses,
+    setPartialGeneration,
+    startPending,
+    startStreaming,
+    updateStreamingContent,
+    updateStepStatuses,
+    clearStepStatuses,
+    complete,
+    setError,
+    reset,
+  } = useGenerationState();
 
   // ============================================
   // WEBSOCKET CONNECTION
@@ -589,35 +591,29 @@ export default function Chat() {
 
   const handleWebSocketMessage = useCallback((msg: unknown) => {
     const data = msg as Record<string, unknown>;
-    console.log('[Chat] WS received:', data.type, data);
 
     switch (data.type) {
       case 'generation_start':
       case 'typing':
         // Backend sends 'typing' with state: 'start'/'stop'/'tool'
         if (data.state === 'start') {
-          console.log('[Chat] Generation started (typing)');
-          setIsGenerating(true);
-          setPartialGeneration({ content: '' });
+          startStreaming();
         } else if (data.state === 'tool') {
           // Show tool usage in partial generation
-          setPartialGeneration((prev) => ({
-            content: prev?.content || '',
-            toolCalls: prev?.toolCalls || [],
+          updateStreamingContent({
             statusMessage: `Using ${(data.tool as string) || 'tool'}...`,
-          }));
+          });
         } else if (data.state === 'stop') {
-          console.log('[Chat] Generation stopped (typing)');
-          setIsGenerating(false);
+          complete();
         }
         break;
 
       case 'thinking':
-        // Legacy thinking event (backward compat)
-        if (!isGenerating) {
-          setIsGenerating(true);
-          setPartialGeneration({ content: '', statusMessage: data.level ? `Thinking (${data.level})...` : 'Processing...' });
-        }
+        // Legacy thinking event (backward compat) - always start streaming
+        startStreaming();
+        updateStreamingContent({
+          statusMessage: data.level ? `Thinking (${data.level})...` : 'Processing...',
+        });
         break;
 
       case 'generation_chunk':
@@ -659,8 +655,9 @@ export default function Chat() {
             tool_calls: data.tool_calls as ToolCall[] | undefined,
           };
         });
-        // Clear pending user message when we receive first chunk (server has processed user message)
-        setPendingUserMessage(null);
+        // Note: We don't clear pendingUserMessage here anymore.
+        // It's now cleared on generation_complete/error or when messages are refreshed.
+        // This prevents the user message from disappearing during the thinking phase.
         break;
 
       case 'tool_start':
@@ -756,11 +753,11 @@ export default function Chat() {
         // Phase progress updates - can be used to show thinking/tool_use states
         if (data.phase === 'context_warning') {
           toaster.error((data.detail as string) || 'Context limit reached');
-        } else if (data.phase === 'thinking' && partialGeneration) {
+        } else if (data.phase === 'thinking') {
           // Update status message during thinking phase
-          setPartialGeneration((prev) => prev ? { ...prev, statusMessage: 'Thinking...' } : null);
-        } else if (data.phase === 'tool_use' && partialGeneration) {
-          setPartialGeneration((prev) => prev ? { ...prev, statusMessage: `Using ${(data.detail as string) || 'tool'}...` } : null);
+          updateStreamingContent({ statusMessage: 'Thinking...' });
+        } else if (data.phase === 'tool_use') {
+          updateStreamingContent({ statusMessage: `Using ${(data.detail as string) || 'tool'}...` });
         }
         // Other phases (streaming, done) are internal progress - skip
         break;
@@ -772,48 +769,49 @@ export default function Chat() {
 
       case 'canvas':
         // Agent presented an interactive canvas - add to messages
-        setPartialGeneration((prev) => ({
-          content: prev?.content || '',
-          toolCalls: prev?.toolCalls || [],
+        updateStreamingContent({
           canvas: {
             id: data.canvas_id as string,
             title: (data.title as string) || 'Canvas',
             html: data.html as string,
           },
-        }));
+        });
+        break;
+
+      case 'step_status_change':
+        // Workflow step status update
+        {
+          const stepData = (data.data as unknown as StepStatus) || (data as unknown as StepStatus);
+          updateStepStatuses(stepData);
+        }
+        break;
+
+      case 'execution_complete':
+        // Clear step statuses when execution completes
+        clearStepStatuses();
         break;
 
       case 'generation_complete':
       case 'response':
         // Backend sends 'response' when complete
-        console.log('[Chat] Generation/Response complete, refreshing messages...');
-        setIsGenerating(false);
-        setPartialGeneration(null);
-        // Clear pending user message on completion
-        setPendingUserMessage(null);
+        complete();
+        clearStepStatuses();
         // Force refetch messages
         queryClient.invalidateQueries({ queryKey: ['messages', agentId, sessionId] });
-        queryClient.refetchQueries({ queryKey: ['messages', agentId, sessionId] });
         queryClient.invalidateQueries({ queryKey: ['sessions', agentId] });
         break;
 
       case 'silent_complete':
         // Agent intentionally chose not to reply
-        console.log('[Chat] Silent complete (NO_REPLY)');
-        setIsGenerating(false);
-        setPartialGeneration(null);
-        setPendingUserMessage(null);
+        complete();
+        clearStepStatuses();
         break;
 
       case 'generation_error':
       case 'error':
         // Backend sends 'error' on failure
-        console.error('[Chat] Generation error:', data.content || data.error);
-        setIsGenerating(false);
-        setPartialGeneration(null);
-        // Clear pending user message on error too
-        setPendingUserMessage(null);
-        toaster.error((data.content as string) || (data.error as string) || t('chat.sendFailed'));
+        setError((data.content as string) || (data.error as string) || t('chat.sendFailed'));
+        clearStepStatuses();
         break;
 
       case 'connected':
@@ -823,9 +821,10 @@ export default function Chat() {
         break;
 
       default:
-        console.log('[Chat] Unknown WS message type:', data.type);
+        // Unknown message type - ignore
+        break;
     }
-  }, [agentId, sessionId, queryClient, t, isGenerating, partialGeneration]);
+  }, [agentId, sessionId, queryClient, t, startStreaming, updateStreamingContent, complete, updateStepStatuses, clearStepStatuses, setError]);
 
   const { connectionState, sendMessage: sendWsMessage, isConnected, reconnect } = useSessionWebSocket({
     agentId,
@@ -897,10 +896,6 @@ export default function Chat() {
 
   // Extract messages array with stable unique IDs
   const messages = useMemo(() => {
-    console.log('[Chat] raw messagesData:', messagesData);
-    console.log('[Chat] messagesData type:', typeof messagesData);
-    console.log('[Chat] messagesData?.messages:', messagesData?.messages);
-
     // Handle different possible API response structures
     let msgs: Message[] = [];
     if (Array.isArray(messagesData)) {
@@ -915,9 +910,6 @@ export default function Chat() {
       }
     }
 
-    console.log('[Chat] extracted messages:', msgs);
-    console.log('[Chat] messages count:', msgs.length);
-
     // Generate stable unique IDs for each message to ensure proper rendering
     // and sort by timestamp to ensure correct chronological order
     return msgs
@@ -931,6 +923,59 @@ export default function Chat() {
         return timeA - timeB;
       });
   }, [messagesData, sessionId]);
+
+  // Group consecutive tool-calling assistant messages for rendering
+  const groupedMessages = useMemo(() => {
+    const result: React.ReactElement[] = [];
+    let i = 0;
+    let keyCounter = 0;
+
+    const isAssistantWithTools = (msg: ExtendedMessage) => {
+      return isAssistantRole(msg.role || '') && msg.tools && msg.tools.length > 0;
+    };
+
+    while (i < messages.length) {
+      const message = messages[i];
+
+      // Check if this is the start of a consecutive tool message group
+      if (isAssistantWithTools(message)) {
+        // Collect all consecutive tool messages
+        const toolGroup: ExtendedMessage[] = [message];
+        let j = i + 1;
+        while (j < messages.length && isAssistantWithTools(messages[j])) {
+          toolGroup.push(messages[j]);
+          j++;
+        }
+
+        // Render as a single timeline group
+        const isLastGroup = j >= messages.length && !pendingUserMessage && !isGenerating;
+        result.push(
+          <div key={`tool-group-${keyCounter++}`} className="py-2">
+            <ToolCallsTimelineGroup
+              messages={toolGroup}
+              isLast={isLastGroup}
+            />
+          </div>
+        );
+
+        i = j; // Skip the grouped messages
+      } else {
+        // Regular message - render normally
+        result.push(
+          <div key={message.id || `msg-${keyCounter++}`} className="py-2">
+            <MessageBubble
+              message={message}
+              isLast={false}
+              partialGeneration={null}
+            />
+          </div>
+        );
+        i++;
+      }
+    }
+
+    return result;
+  }, [messages, pendingUserMessage, isGenerating]);
 
   // ============================================
   // MUTATIONS
@@ -960,11 +1005,9 @@ export default function Chat() {
         session_id: sessionId,
         content,
       };
-      console.log('[Chat] Sending WS message:', wsMessage);
 
       // Send via WebSocket for streaming support
       const sent = sendWsMessage(wsMessage);
-      console.log('[Chat] WS message sent result:', sent);
 
       if (!sent) {
         throw new Error('Failed to send message via WebSocket');
@@ -996,9 +1039,7 @@ export default function Chat() {
     },
     onError: () => {
       toaster.error(t('chat.sendFailed'));
-      setIsGenerating(false);
-      setPartialGeneration(null);
-      setPendingUserMessage(null);
+      setError(t('chat.sendFailed'));
     },
   });
 
@@ -1042,9 +1083,7 @@ export default function Chat() {
       api.switchSession(agentId, sessionId),
     onMutate: (variables) => {
       // Reset generating state when switching sessions to avoid showing thinking indicator from previous session
-      setIsGenerating(false);
-      setPartialGeneration(null);
-      setPendingUserMessage(null);
+      reset();
       // Immediately clear old messages for the NEW session to prevent showing stale data during transition
       queryClient.setQueryData(['messages', variables.agentId, variables.sessionId], { messages: [] });
     },
@@ -1103,11 +1142,7 @@ export default function Chat() {
 
     if (agentId && sessionId) {
       // Optimistically add user message to UI immediately
-      setPendingUserMessage({
-        id: `pending-${Date.now()}`,
-        content: content.trim(),
-        timestamp: new Date().toISOString(),
-      });
+      startPending(content.trim());
       sendMessageMutation.mutate({ content });
     }
   }, [agentId, sessionId, isGenerating, createSessionMutation, sendMessageMutation, setSearchParams]);
@@ -1365,59 +1400,7 @@ export default function Chat() {
           ) : (
             <div ref={messagesContainerRef} className="absolute inset-0 p-3 overflow-y-auto">
               <div className="space-y-1.5 min-h-full">
-                {(() => {
-                  // Group consecutive tool-calling assistant messages
-                  const result: React.ReactElement[] = [];
-                  let i = 0;
-                  let keyCounter = 0;
-
-                  const isAssistantWithTools = (msg: ExtendedMessage) => {
-                    const role = msg.role?.toLowerCase();
-                    return (role === 'assistant' || role === 'agent') && msg.tools && msg.tools.length > 0;
-                  };
-
-                  while (i < messages.length) {
-                    const message = messages[i];
-
-                    // Check if this is the start of a consecutive tool message group
-                    if (isAssistantWithTools(message)) {
-                      // Collect all consecutive tool messages
-                      const toolGroup: ExtendedMessage[] = [message];
-                      let j = i + 1;
-                      while (j < messages.length && isAssistantWithTools(messages[j])) {
-                        toolGroup.push(messages[j]);
-                        j++;
-                      }
-
-                      // Render as a single timeline group
-                      const isLastGroup = j >= messages.length && !pendingUserMessage && !partialGeneration;
-                      result.push(
-                        <div key={`tool-group-${keyCounter++}`} className="py-2">
-                          <ToolCallsTimelineGroup
-                            messages={toolGroup}
-                            isLast={isLastGroup}
-                          />
-                        </div>
-                      );
-
-                      i = j; // Skip the grouped messages
-                    } else {
-                      // Regular message - render normally
-                      result.push(
-                        <div key={message.id || `msg-${keyCounter++}`} className="py-2">
-                          <MessageBubble
-                            message={message}
-                            isLast={false}
-                            partialGeneration={null}
-                          />
-                        </div>
-                      );
-                      i++;
-                    }
-                  }
-
-                  return result;
-                })()}
+                {groupedMessages}
                 {/* Pending user message (optimistic update) */}
                 {pendingUserMessage && (
                   <div className="py-2">
@@ -1428,13 +1411,50 @@ export default function Chat() {
                         content: pendingUserMessage.content,
                         timestamp: pendingUserMessage.timestamp,
                       }}
-                      isLast={false}
+                      isLast={true}
                       partialGeneration={null}
                     />
                   </div>
                 )}
+                {/* Thinking indicator - shown ONLY when generating with empty partialGeneration */}
+                {isGenerating && partialGeneration && !partialGeneration.content && !partialGeneration.toolCalls?.length && (
+                  <div className="py-2">
+                    <motion.div
+                      initial={prefersReducedMotion ? {} : { opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.2 }}
+                      className="flex gap-2 flex-row"
+                    >
+                      {/* Avatar */}
+                      <div
+                        className="flex-shrink-0 w-8 h-8 rounded-xl flex items-center justify-center bg-slate-100 dark:bg-slate-700 border-2 border-slate-200 dark:border-slate-600"
+                        style={{
+                          boxShadow: '0 3px 0 0 #94a3b8, 0 4px 8px rgba(0,0,0,0.08)',
+                          transform: 'translateY(-1px)'
+                        }}
+                      >
+                        <Bot className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                      </div>
+                      {/* Thinking content */}
+                      <div className="flex flex-col items-start">
+                        <div
+                          className="rounded-2xl px-4 py-3 bg-white dark:bg-slate-800 border-2 border-slate-200"
+                          style={{
+                            boxShadow: '3px 3px 0 0 #94a3b8, 4px 6px 12px rgba(0,0,0,0.06), inset 0 1px 0 rgba(255,255,255,0.5)',
+                            transform: 'translateY(-2px) translateX(-1px)'
+                          }}
+                        >
+                          <div className="flex items-center gap-2 text-slate-500">
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            <span className="text-sm">思考中...</span>
+                          </div>
+                        </div>
+                      </div>
+                    </motion.div>
+                  </div>
+                )}
                 {/* Streaming AI response */}
-                {partialGeneration && (
+                {partialGeneration && partialGeneration.content && (
                   <div className="py-2">
                     <MessageBubble
                       message={{
@@ -1445,6 +1465,7 @@ export default function Chat() {
                       }}
                       isLast={true}
                       partialGeneration={partialGeneration}
+                      stepStatuses={stepStatuses}
                     />
                   </div>
                 )}
@@ -1460,7 +1481,7 @@ export default function Chat() {
             agentName={selectedAgent?.name || 'Agent'}
             isStreaming={isGenerating}
             onSend={handleSendMessage}
-            onStop={() => setIsGenerating(false)}
+            onStop={complete}
             models={availableModels}
             selectedModel={currentModelId}
             onModelChange={handleModelChange}

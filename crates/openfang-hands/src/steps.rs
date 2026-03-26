@@ -47,6 +47,26 @@ pub enum StepType {
     },
 }
 
+impl StepType {
+    /// Returns the list of tool names required by this step type.
+    ///
+    /// - ExecuteTool: returns the tool name being executed
+    /// - SubHand: returns hand-related tools (for activating/managing sub-hands)
+    /// - Other types: return empty list
+    pub fn required_tools(&self) -> Vec<&str> {
+        match self {
+            StepType::ExecuteTool { tool_name, .. } => {
+                vec![tool_name.as_str()]
+            }
+            StepType::SubHand { .. } => {
+                // Sub-hands require hand tools to manage the sub-hand
+                vec!["hand_list", "hand_activate", "hand_status"]
+            }
+            _ => vec![],
+        }
+    }
+}
+
 impl HandStep {
     pub fn new(id: impl Into<String>, name: impl Into<String>, step_type: StepType) -> Self {
         Self {
@@ -55,6 +75,15 @@ impl HandStep {
             step_type,
             next_steps: Vec::new(),
         }
+    }
+
+    /// Returns the list of tool names required by this step.
+    ///
+    /// For ExecuteTool steps, this returns the tool name.
+    /// For SubHand steps, this returns the hand tools.
+    /// For other step types, this returns an empty list.
+    pub fn required_tools(&self) -> Vec<&str> {
+        self.step_type.required_tools()
     }
 }
 
@@ -194,5 +223,70 @@ mod tests {
         assert_eq!(step.id, deserialized.id);
         assert_eq!(step.name, deserialized.name);
         assert_eq!(step.next_steps, deserialized.next_steps);
+    }
+
+    #[test]
+    fn step_type_required_tools_execute_tool() {
+        let step = StepType::ExecuteTool {
+            tool_name: "web_search".to_string(),
+            input: serde_json::json!({"query": "test"}),
+        };
+        let tools = step.required_tools();
+        assert_eq!(tools, vec!["web_search"]);
+    }
+
+    #[test]
+    fn step_type_required_tools_sub_hand() {
+        let step = StepType::SubHand {
+            hand_id: "sub-hand-1".to_string(),
+            input_mapping: serde_json::json!({}),
+        };
+        let tools = step.required_tools();
+        assert!(tools.contains(&"hand_list"));
+        assert!(tools.contains(&"hand_activate"));
+        assert!(tools.contains(&"hand_status"));
+    }
+
+    #[test]
+    fn step_type_required_tools_other_types() {
+        // SendMessage should return empty list
+        let step = StepType::SendMessage {
+            content: "Hello".to_string(),
+            target_agent: None,
+        };
+        assert!(step.required_tools().is_empty());
+
+        // WaitForInput should return empty list
+        let step = StepType::WaitForInput {
+            prompt: "Enter value".to_string(),
+            timeout_secs: None,
+        };
+        assert!(step.required_tools().is_empty());
+
+        // Condition should return empty list
+        let step = StepType::Condition {
+            expression: "x > 0".to_string(),
+            true_branch: "step-true".to_string(),
+            false_branch: "step-false".to_string(),
+        };
+        assert!(step.required_tools().is_empty());
+
+        // Loop should return empty list
+        let step = StepType::Loop {
+            iterator: "item".to_string(),
+            items: "items".to_string(),
+            body: vec![],
+        };
+        assert!(step.required_tools().is_empty());
+    }
+
+    #[test]
+    fn hand_step_required_tools() {
+        let step = HandStep::new("step1", "Search", StepType::ExecuteTool {
+            tool_name: "shell_exec".to_string(),
+            input: serde_json::json!({}),
+        });
+        let tools = step.required_tools();
+        assert_eq!(tools, vec!["shell_exec"]);
     }
 }

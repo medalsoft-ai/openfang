@@ -384,6 +384,10 @@ pub async fn build_router(
             axum::routing::post(routes::activate_hand),
         )
         .route(
+            "/api/hands/{hand_id}/execute",
+            axum::routing::post(routes::start_hand_execution),
+        )
+        .route(
             "/api/hands/{hand_id}/check-deps",
             axum::routing::post(routes::check_hand_deps),
         )

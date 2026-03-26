@@ -12,7 +12,7 @@ use openfang_kernel::workflow::{
 };
 use openfang_kernel::OpenFangKernel;
 use openfang_runtime::kernel_handle::KernelHandle;
-use openfang_runtime::tool_runner::builtin_tool_definitions;
+use openfang_runtime::tool_runner::{builtin_tool_definitions, list_builtin_tool_names};
 use openfang_types::agent::{AgentId, AgentIdentity, AgentManifest};
 use std::collections::HashMap;
 use std::sync::{Arc, LazyLock};
@@ -4399,17 +4399,25 @@ pub async fn upsert_hand(
     match state
         .kernel
         .hand_registry
-        .upsert_from_content(toml_content, skill_content)
+        .upsert_from_content_validated(toml_content, skill_content, &list_builtin_tool_names())
     {
-        Ok(def) => (
-            StatusCode::OK,
-            Json(serde_json::json!({
+        Ok((def, invalid_tools)) => {
+            let mut response = serde_json::json!({
                 "id": def.id,
                 "name": def.name,
                 "description": def.description,
                 "category": format!("{:?}", def.category),
-            })),
-        ),
+            });
+            if !invalid_tools.is_empty() {
+                response["warnings"] = serde_json::json!([{
+                    "invalid_tools": invalid_tools
+                }]);
+            }
+            (
+                StatusCode::OK,
+                Json(response),
+            )
+        }
         Err(e) => (
             StatusCode::BAD_REQUEST,
             Json(serde_json::json!({"error": format!("{e}")})),
@@ -4465,6 +4473,93 @@ pub async fn activate_hand(
             StatusCode::BAD_REQUEST,
             Json(serde_json::json!({"error": format!("{e}")})),
         ),
+    }
+}
+
+/// POST /api/hands/{hand_id}/execute — Start Hand execution for an agent.
+/// Creates an execution state and automatically begins executing the first step.
+/// Hand must be activated first - execution always uses the Hand's dedicated agent.
+pub async fn start_hand_execution(
+    State(state): State<Arc<AppState>>,
+    Path(hand_id): Path<String>,
+) -> impl IntoResponse {
+    // Look up the Hand instance to get its dedicated agent_id
+    // Hand must be activated before execution
+    let hand_instances = state.kernel.list_hand_instances();
+    let instance = match hand_instances.iter().find(|i| i.hand_id == hand_id) {
+        Some(inst) => inst,
+        None => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({
+                    "error": format!("Hand '{}' is not activated. Please activate the Hand first.", hand_id),
+                    "code": "HAND_NOT_ACTIVE"
+                })),
+            );
+        }
+    };
+
+    let agent_id = match &instance.agent_id {
+        Some(id) => id.to_string(),
+        None => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({
+                    "error": format!("Hand '{}' instance has no associated agent. Please reactivate the Hand.", hand_id),
+                    "code": "AGENT_NOT_LINKED"
+                })),
+            );
+        }
+    };
+
+    match state.kernel.start_hand_execution(&hand_id, &agent_id).await {
+        Ok(execution_id) => (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "status": "started",
+                "hand_id": hand_id,
+                "agent_id": agent_id,
+                "execution_id": execution_id,
+                "message": "Hand execution started. First step is now being executed.",
+            })),
+        ),
+        Err(e) => {
+            let error_msg = e.to_string();
+            // Check for specific error cases
+            if error_msg.contains("already has an active execution") {
+                (
+                    StatusCode::CONFLICT,
+                    Json(serde_json::json!({
+                        "error": error_msg,
+                        "code": "ALREADY_RUNNING"
+                    })),
+                )
+            } else if error_msg.contains("Hand not found") {
+                (
+                    StatusCode::NOT_FOUND,
+                    Json(serde_json::json!({
+                        "error": error_msg,
+                        "code": "HAND_NOT_FOUND"
+                    })),
+                )
+            } else if error_msg.contains("no steps") {
+                (
+                    StatusCode::BAD_REQUEST,
+                    Json(serde_json::json!({
+                        "error": error_msg,
+                        "code": "NO_STEPS"
+                    })),
+                )
+            } else {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(serde_json::json!({
+                        "error": error_msg,
+                        "code": "INTERNAL_ERROR"
+                    })),
+                )
+            }
+        }
     }
 }
 
@@ -11893,7 +11988,7 @@ pub async fn auth_check(
             .and_then(|v| v.to_str().ok());
         let token = auth_header.or(key_header);
 
-        let authenticated = token.map_or(false, |t| {
+        let authenticated = token.is_some_and(|t| {
             use subtle::ConstantTimeEq;
             t.len() == api_key.len() && bool::from(t.as_bytes().ct_eq(api_key.as_bytes()))
         });

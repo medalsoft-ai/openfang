@@ -3444,6 +3444,102 @@ impl OpenFangKernel {
             .unwrap_or(instance))
     }
 
+    /// Start Hand execution for an agent.
+    /// This creates an execution state and begins executing the first step.
+    pub async fn start_hand_execution(
+        &self,
+        hand_id: &str,
+        agent_id: &str,
+    ) -> KernelResult<String> {
+        // Get hand definition
+        let def = self
+            .hand_registry
+            .get_definition(hand_id)
+            .ok_or_else(|| {
+                KernelError::OpenFang(OpenFangError::AgentNotFound(format!(
+                    "Hand not found: {hand_id}"
+                )))
+            })?;
+
+        // Check if there's already an active execution for this agent
+        let existing = self.hand_executor.get_execution_by_agent(agent_id).await;
+        if let Some(exec) = existing {
+            return Err(KernelError::OpenFang(OpenFangError::Internal(format!(
+                "Agent already has an active execution: {}",
+                exec.execution_id
+            ))));
+        }
+
+        // Get steps from hand definition
+        let steps = def.steps.clone();
+        if steps.is_empty() {
+            return Err(KernelError::OpenFang(OpenFangError::Internal(
+                "Hand has no steps defined".to_string()
+            )));
+        }
+
+        // Start the execution
+        let execution_id = self
+            .hand_executor
+            .start_execution(
+                hand_id.to_string(),
+                agent_id.to_string(),
+                steps,
+            )
+            .await
+            .map_err(|e| KernelError::OpenFang(OpenFangError::Internal(e.to_string())))?;
+
+        // Automatically start the first step
+        if let Some(first_step) = self.hand_executor.get_execution_state(&execution_id).await {
+            if let Some(first_step_id) = first_step.current_step_id {
+                if let Err(e) = self.hand_executor.start_step(&execution_id, &first_step_id).await {
+                    // Log error but don't fail - execution is created, step can be started manually
+                    warn!(
+                        execution_id = %execution_id,
+                        step_id = %first_step_id,
+                        error = %e,
+                        "Failed to auto-start first step"
+                    );
+                }
+            }
+        }
+
+        info!(
+            hand_id = %hand_id,
+            agent_id = %agent_id,
+            execution_id = %execution_id,
+            "Hand execution started"
+        );
+
+        Ok(execution_id)
+    }
+
+    /// Get the Hand ID associated with an agent (if any).
+    pub fn get_hand_id_for_agent(&self, agent_id: &str) -> Option<String> {
+        // Check if agent has hand tag
+        if let Ok(agent_id_uuid) = agent_id.parse::<uuid::Uuid>() {
+            if let Some(entry) = self.registry.get(openfang_types::agent::AgentId(agent_id_uuid)) {
+                for tag in &entry.tags {
+                    if let Some(hand_id) = tag.strip_prefix("hand:") {
+                        return Some(hand_id.to_string());
+                    }
+                }
+            }
+        }
+
+        // Also check hand registry instances
+        let instances = self.hand_registry.list_instances();
+        for instance in instances {
+            if let Some(inst_agent_id) = instance.agent_id {
+                if inst_agent_id.to_string() == agent_id {
+                    return Some(instance.hand_id);
+                }
+            }
+        }
+
+        None
+    }
+
     /// Deactivate a hand: kill agent and remove instance.
     pub fn deactivate_hand(&self, instance_id: uuid::Uuid) -> KernelResult<()> {
         let instance = self
@@ -3493,6 +3589,11 @@ impl OpenFangKernel {
         self.hand_registry
             .resume(instance_id)
             .map_err(|e| KernelError::OpenFang(OpenFangError::Internal(e.to_string())))
+    }
+
+    /// List all active Hand instances.
+    pub fn list_hand_instances(&self) -> Vec<openfang_hands::HandInstance> {
+        self.hand_registry.list_instances()
     }
 
     /// Set the weak self-reference for trigger dispatch.
@@ -6336,6 +6437,20 @@ impl KernelHandle for OpenFangKernel {
         }))
     }
 
+    async fn hand_start_execution(
+        &self,
+        hand_id: &str,
+        agent_id: &str,
+    ) -> Result<String, String> {
+        Self::start_hand_execution(self, hand_id, agent_id)
+            .await
+            .map_err(|e| e.to_string())
+    }
+
+    fn get_hand_id_for_agent(&self, agent_id: &str) -> Option<String> {
+        Self::get_hand_id_for_agent(self, agent_id)
+    }
+
     fn requires_approval(&self, tool_name: &str) -> bool {
         self.approval_manager.requires_approval(tool_name)
     }
@@ -6635,17 +6750,23 @@ fn parse_step_type_from_json(
         "execute-tool" => {
             let tool_name = config
                 .get("toolName")
+                .or_else(|| config.get("tool"))
                 .and_then(|v| v.as_str())
-                .ok_or_else(|| "execute-tool requires toolName".to_string())?
+                .ok_or_else(|| "execute-tool requires toolName or tool".to_string())?
                 .to_string();
-            let input = config.get("input").cloned().unwrap_or_default();
+            let input = config
+                .get("input")
+                .or_else(|| config.get("params"))
+                .cloned()
+                .unwrap_or_default();
             Ok(StepType::ExecuteTool { tool_name, input })
         }
         "send-message" => {
             let content = config
                 .get("content")
+                .or_else(|| config.get("message"))
                 .and_then(|v| v.as_str())
-                .ok_or_else(|| "send-message requires content".to_string())?
+                .ok_or_else(|| "send-message requires content or message".to_string())?
                 .to_string();
             let target_agent = config
                 .get("targetAgent")

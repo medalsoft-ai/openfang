@@ -197,6 +197,23 @@ pub trait KernelHandle: Send + Sync {
         Err("Hands system not available".to_string())
     }
 
+    /// Start Hand execution for an agent.
+    /// Creates an execution state and begins executing the first step.
+    async fn hand_start_execution(
+        &self,
+        hand_id: &str,
+        agent_id: &str,
+    ) -> Result<String, String> {
+        let _ = (hand_id, agent_id);
+        Err("Hands system not available".to_string())
+    }
+
+    /// Get the Hand ID associated with an agent (if any).
+    fn get_hand_id_for_agent(&self, agent_id: &str) -> Option<String> {
+        let _ = agent_id;
+        None
+    }
+
     /// List discovered external A2A agents as (name, url) pairs.
     fn list_a2a_agents(&self) -> Vec<(String, String)> {
         vec![]

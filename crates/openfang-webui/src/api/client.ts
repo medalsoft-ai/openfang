@@ -626,6 +626,10 @@ class ExtendedAPIClient extends APIClient {
 
   // ===== Hand Execution Operations =====
 
+  async startHandExecution(handId: string): Promise<{ execution_id: string; message: string }> {
+    return this.post(`/api/hands/${handId}/execute`);
+  }
+
   async getStepStatus(handId: string, stepId: string): Promise<StepStatusResponse> {
     return this.get(`/api/hands/${handId}/steps/${stepId}/status`);
   }

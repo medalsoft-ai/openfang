@@ -186,6 +186,56 @@ impl HandRegistry {
         Ok(def)
     }
 
+    /// Install or update a hand from raw TOML + skill content, with tool validation.
+    ///
+    /// This variant validates the hand's tools against a list of known valid tool names.
+    /// Invalid tools are filtered out and returned as a warning list.
+    /// If the hand has no tools after filtering, they will be auto-populated from steps
+    /// or category suggestions.
+    pub fn upsert_from_content_validated(
+        &self,
+        toml_content: &str,
+        skill_content: &str,
+        known_tools: &[&str],
+    ) -> HandResult<(HandDefinition, Vec<String>)> {
+        let mut def = bundled::parse_bundled("custom", toml_content, skill_content)?;
+
+        // Validate tools against known list
+        let invalid = def.validate_tools(known_tools);
+        if !invalid.is_empty() {
+            warn!(
+                hand = %def.id,
+                invalid_tools = ?invalid,
+                "Removed invalid tools from hand definition"
+            );
+        }
+
+        // If no tools remain, auto-populate from steps or category
+        let mut inferred = false;
+        if def.tools.is_empty() {
+            let tools = def.infer_tools_from_steps();
+            if tools.is_empty() {
+                def.tools = def.suggest_tools_for_category();
+            } else {
+                def.tools = tools;
+            }
+            inferred = true;
+            info!(
+                hand = %def.id,
+                tools = ?def.tools,
+                "Auto-populated tools for hand"
+            );
+        }
+
+        let existed = self.definitions.contains_key(&def.id);
+        let verb = if existed { "Updated" } else { "Installed" };
+        let inference_note = if inferred { " (tools auto-inferred)" } else { "" };
+        info!(hand = %def.id, name = %def.name, "{verb} hand from content{inference_note}");
+        self.definitions.insert(def.id.clone(), def.clone());
+
+        Ok((def, invalid))
+    }
+
     /// List all known hand definitions.
     pub fn list_definitions(&self) -> Vec<HandDefinition> {
         let mut defs: Vec<HandDefinition> =

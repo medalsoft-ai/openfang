@@ -365,6 +365,137 @@ pub struct HandDefinition {
     pub skill_content: Option<String>,
 }
 
+impl HandDefinition {
+    /// Infer tools from the steps defined in this hand.
+    ///
+    /// This scans all steps and extracts tool names from:
+    /// - ExecuteTool steps (the tool_name field)
+    /// - SubHand steps (hand management tools)
+    ///
+    /// Returns a deduplicated list of tool names.
+    pub fn infer_tools_from_steps(&self) -> Vec<String> {
+        let mut tools: Vec<String> = Vec::new();
+
+        for step in &self.steps {
+            for tool_name in step.required_tools() {
+                if !tools.contains(&tool_name.to_string()) {
+                    tools.push(tool_name.to_string());
+                }
+            }
+        }
+
+        tools
+    }
+
+    /// Suggest default tools based on the hand category.
+    ///
+    /// This provides sensible defaults when a hand doesn't explicitly
+    /// declare tools and doesn't have steps that require tools.
+    pub fn suggest_tools_for_category(&self) -> Vec<String> {
+        match self.category {
+            HandCategory::Content => vec![
+                "file_read".to_string(),
+                "file_write".to_string(),
+                "shell_exec".to_string(),
+                "web_fetch".to_string(),
+                "web_search".to_string(),
+            ],
+            HandCategory::Security => vec![
+                "shell_exec".to_string(),
+                "web_fetch".to_string(),
+                "web_search".to_string(),
+                "file_read".to_string(),
+            ],
+            HandCategory::Productivity => vec![
+                "shell_exec".to_string(),
+                "file_read".to_string(),
+                "file_write".to_string(),
+                "web_fetch".to_string(),
+                "web_search".to_string(),
+                "schedule_create".to_string(),
+                "memory_store".to_string(),
+                "memory_recall".to_string(),
+            ],
+            HandCategory::Development => vec![
+                "shell_exec".to_string(),
+                "file_read".to_string(),
+                "file_write".to_string(),
+                "apply_patch".to_string(),
+                "web_fetch".to_string(),
+                "web_search".to_string(),
+                "docker_exec".to_string(),
+                "process_start".to_string(),
+            ],
+            HandCategory::Communication => vec![
+                "web_fetch".to_string(),
+                "web_search".to_string(),
+                "shell_exec".to_string(),
+                "memory_store".to_string(),
+                "memory_recall".to_string(),
+                "event_publish".to_string(),
+            ],
+            HandCategory::Data => vec![
+                "shell_exec".to_string(),
+                "file_read".to_string(),
+                "file_write".to_string(),
+                "web_fetch".to_string(),
+                "web_search".to_string(),
+                "knowledge_add_entity".to_string(),
+                "knowledge_add_relation".to_string(),
+                "knowledge_query".to_string(),
+                "memory_store".to_string(),
+                "memory_recall".to_string(),
+            ],
+        }
+    }
+
+    /// Get the complete tools list for this hand.
+    ///
+    /// If tools are explicitly declared, returns those.
+    /// If tools is empty, infers from steps or suggests based on category.
+    ///
+    /// Returns a tuple of (tools, was_inferred) where was_inferred indicates
+    /// if the tools were automatically determined rather than explicitly declared.
+    pub fn resolve_tools(&mut self) -> (Vec<String>, bool) {
+        // If tools are already declared, use those
+        if !self.tools.is_empty() {
+            return (self.tools.clone(), false);
+        }
+
+        // First, try to infer from steps
+        let mut tools = self.infer_tools_from_steps();
+
+        // If still empty, suggest based on category
+        if tools.is_empty() {
+            tools = self.suggest_tools_for_category();
+        }
+
+        // Update the definition's tools list
+        self.tools = tools.clone();
+
+        (tools, true)
+    }
+
+    /// Validate tool names against a list of known valid tool names.
+    ///
+    /// Returns a list of invalid tool names that were removed.
+    pub fn validate_tools(&mut self, known_tools: &[&str]) -> Vec<String> {
+        let mut invalid: Vec<String> = Vec::new();
+        let mut valid: Vec<String> = Vec::new();
+
+        for tool in &self.tools {
+            if known_tools.contains(&tool.as_str()) {
+                valid.push(tool.clone());
+            } else {
+                invalid.push(tool.clone());
+            }
+        }
+
+        self.tools = valid;
+        invalid
+    }
+}
+
 /// Runtime status of a Hand instance.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum HandStatus {
@@ -987,5 +1118,255 @@ metrics = []
         // Should contain the steps array
         assert!(toml_str.contains("[[steps]]"));
         assert!(toml_str.contains("\"step1\""));
+    }
+
+    #[test]
+    fn hand_definition_infer_tools_from_steps() {
+        let def = HandDefinition {
+            id: "test".to_string(),
+            name: "Test Hand".to_string(),
+            description: "A test".to_string(),
+            category: HandCategory::Content,
+            icon: "T".to_string(),
+            tools: vec![], // Empty tools list
+            skills: vec![],
+            mcp_servers: vec![],
+            requires: vec![],
+            settings: vec![],
+            agent: HandAgentConfig {
+                name: "test-agent".to_string(),
+                description: "Test".to_string(),
+                module: "builtin:chat".to_string(),
+                provider: "anthropic".to_string(),
+                model: "claude-sonnet-4-20250514".to_string(),
+                api_key_env: None,
+                base_url: None,
+                max_tokens: 4096,
+                temperature: 0.7,
+                system_prompt: "Test".to_string(),
+                max_iterations: None,
+            },
+            dashboard: HandDashboard::default(),
+            steps: vec![
+                HandStep::new("step1", "Search", StepType::ExecuteTool {
+                    tool_name: "web_search".to_string(),
+                    input: serde_json::json!({}),
+                }),
+                HandStep::new("step2", "Execute", StepType::ExecuteTool {
+                    tool_name: "shell_exec".to_string(),
+                    input: serde_json::json!({}),
+                }),
+            ],
+            skill_content: None,
+        };
+
+        let tools = def.infer_tools_from_steps();
+        assert!(tools.contains(&"web_search".to_string()));
+        assert!(tools.contains(&"shell_exec".to_string()));
+        assert_eq!(tools.len(), 2);
+    }
+
+    #[test]
+    fn hand_definition_suggest_tools_for_category() {
+        let content_hand = HandDefinition {
+            id: "test".to_string(),
+            name: "Test".to_string(),
+            description: "Test".to_string(),
+            category: HandCategory::Content,
+            icon: "T".to_string(),
+            tools: vec![],
+            skills: vec![],
+            mcp_servers: vec![],
+            requires: vec![],
+            settings: vec![],
+            agent: HandAgentConfig {
+                name: "test".to_string(),
+                description: "Test".to_string(),
+                module: "builtin:chat".to_string(),
+                provider: "anthropic".to_string(),
+                model: "claude-sonnet-4-20250514".to_string(),
+                api_key_env: None,
+                base_url: None,
+                max_tokens: 4096,
+                temperature: 0.7,
+                system_prompt: "Test".to_string(),
+                max_iterations: None,
+            },
+            dashboard: HandDashboard::default(),
+            steps: vec![],
+            skill_content: None,
+        };
+
+        let tools = content_hand.suggest_tools_for_category();
+        assert!(tools.contains(&"file_read".to_string()));
+        assert!(tools.contains(&"web_search".to_string()));
+
+        // Development category should have docker_exec
+        let mut dev_hand = content_hand.clone();
+        dev_hand.category = HandCategory::Development;
+        let dev_tools = dev_hand.suggest_tools_for_category();
+        assert!(dev_tools.contains(&"docker_exec".to_string()));
+        assert!(dev_tools.contains(&"apply_patch".to_string()));
+    }
+
+    #[test]
+    fn hand_definition_resolve_tools_from_steps() {
+        let mut def = HandDefinition {
+            id: "test".to_string(),
+            name: "Test Hand".to_string(),
+            description: "A test".to_string(),
+            category: HandCategory::Content,
+            icon: "T".to_string(),
+            tools: vec![], // Empty - should infer from steps
+            skills: vec![],
+            mcp_servers: vec![],
+            requires: vec![],
+            settings: vec![],
+            agent: HandAgentConfig {
+                name: "test-agent".to_string(),
+                description: "Test".to_string(),
+                module: "builtin:chat".to_string(),
+                provider: "anthropic".to_string(),
+                model: "claude-sonnet-4-20250514".to_string(),
+                api_key_env: None,
+                base_url: None,
+                max_tokens: 4096,
+                temperature: 0.7,
+                system_prompt: "Test".to_string(),
+                max_iterations: None,
+            },
+            dashboard: HandDashboard::default(),
+            steps: vec![
+                HandStep::new("step1", "Search", StepType::ExecuteTool {
+                    tool_name: "web_search".to_string(),
+                    input: serde_json::json!({}),
+                }),
+            ],
+            skill_content: None,
+        };
+
+        let (tools, was_inferred) = def.resolve_tools();
+        assert!(was_inferred);
+        assert!(tools.contains(&"web_search".to_string()));
+        assert_eq!(def.tools, tools); // Should update the definition
+    }
+
+    #[test]
+    fn hand_definition_resolve_tools_explicit() {
+        // When tools are explicitly declared, they should not be modified
+        let mut def = HandDefinition {
+            id: "test".to_string(),
+            name: "Test Hand".to_string(),
+            description: "A test".to_string(),
+            category: HandCategory::Content,
+            icon: "T".to_string(),
+            tools: vec!["file_read".to_string(), "file_write".to_string()],
+            skills: vec![],
+            mcp_servers: vec![],
+            requires: vec![],
+            settings: vec![],
+            agent: HandAgentConfig {
+                name: "test-agent".to_string(),
+                description: "Test".to_string(),
+                module: "builtin:chat".to_string(),
+                provider: "anthropic".to_string(),
+                model: "claude-sonnet-4-20250514".to_string(),
+                api_key_env: None,
+                base_url: None,
+                max_tokens: 4096,
+                temperature: 0.7,
+                system_prompt: "Test".to_string(),
+                max_iterations: None,
+            },
+            dashboard: HandDashboard::default(),
+            steps: vec![],
+            skill_content: None,
+        };
+
+        let (tools, was_inferred) = def.resolve_tools();
+        assert!(!was_inferred);
+        assert_eq!(tools, vec!["file_read".to_string(), "file_write".to_string()]);
+    }
+
+    #[test]
+    fn hand_definition_validate_tools() {
+        let mut def = HandDefinition {
+            id: "test".to_string(),
+            name: "Test Hand".to_string(),
+            description: "A test".to_string(),
+            category: HandCategory::Content,
+            icon: "T".to_string(),
+            tools: vec![
+                "file_read".to_string(),
+                "invalid_tool".to_string(),
+                "shell_exec".to_string(),
+                "another_invalid".to_string(),
+            ],
+            skills: vec![],
+            mcp_servers: vec![],
+            requires: vec![],
+            settings: vec![],
+            agent: HandAgentConfig {
+                name: "test-agent".to_string(),
+                description: "Test".to_string(),
+                module: "builtin:chat".to_string(),
+                provider: "anthropic".to_string(),
+                model: "claude-sonnet-4-20250514".to_string(),
+                api_key_env: None,
+                base_url: None,
+                max_tokens: 4096,
+                temperature: 0.7,
+                system_prompt: "Test".to_string(),
+                max_iterations: None,
+            },
+            dashboard: HandDashboard::default(),
+            steps: vec![],
+            skill_content: None,
+        };
+
+        let known_tools = ["file_read", "file_write", "shell_exec", "web_search"];
+        let invalid = def.validate_tools(&known_tools);
+
+        assert_eq!(invalid, vec!["invalid_tool", "another_invalid"]);
+        assert_eq!(def.tools, vec!["file_read".to_string(), "shell_exec".to_string()]);
+    }
+
+    #[test]
+    fn hand_definition_resolve_tools_empty_steps() {
+        // When no steps and no tools, should suggest based on category
+        let mut def = HandDefinition {
+            id: "test".to_string(),
+            name: "Test Hand".to_string(),
+            description: "A test".to_string(),
+            category: HandCategory::Development,
+            icon: "T".to_string(),
+            tools: vec![], // Empty
+            skills: vec![],
+            mcp_servers: vec![],
+            requires: vec![],
+            settings: vec![],
+            agent: HandAgentConfig {
+                name: "test-agent".to_string(),
+                description: "Test".to_string(),
+                module: "builtin:chat".to_string(),
+                provider: "anthropic".to_string(),
+                model: "claude-sonnet-4-20250514".to_string(),
+                api_key_env: None,
+                base_url: None,
+                max_tokens: 4096,
+                temperature: 0.7,
+                system_prompt: "Test".to_string(),
+                max_iterations: None,
+            },
+            dashboard: HandDashboard::default(),
+            steps: vec![], // Empty
+            skill_content: None,
+        };
+
+        let (tools, was_inferred) = def.resolve_tools();
+        assert!(was_inferred);
+        // Development category should have development-specific tools
+        assert!(tools.contains(&"docker_exec".to_string()));
+        assert!(tools.contains(&"apply_patch".to_string()));
     }
 }
