@@ -1944,6 +1944,8 @@ pub struct TeamsConfig {
     pub app_id: String,
     /// Env var name holding the app password.
     pub app_password_env: String,
+    /// Env var name holding the explicit tenant ID used for token issuance.
+    pub teams_tenant_id_env: String,
     /// Port for the incoming webhook.
     pub webhook_port: u16,
     /// Allowed tenant IDs (empty = allow all).
@@ -1961,6 +1963,7 @@ impl Default for TeamsConfig {
         Self {
             app_id: String::new(),
             app_password_env: "TEAMS_APP_PASSWORD".to_string(),
+            teams_tenant_id_env: "TEAMS_TENANT_ID".to_string(),
             webhook_port: 3978,
             allowed_tenants: vec![],
             default_agent: None,

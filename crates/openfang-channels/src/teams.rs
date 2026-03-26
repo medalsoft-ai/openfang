@@ -8,6 +8,7 @@ use crate::types::{
     split_message, ChannelAdapter, ChannelContent, ChannelMessage, ChannelType, ChannelUser,
 };
 use async_trait::async_trait;
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use chrono::Utc;
 use futures::Stream;
 use std::collections::HashMap;
@@ -15,12 +16,8 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::{mpsc, watch, RwLock};
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 use zeroize::Zeroizing;
-
-/// OAuth2 token endpoint for Bot Framework.
-const OAUTH_TOKEN_URL: &str =
-    "https://login.microsoftonline.com/botframework.com/oauth2/v2.0/token";
 
 /// Maximum Teams message length (characters).
 const MAX_MESSAGE_LEN: usize = 4096;
@@ -38,6 +35,10 @@ pub struct TeamsAdapter {
     app_id: String,
     /// SECURITY: App password is zeroized on drop to prevent memory disclosure.
     app_password: Zeroizing<String>,
+    /// Explicit tenant used for OAuth token issuance.
+    tenant_id: String,
+    /// OAuth token endpoint resolved from explicit tenant ID.
+    oauth_token_url: String,
     /// Port on which the inbound webhook HTTP server listens.
     webhook_port: u16,
     /// Restrict inbound activities to specific Azure AD tenant IDs (empty = allow all).
@@ -49,6 +50,8 @@ pub struct TeamsAdapter {
     shutdown_rx: watch::Receiver<bool>,
     /// Cached OAuth2 bearer token and its expiry instant.
     cached_token: Arc<RwLock<Option<(String, Instant)>>>,
+    /// Map conversation_id -> serviceUrl from inbound activities.
+    service_urls: Arc<RwLock<HashMap<String, String>>>,
 }
 
 impl TeamsAdapter {
@@ -56,24 +59,31 @@ impl TeamsAdapter {
     ///
     /// * `app_id` — Bot Framework application ID.
     /// * `app_password` — Bot Framework application password (client secret).
+    /// * `tenant_id` — Explicit Azure AD tenant used for token issuance.
     /// * `webhook_port` — Local port for the inbound webhook HTTP server.
     /// * `allowed_tenants` — Azure AD tenant IDs to accept (empty = accept all).
     pub fn new(
         app_id: String,
         app_password: String,
+        tenant_id: String,
         webhook_port: u16,
         allowed_tenants: Vec<String>,
     ) -> Self {
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
+        let oauth_token_url =
+            format!("https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token");
         Self {
             app_id,
             app_password: Zeroizing::new(app_password),
+            tenant_id,
+            oauth_token_url,
             webhook_port,
             allowed_tenants,
             client: reqwest::Client::new(),
             shutdown_tx: Arc::new(shutdown_tx),
             shutdown_rx,
             cached_token: Arc::new(RwLock::new(None)),
+            service_urls: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -99,7 +109,7 @@ impl TeamsAdapter {
 
         let resp = self
             .client
-            .post(OAUTH_TOKEN_URL)
+            .post(&self.oauth_token_url)
             .form(&params)
             .send()
             .await?;
@@ -116,6 +126,29 @@ impl TeamsAdapter {
             .ok_or("Missing access_token in OAuth2 response")?
             .to_string();
         let expires_in = body["expires_in"].as_u64().unwrap_or(3600);
+
+        // Debug JWT claims to diagnose Bot Connector auth mismatches without logging full token.
+        if let Some(payload_b64) = access_token.split('.').nth(1) {
+            match URL_SAFE_NO_PAD.decode(payload_b64) {
+                Ok(decoded) => {
+                    if let Ok(claims) = serde_json::from_slice::<serde_json::Value>(&decoded) {
+                        debug!(
+                            app_id = %self.app_id,
+                            requested_tenant = %self.tenant_id,
+                            aud = %claims["aud"].as_str().unwrap_or(""),
+                            iss = %claims["iss"].as_str().unwrap_or(""),
+                            appid = %claims["appid"].as_str().unwrap_or(""),
+                            tid = %claims["tid"].as_str().unwrap_or(""),
+                            exp = claims["exp"].as_i64().unwrap_or_default(),
+                            "Teams OAuth token claims"
+                        );
+                    }
+                }
+                Err(err) => {
+                    debug!(app_id = %self.app_id, error = %err, "Failed to decode Teams OAuth token payload");
+                }
+            }
+        }
 
         // Cache with a safety buffer
         let expiry = Instant::now()
@@ -149,6 +182,13 @@ impl TeamsAdapter {
                 "type": "message",
                 "text": chunk,
             });
+            debug!(
+                app_id = %self.app_id,
+                conversation_id = %conversation_id,
+                service_url = %service_url,
+                text_len = body["text"].as_str().map(|s| s.len()).unwrap_or_default(),
+                "Teams outbound activity request"
+            );
 
             let resp = self
                 .client
@@ -161,7 +201,21 @@ impl TeamsAdapter {
             if !resp.status().is_success() {
                 let status = resp.status();
                 let resp_body = resp.text().await.unwrap_or_default();
-                warn!("Teams API error {status}: {resp_body}");
+                warn!(
+                    app_id = %self.app_id,
+                    conversation_id = %conversation_id,
+                    service_url = %service_url,
+                    status = %status,
+                    body = %resp_body,
+                    "Teams API error"
+                );
+            } else {
+                debug!(
+                    app_id = %self.app_id,
+                    conversation_id = %conversation_id,
+                    service_url = %service_url,
+                    "Teams outbound activity accepted"
+                );
             }
         }
 
@@ -193,9 +247,11 @@ fn parse_teams_activity(
     let from = activity.get("from")?;
     let from_id = from["id"].as_str().unwrap_or("");
     let from_name = from["name"].as_str().unwrap_or("Unknown");
+    let recipient_id = activity["recipient"]["id"].as_str().unwrap_or("");
 
     // Skip messages from the bot itself
     if from_id == app_id {
+        debug!(app_id = %app_id, from_id = %from_id, "Skipping Teams self-message");
         return None;
     }
 
@@ -205,6 +261,11 @@ fn parse_teams_activity(
             .as_str()
             .unwrap_or("");
         if !allowed_tenants.iter().any(|t| t == tenant_id) {
+            debug!(
+                app_id = %app_id,
+                tenant_id = %tenant_id,
+                "Skipping Teams message from disallowed tenant"
+            );
             return None;
         }
     }
@@ -220,6 +281,10 @@ fn parse_teams_activity(
         .to_string();
     let activity_id = activity["id"].as_str().unwrap_or("").to_string();
     let service_url = activity["serviceUrl"].as_str().unwrap_or("").to_string();
+    let tenant_id = activity["channelData"]["tenant"]["id"]
+        .as_str()
+        .unwrap_or("")
+        .to_string();
 
     // Determine if this is a group conversation
     let is_group = activity["conversation"]["isGroup"]
@@ -251,6 +316,33 @@ fn parse_teams_activity(
             serde_json::Value::String(service_url),
         );
     }
+    if !from_id.is_empty() {
+        metadata.insert(
+            "fromId".to_string(),
+            serde_json::Value::String(from_id.to_string()),
+        );
+    }
+    if !recipient_id.is_empty() {
+        metadata.insert(
+            "recipientId".to_string(),
+            serde_json::Value::String(recipient_id.to_string()),
+        );
+    }
+    if !tenant_id.is_empty() {
+        metadata.insert(
+            "tenantId".to_string(),
+            serde_json::Value::String(tenant_id.clone()),
+        );
+    }
+    debug!(
+        app_id = %app_id,
+        activity_id = %activity_id,
+        from_id = %from_id,
+        recipient_id = %recipient_id,
+        tenant_id = %tenant_id,
+        conversation_id = %conversation_id,
+        "Teams inbound activity parsed"
+    );
 
     Some(ChannelMessage {
         channel: ChannelType::Teams,
@@ -291,6 +383,7 @@ impl ChannelAdapter for TeamsAdapter {
         let port = self.webhook_port;
         let app_id = self.app_id.clone();
         let allowed_tenants = self.allowed_tenants.clone();
+        let service_urls = Arc::clone(&self.service_urls);
         let mut shutdown_rx = self.shutdown_rx.clone();
 
         tokio::spawn(async move {
@@ -309,8 +402,28 @@ impl ChannelAdapter for TeamsAdapter {
                         let app_id = Arc::clone(&app_id);
                         let tenants = Arc::clone(&tenants);
                         let tx = Arc::clone(&tx);
+                        let service_urls = Arc::clone(&service_urls);
                         async move {
                             if let Some(msg) = parse_teams_activity(&body, &app_id, &tenants) {
+                                debug!(
+                                    app_id = %app_id,
+                                    conversation_id = %msg.sender.platform_id,
+                                    activity_id = %msg.platform_message_id,
+                                    "Teams inbound message accepted by adapter"
+                                );
+                                if let Some(service_url) =
+                                    msg.metadata.get("serviceUrl").and_then(|v| v.as_str())
+                                {
+                                    service_urls.write().await.insert(
+                                        msg.sender.platform_id.clone(),
+                                        service_url.to_string(),
+                                    );
+                                    debug!(
+                                        conversation_id = %msg.sender.platform_id,
+                                        service_url = %service_url,
+                                        "Teams serviceUrl cached for conversation"
+                                    );
+                                }
                                 let _ = tx.send(msg).await;
                             }
                             axum::http::StatusCode::OK
@@ -352,22 +465,30 @@ impl ChannelAdapter for TeamsAdapter {
         user: &ChannelUser,
         content: ChannelContent,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        // We need the serviceUrl from metadata; fall back to the default Bot Framework URL
-        let default_service_url = "https://smba.trafficmanager.net/teams/".to_string();
         let conversation_id = &user.platform_id;
+        let service_url = {
+            let service_urls = self.service_urls.read().await;
+            service_urls
+                .get(conversation_id)
+                .cloned()
+                .unwrap_or_else(|| "https://smba.trafficmanager.net/teams/".to_string())
+        };
+        debug!(
+            app_id = %self.app_id,
+            conversation_id = %conversation_id,
+            service_url = %service_url,
+            display_name = %user.display_name,
+            "Teams adapter sending message"
+        );
 
         match content {
             ChannelContent::Text(text) => {
-                self.api_send_message(&default_service_url, conversation_id, &text)
+                self.api_send_message(&service_url, conversation_id, &text)
                     .await?;
             }
             _ => {
-                self.api_send_message(
-                    &default_service_url,
-                    conversation_id,
-                    "(Unsupported content type)",
-                )
-                .await?;
+                self.api_send_message(&service_url, conversation_id, "(Unsupported content type)")
+                    .await?;
             }
         }
         Ok(())
@@ -375,10 +496,16 @@ impl ChannelAdapter for TeamsAdapter {
 
     async fn send_typing(&self, user: &ChannelUser) -> Result<(), Box<dyn std::error::Error>> {
         let token = self.get_token().await?;
-        let default_service_url = "https://smba.trafficmanager.net/teams/";
+        let service_url = {
+            let service_urls = self.service_urls.read().await;
+            service_urls
+                .get(&user.platform_id)
+                .cloned()
+                .unwrap_or_else(|| "https://smba.trafficmanager.net/teams/".to_string())
+        };
         let url = format!(
             "{}/v3/conversations/{}/activities",
-            default_service_url.trim_end_matches('/'),
+            service_url.trim_end_matches('/'),
             user.platform_id
         );
 
@@ -412,6 +539,7 @@ mod tests {
         let adapter = TeamsAdapter::new(
             "app-id-123".to_string(),
             "app-password".to_string(),
+            "tenant-id-123".to_string(),
             3978,
             vec![],
         );
@@ -424,13 +552,20 @@ mod tests {
         let adapter = TeamsAdapter::new(
             "app-id".to_string(),
             "password".to_string(),
+            "tenant-id-123".to_string(),
             3978,
             vec!["tenant-abc".to_string()],
         );
         assert!(adapter.is_allowed_tenant("tenant-abc"));
         assert!(!adapter.is_allowed_tenant("tenant-xyz"));
 
-        let open = TeamsAdapter::new("app-id".to_string(), "password".to_string(), 3978, vec![]);
+        let open = TeamsAdapter::new(
+            "app-id".to_string(),
+            "password".to_string(),
+            "tenant-id-123".to_string(),
+            3978,
+            vec![],
+        );
         assert!(open.is_allowed_tenant("any-tenant"));
     }
 

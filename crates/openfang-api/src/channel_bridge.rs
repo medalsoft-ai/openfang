@@ -1244,13 +1244,16 @@ pub async fn start_channel_bridge_with_config(
     // Teams
     if let Some(ref tm_config) = config.teams {
         if let Some(password) = read_token(&tm_config.app_password_env, "Teams") {
-            let adapter = Arc::new(TeamsAdapter::new(
-                tm_config.app_id.clone(),
-                password,
-                tm_config.webhook_port,
-                tm_config.allowed_tenants.clone(),
-            ));
-            adapters.push((adapter, tm_config.default_agent.clone()));
+            if let Some(tenant_id) = read_token(&tm_config.teams_tenant_id_env, "Teams tenant ID") {
+                let adapter = Arc::new(TeamsAdapter::new(
+                    tm_config.app_id.clone(),
+                    password,
+                    tenant_id,
+                    tm_config.webhook_port,
+                    tm_config.allowed_tenants.clone(),
+                ));
+                adapters.push((adapter, tm_config.default_agent.clone()));
+            }
         }
     }
 
