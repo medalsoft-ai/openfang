@@ -609,12 +609,19 @@ class ExtendedAPIClient extends APIClient {
   // ===== Hand Steps Operations =====
 
   async getHandSteps(handId: string): Promise<GetHandStepsResponse> {
-    return this.get(`/api/hands/${handId}/steps`);
+    const response = await this.get<{ steps: unknown[] }>(`/api/hands/${handId}/steps`);
+    // Convert backend format (snake_case) to frontend format (camelCase)
+    const { fromBackendSteps } = await import('../utils/stepAdapter');
+    return {
+      steps: fromBackendSteps(response.steps as import('../utils/stepAdapter').BackendHandStep[]),
+    };
   }
 
   async updateHandSteps(handId: string, steps: HandStep[]): Promise<void> {
-    const body: UpdateHandStepsRequest = { steps };
-    await this.put(`/api/hands/${handId}/steps`, body);
+    // Convert frontend format to backend format (snake_case, nested step_type)
+    const { toBackendSteps } = await import('../utils/stepAdapter');
+    const backendSteps = toBackendSteps(steps);
+    await this.put(`/api/hands/${handId}/steps`, { steps: backendSteps });
   }
 
   // ===== Hand Execution Operations =====

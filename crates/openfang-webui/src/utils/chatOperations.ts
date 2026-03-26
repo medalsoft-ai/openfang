@@ -1,12 +1,13 @@
-import type { HandStep, StepTypeVariant, StepConfig } from '../api/types';
+import type { StepTypeVariant, StepConfig } from '../api/types';
+import type { LocalHandStep } from './stepAdapter';
 
 // ============================================================================
 // TYPES
 // ============================================================================
 
 export type StepOperation =
-  | { type: 'add'; step: HandStep; afterStepId?: string }
-  | { type: 'update'; stepId: string; updates: Partial<HandStep> }
+  | { type: 'add'; step: LocalHandStep; afterStepId?: string }
+  | { type: 'update'; stepId: string; updates: Partial<LocalHandStep> }
   | { type: 'delete'; stepId: string }
   | { type: 'move'; stepId: string; afterStepId: string };
 
@@ -94,14 +95,15 @@ function parseAddOperation(line: string): StepOperation | null {
   const afterMatch = line.match(/after\s+["']([^"']+)["']/i);
   const afterStepId = afterMatch ? afterMatch[1].trim() : undefined;
 
-  // Create default config based on type
-  const config = createDefaultConfig(type);
+  // Create default input based on type
+  const input = createDefaultInput(type);
 
-  const step: HandStep = {
+  const step: LocalHandStep = {
     id: stepId,
-    name,
-    type,
-    config,
+    title: name,
+    order: 0, // Will be set when applied
+    tool: type,
+    input,
     nextSteps: [],
   };
 
@@ -124,37 +126,37 @@ function parseUpdateOperation(line: string): StepOperation | null {
   const stepId = match[1].trim();
   const updateSpec = match[2].trim();
 
-  const updates: Partial<HandStep> = {};
+  const updates: Partial<LocalHandStep> = {};
 
   // Try to parse field = value pairs
-  const fieldPattern = /(\w+(?:\.\w+)*)\s*=\s*["']([^"']*)["']|(\w+(?:\.\w+)*)\s*=\s*(\S+)/gi;
+  const fieldPattern = /(\w+(?:\.\w+)*)\s*=\s*["']([^"]*)["']|(\w+(?:\.\w+)*)\s*=\s*(\S+)/gi;
   let fieldMatch;
 
   while ((fieldMatch = fieldPattern.exec(updateSpec)) !== null) {
     const field = (fieldMatch[1] || fieldMatch[3]).trim();
     const value = fieldMatch[2] !== undefined ? fieldMatch[2] : fieldMatch[4];
 
-    if (field === 'name') {
-      updates.name = value;
-    } else if (field === 'type') {
+    if (field === 'name' || field === 'title') {
+      updates.title = value;
+    } else if (field === 'type' || field === 'tool') {
       const parsedType = parseStepType(value);
-      if (parsedType) updates.type = parsedType;
-    } else if (field.startsWith('config.')) {
-      const configKey = field.slice(7);
-      updates.config = updates.config || ({ toolName: '' } as StepConfig);
-      (updates.config as Record<string, unknown>)[configKey] = value;
+      if (parsedType) updates.tool = parsedType;
+    } else if (field.startsWith('config.') || field.startsWith('input.')) {
+      const configKey = field.includes('.') ? field.split('.')[1] : field;
+      updates.input = updates.input || {};
+      (updates.input as Record<string, unknown>)[configKey] = value;
     } else if (field === 'next_steps' || field === 'nextSteps') {
       // Parse comma-separated step IDs
       updates.nextSteps = value.split(',').map((s) => s.trim());
     }
   }
 
-  // If no specific field parsed, treat the whole spec as a name update
+  // If no specific field parsed, treat the whole spec as a title update
   if (Object.keys(updates).length === 0) {
     // Remove common prefixes and treat as name
     const nameValue = updateSpec.replace(/^(?:to\s+|name\s+to\s+)/i, '').trim();
     if (nameValue) {
-      updates.name = nameValue.replace(/["']/g, '');
+      updates.title = nameValue.replace(/["']/g, '');
     }
   }
 
@@ -294,12 +296,12 @@ function extractMessage(content: string): string {
  * Apply operations to a steps array
  * Returns a new array (immutable operation)
  */
-export function applyOperations(steps: HandStep[], operations: StepOperation[]): HandStep[] {
+export function applyOperations(steps: LocalHandStep[], operations: StepOperation[]): LocalHandStep[] {
   // Deep clone steps to avoid mutation
-  let newSteps: HandStep[] = steps.map((s) => ({
+  let newSteps: LocalHandStep[] = steps.map((s) => ({
     ...s,
-    config: { ...s.config },
-    nextSteps: [...s.nextSteps],
+    input: s.input ? { ...s.input } : undefined,
+    nextSteps: [...(s.nextSteps || [])],
   }));
 
   // Handle rewrite mode: if any operation is a delete-all signal, clear first
@@ -328,10 +330,11 @@ export function applyOperations(steps: HandStep[], operations: StepOperation[]):
     }
   }
 
-  return newSteps;
+  // Reassign order numbers after all operations
+  return newSteps.map((s, index) => ({ ...s, order: index + 1 }));
 }
 
-function applyAdd(steps: HandStep[], op: Extract<StepOperation, { type: 'add' }>): HandStep[] {
+function applyAdd(steps: LocalHandStep[], op: Extract<StepOperation, { type: 'add' }>): LocalHandStep[] {
   const { step, afterStepId } = op;
 
   // Check if step already exists
@@ -353,7 +356,7 @@ function applyAdd(steps: HandStep[], op: Extract<StepOperation, { type: 'add' }>
       // Update the after step's nextSteps to include the new step
       const updatedSteps = steps.map((s, i) => {
         if (i === index) {
-          return { ...s, nextSteps: [...s.nextSteps, step.id] };
+          return { ...s, nextSteps: [...(s.nextSteps || []), step.id] };
         }
         return s;
       });
@@ -366,36 +369,36 @@ function applyAdd(steps: HandStep[], op: Extract<StepOperation, { type: 'add' }>
 }
 
 function applyUpdate(
-  steps: HandStep[],
+  steps: LocalHandStep[],
   op: Extract<StepOperation, { type: 'update' }>
-): HandStep[] {
+): LocalHandStep[] {
   return steps.map((s) => {
     if (s.id !== op.stepId) return s;
 
     return {
       ...s,
       ...op.updates,
-      config: { ...s.config, ...(op.updates.config || {}) },
+      input: op.updates.input ? { ...s.input, ...op.updates.input } : s.input,
       nextSteps: op.updates.nextSteps || s.nextSteps,
     };
   });
 }
 
 function applyDelete(
-  steps: HandStep[],
+  steps: LocalHandStep[],
   op: Extract<StepOperation, { type: 'delete' }>
-): HandStep[] {
+): LocalHandStep[] {
   // Remove the step
   const filtered = steps.filter((s) => s.id !== op.stepId);
 
   // Remove references from other steps' nextSteps
   return filtered.map((s) => ({
     ...s,
-    nextSteps: s.nextSteps.filter((id) => id !== op.stepId),
+    nextSteps: (s.nextSteps || []).filter((id) => id !== op.stepId),
   }));
 }
 
-function applyMove(steps: HandStep[], op: Extract<StepOperation, { type: 'move' }>): HandStep[] {
+function applyMove(steps: LocalHandStep[], op: Extract<StepOperation, { type: 'move' }>): LocalHandStep[] {
   // Find the step to move
   const stepToMove = steps.find((s) => s.id === op.stepId);
   if (!stepToMove) return steps;
@@ -405,8 +408,8 @@ function applyMove(steps: HandStep[], op: Extract<StepOperation, { type: 'move' 
   const newSteps = steps.map((s) => {
     if (s.id === op.afterStepId) {
       // Add to new position's next steps
-      if (!s.nextSteps.includes(op.stepId)) {
-        return { ...s, nextSteps: [...s.nextSteps, op.stepId] };
+      if (!s.nextSteps?.includes(op.stepId)) {
+        return { ...s, nextSteps: [...(s.nextSteps || []), op.stepId] };
       }
     }
     return s;
@@ -423,7 +426,7 @@ function applyMove(steps: HandStep[], op: Extract<StepOperation, { type: 'move' 
  * Validate operations against current steps
  * Returns array of error messages (empty if valid)
  */
-export function validateOperations(steps: HandStep[], operations: StepOperation[]): string[] {
+export function validateOperations(steps: LocalHandStep[], operations: StepOperation[]): string[] {
   const errors: string[] = [];
   const stepIds = new Set(steps.map((s) => s.id));
 
@@ -481,13 +484,13 @@ export function describeOperations(operations: StepOperation[]): string[] {
     switch (op.type) {
       case 'add':
         return op.afterStepId
-          ? `Add "${op.step.name}" (${op.step.type}) after "${op.afterStepId}"`
-          : `Add "${op.step.name}" (${op.step.type})`;
+          ? `Add "${op.step.title}" (${op.step.tool}) after "${op.afterStepId}"`
+          : `Add "${op.step.title}" (${op.step.tool})`;
 
       case 'update': {
         const fields = Object.keys(op.updates);
-        if (fields.length === 1 && fields[0] === 'name') {
-          return `Rename step to "${op.updates.name}"`;
+        if (fields.length === 1 && fields[0] === 'title') {
+          return `Rename step to "${op.updates.title}"`;
         }
         return `Update "${op.stepId}" (${fields.join(', ')})`;
       }
@@ -519,9 +522,9 @@ function generateStepId(name: string): string {
 }
 
 /**
- * Create default config for a step type
+ * Create default input for a step type
  */
-function createDefaultConfig(type: StepTypeVariant): StepConfig {
+function createDefaultInput(type: StepTypeVariant): Record<string, unknown> {
   switch (type) {
     case 'execute-tool':
       return { toolName: '', input: {} };
@@ -536,6 +539,6 @@ function createDefaultConfig(type: StepTypeVariant): StepConfig {
     case 'sub-hand':
       return { handId: '' };
     default:
-      return { toolName: '' } as StepConfig;
+      return { toolName: '' };
   }
 }

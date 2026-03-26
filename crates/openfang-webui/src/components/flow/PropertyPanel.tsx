@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback } from 'react';
+import type { LocalHandStep } from '../../utils/stepAdapter';
 import type {
-  HandStep,
   StepTypeVariant,
   ExecuteToolConfig,
   SendMessageConfig,
@@ -12,9 +12,9 @@ import type {
 import { VariableAutocomplete } from './VariableAutocomplete';
 
 interface PropertyPanelProps {
-  step: HandStep | null;
-  allSteps: HandStep[];
-  onUpdate: (stepId: string, updates: Partial<HandStep>) => void;
+  step: LocalHandStep | null;
+  allSteps: LocalHandStep[];
+  onUpdate: (stepId: string, updates: Partial<LocalHandStep>) => void;
 }
 
 const stepTypeConfig: Record<StepTypeVariant, { color: string; icon: string; label: string }> = {
@@ -31,7 +31,7 @@ interface VariableInputProps {
   value: string;
   onChange: (value: string) => void;
   placeholder?: string;
-  steps: HandStep[];
+  steps: LocalHandStep[];
   currentStepId: string;
   multiline?: boolean;
 }
@@ -183,22 +183,22 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
     );
   }
 
-  const config = stepTypeConfig[step.type];
+  const config = stepTypeConfig[(step.tool as StepTypeVariant) || 'execute-tool'];
 
-  const handleNameChange = (name: string) => {
-    onUpdate(step.id, { name });
+  const handleNameChange = (title: string) => {
+    onUpdate(step.id, { title });
   };
 
-  const handleConfigChange = (configUpdates: Partial<typeof step.config>) => {
+  const handleConfigChange = (configUpdates: Partial<typeof step.input>) => {
     onUpdate(step.id, {
-      config: { ...step.config, ...configUpdates },
+      input: { ...step.input, ...configUpdates },
     });
   };
 
   const renderConfigFields = () => {
-    switch (step.type) {
+    switch (step.tool) {
       case 'execute-tool': {
-        const cfg = step.config as ExecuteToolConfig;
+        const cfg = step.input as ExecuteToolConfig;
         return (
           <>
             <Field label="Tool Name">
@@ -247,7 +247,7 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
       }
 
       case 'send-message': {
-        const cfg = step.config as SendMessageConfig;
+        const cfg = step.input as SendMessageConfig;
         return (
           <>
             <Field label="Message Content">
@@ -282,7 +282,7 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
       }
 
       case 'wait-for-input': {
-        const cfg = step.config as WaitForInputConfig;
+        const cfg = step.input as WaitForInputConfig;
         return (
           <>
             <Field label="Prompt">
@@ -321,7 +321,7 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
       }
 
       case 'condition': {
-        const cfg = step.config as ConditionConfig;
+        const cfg = step.input as ConditionConfig;
         return (
           <>
             <Field label="Expression">
@@ -375,7 +375,7 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
       }
 
       case 'loop': {
-        const cfg = step.config as LoopConfig;
+        const cfg = step.input as LoopConfig;
         return (
           <>
             <Field label="Iterator Variable">
@@ -409,7 +409,7 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
       }
 
       case 'sub-hand': {
-        const cfg = step.config as SubHandConfig;
+        const cfg = step.input as SubHandConfig;
         return (
           <>
             <Field label="Hand ID">
@@ -546,7 +546,7 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
         <Field label="Name">
           <input
             type="text"
-            value={step.name}
+            value={step.title}
             onChange={(e) => handleNameChange(e.target.value)}
             placeholder="Step name"
             style={inputStyle}
@@ -592,7 +592,7 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
           >
             Connections
           </div>
-          {step.nextSteps.length === 0 ? (
+          {(step.nextSteps ?? []).length === 0 ? (
             <div
               style={{
                 padding: '12px',
@@ -606,7 +606,7 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              {step.nextSteps.map((nextId, index) => (
+              {(step.nextSteps ?? []).map((nextId, index) => (
                 <div
                   key={nextId}
                   style={{

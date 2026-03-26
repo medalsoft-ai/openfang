@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Send, Bot, User, Check, X, Eye, AlertCircle, Loader2, GitBranch, Trash2, Edit3, Plus } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useTranslation } from 'react-i18next';
-import type { HandStep } from '@/api/types';
+import type { LocalHandStep } from '@/utils/stepAdapter';
 import type { StepOperation, ParsedResponse } from '@/utils/chatOperations';
 import { parseOperations, applyOperations, describeOperations, validateOperations } from '@/utils/chatOperations';
 import { Button } from '@/components/ui/button';
@@ -26,8 +26,8 @@ interface ChatMessage {
 interface ChatEditorProps {
   handId: string;
   handName: string;
-  draftSteps: HandStep[];
-  onStepsChange: (steps: HandStep[]) => void;
+  draftSteps: LocalHandStep[];
+  onStepsChange: (steps: LocalHandStep[]) => void;
   onSwitchToFlow: () => void;
 }
 
@@ -431,7 +431,7 @@ function getOperationIcon(op: StepOperation) {
 // MOCK AGENT RESPONSE (for development/demo)
 // ============================================================================
 
-function simulateAgentResponse(userInput: string, currentSteps: HandStep[]): ParsedResponse {
+function simulateAgentResponse(userInput: string, currentSteps: LocalHandStep[]): ParsedResponse {
   const lower = userInput.toLowerCase();
 
   // Check for rewrite keywords
@@ -445,9 +445,10 @@ function simulateAgentResponse(userInput: string, currentSteps: HandStep[]): Par
           type: 'add',
           step: {
             id: 'initialize',
-            name: 'Initialize',
-            type: 'execute-tool',
-            config: { toolName: 'init', input: {} },
+            order: 1,
+            title: 'Initialize',
+            tool: 'execute-tool',
+            input: { toolName: 'init', input: {} },
             nextSteps: ['process'],
           },
         },
@@ -455,9 +456,10 @@ function simulateAgentResponse(userInput: string, currentSteps: HandStep[]): Par
           type: 'add',
           step: {
             id: 'process',
-            name: 'Process Data',
-            type: 'execute-tool',
-            config: { toolName: 'process', input: {} },
+            order: 2,
+            title: 'Process Data',
+            tool: 'execute-tool',
+            input: { toolName: 'process', input: {} },
             nextSteps: ['complete'],
           },
           afterStepId: 'initialize',
@@ -466,9 +468,10 @@ function simulateAgentResponse(userInput: string, currentSteps: HandStep[]): Par
           type: 'add',
           step: {
             id: 'complete',
-            name: 'Complete',
-            type: 'send-message',
-            config: { content: 'Processing complete!' },
+            order: 3,
+            title: 'Complete',
+            tool: 'send-message',
+            input: { content: 'Processing complete!' },
             nextSteps: [],
           },
           afterStepId: 'process',
@@ -490,9 +493,10 @@ function simulateAgentResponse(userInput: string, currentSteps: HandStep[]): Par
           type: 'add',
           step: {
             id: 'validate-input',
-            name: 'Validate Input',
-            type: 'condition',
-            config: { expression: 'input.valid', trueBranch: '', falseBranch: '' },
+            order: currentSteps.length + 1,
+            title: 'Validate Input',
+            tool: 'condition',
+            input: { expression: 'input.valid', trueBranch: '', falseBranch: '' },
             nextSteps: [],
           },
           afterStepId,
@@ -527,7 +531,7 @@ function simulateAgentResponse(userInput: string, currentSteps: HandStep[]): Par
           {
             type: 'update',
             stepId,
-            updates: { config: { toolName } },
+            updates: { input: { toolName } },
           },
         ],
       };

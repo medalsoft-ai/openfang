@@ -1,15 +1,26 @@
 import React from 'react';
 import { Handle, Position } from '@xyflow/react';
-import type { HandStep, StepTypeVariant } from '../../api/types';
+import type { StepTypeVariant } from '../../api/types';
+
+interface LocalHandStep {
+  id: string;
+  order: number;
+  title: string;
+  description?: string;
+  tool?: string;
+  input?: Record<string, unknown>;
+  output?: Record<string, unknown>;
+  nextSteps?: string[];
+}
 
 interface StepNodeData {
-  step: HandStep;
+  step: LocalHandStep;
   isSelected?: boolean;
   onDelete?: (stepId: string) => void;
   status?: 'pending' | 'running' | 'completed' | 'failed' | 'waiting';
 }
 
-const stepTypeConfig: Record<StepTypeVariant, { color: string; icon: string; label: string }> = {
+const stepTypeConfig: Partial<Record<StepTypeVariant, { color: string; icon: string; label: string }>> = {
   'execute-tool': { color: '#3b82f6', icon: '🔧', label: 'Tool' },
   'send-message': { color: '#22c55e', icon: '💬', label: 'Message' },
   'wait-for-input': { color: '#eab308', icon: '⏸️', label: 'Wait' },
@@ -17,6 +28,8 @@ const stepTypeConfig: Record<StepTypeVariant, { color: string; icon: string; lab
   'loop': { color: '#f97316', icon: '🔄', label: 'Loop' },
   'sub-hand': { color: '#ec4899', icon: '🔌', label: 'Sub-Hand' },
 };
+
+const defaultConfig = { color: '#6b7280', icon: '📦', label: 'Unknown' };
 
 // Status indicator colors (overlay on the node)
 const statusIndicatorColors: Record<'pending' | 'running' | 'completed' | 'failed' | 'waiting', string> = {
@@ -29,7 +42,7 @@ const statusIndicatorColors: Record<'pending' | 'running' | 'completed' | 'faile
 
 export const StepNode: React.FC<{ data: StepNodeData; selected?: boolean }> = ({ data, selected }) => {
   const { step, onDelete, status = 'pending' } = data;
-  const config = stepTypeConfig[step.type];
+  const config = stepTypeConfig[step.tool as StepTypeVariant] ?? defaultConfig;
   const indicatorColor = statusIndicatorColors[status];
 
   return (
@@ -72,7 +85,7 @@ export const StepNode: React.FC<{ data: StepNodeData; selected?: boolean }> = ({
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
         <span style={{ fontSize: '16px' }}>{config.icon}</span>
         <div style={{ flex: 1 }}>
-          <div style={{ fontWeight: 600, marginBottom: '2px' }}>{step.name}</div>
+          <div style={{ fontWeight: 600, marginBottom: '2px' }}>{step.title}</div>
           <div style={{ fontSize: '11px', opacity: 0.9 }}>{config.label}</div>
         </div>
         {selected && onDelete && (

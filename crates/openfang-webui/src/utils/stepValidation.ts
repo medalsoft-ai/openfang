@@ -1,4 +1,4 @@
-import type { HandStep } from '../api/types';
+import type { LocalHandStep } from './stepAdapter';
 
 export interface ValidationError {
   type: 'orphan' | 'cycle' | 'duplicate-id' | 'missing-start' | 'invalid-next';
@@ -14,14 +14,14 @@ export interface ValidationResult {
 /**
  * Find steps that are not reachable from any starting step
  */
-export function findOrphanedSteps(steps: HandStep[]): string[] {
+export function findOrphanedSteps(steps: LocalHandStep[]): string[] {
   if (steps.length === 0) return [];
 
   const allStepIds = new Set(steps.map((s) => s.id));
   const reachableIds = new Set<string>();
 
   // BFS from steps that have no incoming connections (start steps)
-  const findIncomingSteps = (stepId: string): HandStep[] => {
+  const findIncomingSteps = (stepId: string): LocalHandStep[] => {
     return steps.filter((s) => s.nextSteps?.includes(stepId));
   };
 
@@ -60,7 +60,7 @@ export function findOrphanedSteps(steps: HandStep[]): string[] {
 /**
  * Detect cycles in the step graph using DFS
  */
-export function findCycles(steps: HandStep[]): string[][] {
+export function findCycles(steps: LocalHandStep[]): string[][] {
   const cycles: string[][] = [];
   const allStepIds = new Set(steps.map((s) => s.id));
   const visited = new Set<string>();
@@ -106,7 +106,7 @@ export function findCycles(steps: HandStep[]): string[][] {
 /**
  * Find duplicate step IDs
  */
-export function findDuplicateIds(steps: HandStep[]): { id: string; count: number }[] {
+export function findDuplicateIds(steps: LocalHandStep[]): { id: string; count: number }[] {
   const idCounts = new Map<string, number>();
 
   for (const step of steps) {
@@ -121,7 +121,7 @@ export function findDuplicateIds(steps: HandStep[]): { id: string; count: number
 /**
  * Find references to non-existent steps in nextSteps
  */
-export function findInvalidNextSteps(steps: HandStep[]): { stepId: string; invalidNext: string[] }[] {
+export function findInvalidNextSteps(steps: LocalHandStep[]): { stepId: string; invalidNext: string[] }[] {
   const allStepIds = new Set(steps.map((s) => s.id));
   const result: { stepId: string; invalidNext: string[] }[] = [];
 
@@ -138,11 +138,11 @@ export function findInvalidNextSteps(steps: HandStep[]): { stepId: string; inval
 /**
  * Check if there's at least one start step (no incoming connections)
  */
-export function hasStartStep(steps: HandStep[]): boolean {
+export function hasStartStep(steps: LocalHandStep[]): boolean {
   if (steps.length === 0) return true; // Empty is valid
 
-  const findIncomingSteps = (stepId: string): HandStep[] => {
-    return steps.filter((s) => s.nextSteps?.includes(stepId));
+  const findIncomingSteps = (stepId: string): LocalHandStep[] => {
+    return steps.filter((s) => (s.nextSteps ?? []).includes(stepId));
   };
 
   return steps.some((s) => findIncomingSteps(s.id).length === 0);
@@ -151,7 +151,7 @@ export function hasStartStep(steps: HandStep[]): boolean {
 /**
  * Run all validation checks
  */
-export function validateSteps(steps: HandStep[]): ValidationResult {
+export function validateSteps(steps: LocalHandStep[]): ValidationResult {
   const errors: ValidationError[] = [];
 
   // Check for duplicate IDs
@@ -213,7 +213,7 @@ export function validateSteps(steps: HandStep[]): ValidationResult {
 /**
  * Get a summary of step graph structure
  */
-export function getStepGraphSummary(steps: HandStep[]): {
+export function getStepGraphSummary(steps: LocalHandStep[]): {
   totalSteps: number;
   startSteps: number;
   endSteps: number;

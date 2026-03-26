@@ -208,7 +208,7 @@ export function Layout() {
     {
       id: 'sop',
       icon: Hand,
-      label: 'SOP',
+      label: 'Hands',
       path: '/hands',
       badge: '3',
       badgeColor: 'bg-amber-500',

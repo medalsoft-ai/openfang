@@ -1,4 +1,5 @@
 use openfang_hands::steps::{HandStep, StepType};
+use regex_lite::Regex;
 use serde_json::Value;
 use std::collections::HashMap;
 
@@ -192,7 +193,7 @@ fn determine_step_status(
 
 fn calculate_reachable_steps<'a>(
     steps: &'a [HandStep],
-    current_step_id: Option<&str>,
+    current_step_id: Option<&'a str>,
 ) -> HashMap<&'a str, bool> {
     let mut reachable = HashMap::new();
     let step_map: HashMap<&str, &HandStep> = steps.iter().map(|s| (s.id.as_str(), s)).collect();
@@ -252,8 +253,6 @@ fn format_json_compact(value: &Value) -> String {
 }
 
 fn resolve_variables_in_expression(expression: &str, step_outputs: &HashMap<String, Value>) -> String {
-    use regex::Regex;
-
     let re = match Regex::new(r"\{\{(\w+)\.output\}\}") {
         Ok(re) => re,
         Err(_) => return expression.to_string(),

@@ -1,5 +1,5 @@
-// SOP (Hands) Page - Claymorphism Design
-// Left: Grouped SOP List | Right: Steps, Flowchart, Edit Form
+// Hands Page - Claymorphism Design
+// Left: Grouped Hand List | Right: Steps, Flowchart, Edit Form
 
 import { useState, useMemo, useCallback, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -19,7 +19,7 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { api } from '@/api/client';
-import type { Hand, HandInstance, HandRequirement, HandSetting, HandStep } from '@/api/types';
+import type { Hand, HandInstance, HandRequirement, HandSetting, HandStep, ExecutionSummary, ExecutionDetail } from '@/api/types';
 import { FlowCanvas } from '@/components/flow/FlowCanvas';
 import { StepPalette } from '@/components/flow/StepPalette';
 import { PropertyPanel } from '@/components/flow/PropertyPanel';
@@ -28,6 +28,7 @@ import { ChatEditor } from '@/components/flow/ChatEditor';
 import { useHandDraft } from '@/hooks/useHandDraft';
 import { useSessionWebSocket } from '@/hooks/useSessionWebSocket';
 import { validateSteps, type ValidationResult } from '@/utils/stepValidation';
+import { toLocalSteps, toApiSteps } from '@/utils/stepAdapter';
 import { toaster } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import { toggleFullscreen, isFullscreen } from '@/lib/tauri';
@@ -59,13 +60,17 @@ import {
   ChevronUp,
   Maximize2,
   Minimize2,
+  Clock,
+  CheckCircle,
+  XCircle,
+  PauseCircle,
 } from 'lucide-react';
 
 // ============================================
 // TYPES
 // ============================================
 
-interface SOPStep {
+interface LocalHandStep {
   id: string;
   order: number;
   title: string;
@@ -73,9 +78,10 @@ interface SOPStep {
   tool?: string;
   input?: Record<string, unknown>;
   output?: Record<string, unknown>;
+  nextSteps?: string[];
 }
 
-interface SOPFlow {
+interface HandFlow {
   id: string;
   from: string;
   to: string;
@@ -86,7 +92,7 @@ interface SOPFlow {
 // GROUPED LIST COMPONENT
 // ============================================
 
-function GroupedSOPList({
+function GroupedHandList({
   hands,
   selectedHand,
   onSelect,
@@ -131,7 +137,7 @@ function GroupedSOPList({
     <div className="h-full flex flex-col">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border-subtle)]/50">
-        <h2 className="text-sm font-semibold text-[var(--text-primary)]">{t('sop.title', 'SOP')}</h2>
+        <h2 className="text-sm font-semibold text-[var(--text-primary)]">{t('sop.title', 'Hands')}</h2>
         <span className="text-xs text-[var(--primary)] font-medium bg-[var(--primary-50)] px-2 py-0.5 rounded-full">
           {hands.length}
         </span>
@@ -156,7 +162,7 @@ function GroupedSOPList({
                 <div className="flex-1 h-px bg-[var(--border-default)] ml-2" />
               </div>
 
-              {/* SOP Items */}
+              {/* Hand Items */}
               {groupedHands[category].map((hand) => {
                 const isActive = activeInstances.some((inst) => inst.hand_id === hand.id);
                 const isSelected = selectedHand?.id === hand.id;
@@ -239,7 +245,7 @@ function GroupedSOPList({
 // STEPS DIAGRAM COMPONENT
 // ============================================
 
-function StepsDiagram({ steps }: { steps: SOPStep[] }) {
+function StepsDiagram({ steps }: { steps: LocalHandStep[] }) {
   if (!steps || steps.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-12 text-[var(--text-muted)]">
@@ -338,7 +344,7 @@ const nodeTypes: NodeTypes = {
 // FLOWCHART COMPONENT (React Flow)
 // ============================================
 
-function FlowchartDiagram({ steps }: { steps: SOPStep[]; flows?: SOPFlow[] }) {
+function FlowchartDiagram({ steps }: { steps: LocalHandStep[]; flows?: HandFlow[] }) {
   const { t } = useTranslation();
   const [isFs, setIsFs] = useState(false);
 
@@ -462,10 +468,10 @@ function FlowchartDiagram({ steps }: { steps: SOPStep[]; flows?: SOPFlow[] }) {
 }
 
 // ============================================
-// SOP EDITOR COMPONENT
+// HAND EDITOR COMPONENT
 // ============================================
 
-function SOPEditor({
+function HandEditor({
   hand,
   onSave,
   isSaving,
@@ -478,22 +484,30 @@ function SOPEditor({
   const [activeTab, setActiveTab] = useState<'basic' | 'steps' | 'config'>('basic');
   const [editedHand, setEditedHand] = useState<Hand>(hand);
 
-  // Generate mock steps from hand data
-  const mockSteps: SOPStep[] = useMemo(() => {
-    const steps: SOPStep[] = [];
-    if (hand.tools) {
-      hand.tools.forEach((tool, index) => {
-        steps.push({
-          id: `step-${index}`,
-          order: index + 1,
-          title: `Execute ${tool}`,
-          description: `Call ${tool} tool`,
-          tool: tool,
-        });
-      });
+  // Fetch real steps from API
+  const { data: handStepsData, isLoading: isLoadingSteps } = useQuery({
+    queryKey: ['hand-steps', hand.id],
+    queryFn: () => api.getHandSteps(hand.id),
+    enabled: !!hand.id,
+  });
+
+  // Convert API steps to local format
+  const steps = useMemo(() => {
+    if (handStepsData?.steps) {
+      return toLocalSteps(handStepsData.steps);
     }
-    return steps;
-  }, [hand]);
+    // Fallback: generate from tools if no steps returned
+    if (hand.tools) {
+      return hand.tools.map((tool, index) => ({
+        id: `step-${index}`,
+        order: index + 1,
+        title: `Execute ${tool}`,
+        description: `Call ${tool} tool`,
+        tool: tool,
+      }));
+    }
+    return [];
+  }, [handStepsData, hand.tools]);
 
   const handleSave = () => {
     onSave({
@@ -608,25 +622,34 @@ function SOPEditor({
               exit={{ opacity: 0, y: -10 }}
               className="space-y-6"
             >
-              {/* Steps Diagram */}
-              <div>
-                <h4 className="text-xs font-medium text-[var(--text-secondary)] uppercase tracking-wider mb-3">
-                  {t('sop.stepsDiagram', 'Steps Diagram')}
-                </h4>
-                <div className="p-4 rounded-2xl bg-gradient-to-br from-violet-50/50 to-purple-50/30 border border-violet-100">
-                  <StepsDiagram steps={mockSteps} />
+              {isLoadingSteps ? (
+                <div className="flex items-center justify-center p-8 text-[var(--text-secondary)]">
+                  <Loader2 className="w-5 h-5 animate-spin mr-2" />
+                  {t('common.loading', 'Loading...')}
                 </div>
-              </div>
+              ) : (
+                <>
+                  {/* Steps Diagram */}
+                  <div>
+                    <h4 className="text-xs font-medium text-[var(--text-secondary)] uppercase tracking-wider mb-3">
+                      {t('sop.stepsDiagram', 'Steps Diagram')}
+                    </h4>
+                    <div className="p-4 rounded-2xl bg-gradient-to-br from-violet-50/50 to-purple-50/30 border border-violet-100">
+                      <StepsDiagram steps={steps} />
+                    </div>
+                  </div>
 
-              {/* Flowchart */}
-              <div>
-                <h4 className="text-xs font-medium text-[var(--text-secondary)] uppercase tracking-wider mb-3">
-                  {t('sop.flowchart', 'Flowchart')}
-                </h4>
-                <div className="p-4 rounded-2xl bg-white border border-[var(--border-default)]">
-                  <FlowchartDiagram steps={mockSteps} />
-                </div>
-              </div>
+                  {/* Flowchart */}
+                  <div>
+                    <h4 className="text-xs font-medium text-[var(--text-secondary)] uppercase tracking-wider mb-3">
+                      {t('sop.flowchart', 'Flowchart')}
+                    </h4>
+                    <div className="p-4 rounded-2xl bg-white border border-[var(--border-default)]">
+                      <FlowchartDiagram steps={steps} />
+                    </div>
+                  </div>
+                </>
+              )}
             </motion.div>
           )}
 
@@ -953,7 +976,7 @@ export function Hands() {
   const [selectedHand, setSelectedHand] = useState<Hand | null>(null);
   const [showEditor, setShowEditor] = useState(false);
   const [activeTab, setActiveTab] = useState<'details' | 'flow' | 'chat'>('details');
-  const [steps, setSteps] = useState<HandStep[]>([]);
+  const [steps, setSteps] = useState<LocalHandStep[]>([]);
   const [stepsLoading, setStepsLoading] = useState(false);
 
   // Edit mode state (Wave 1a)
@@ -1030,7 +1053,7 @@ export function Hands() {
   const activateMutation = useMutation({
     mutationFn: (handId: string) => api.activateHand(handId, {}),
     onSuccess: (_, handId) => {
-      toaster.success(t('sop.activated', 'SOP activated'));
+      toaster.success(t('sop.activated', 'Hand activated'));
       refetchActive();
       const hand = hands.find((h) => h.id === handId);
       if (hand) setSelectedHand(hand);
@@ -1043,7 +1066,7 @@ export function Hands() {
   const pauseMutation = useMutation({
     mutationFn: (instanceId: string) => api.pauseHandInstance(instanceId),
     onSuccess: () => {
-      toaster.success(t('sop.paused', 'SOP paused'));
+      toaster.success(t('sop.paused', 'Hand paused'));
       refetchActive();
     },
   });
@@ -1051,7 +1074,7 @@ export function Hands() {
   const resumeMutation = useMutation({
     mutationFn: (instanceId: string) => api.resumeHandInstance(instanceId),
     onSuccess: () => {
-      toaster.success(t('sop.resumed', 'SOP resumed'));
+      toaster.success(t('sop.resumed', 'Hand resumed'));
       refetchActive();
     },
   });
@@ -1059,7 +1082,7 @@ export function Hands() {
   const deactivateMutation = useMutation({
     mutationFn: (instanceId: string) => api.deactivateHandInstance(instanceId),
     onSuccess: () => {
-      toaster.success(t('sop.deactivated', 'SOP deactivated'));
+      toaster.success(t('sop.deactivated', 'Hand deactivated'));
       refetchActive();
     },
   });
@@ -1113,7 +1136,7 @@ export function Hands() {
       setStepsLoading(true);
       api.getHandSteps(selectedHand.id)
         .then((response) => {
-          setSteps(response.steps || []);
+          setSteps(toLocalSteps(response.steps || []));
         })
         .catch((err) => {
           console.error('Failed to load steps:', err);
@@ -1153,7 +1176,7 @@ export function Hands() {
       return;
     }
     try {
-      await api.updateHandSteps(displayHand.id, draftSteps);
+      await api.updateHandSteps(displayHand.id, toApiSteps(draftSteps));
       setSteps(draftSteps);
       toaster.success(t('sop.stepsSaved', 'Steps saved successfully'));
       handleExitEditMode();
@@ -1162,19 +1185,19 @@ export function Hands() {
     }
   };
 
-  const handleStepAdd = (step: HandStep, _position: { x: number; y: number }) => {
+  const handleStepAdd = (step: LocalHandStep, _position: { x: number; y: number }) => {
     addStep(step);
   };
 
-  const handleStepsChange = (newSteps: HandStep[]) => {
+  const handleStepsChange = (newSteps: LocalHandStep[]) => {
     setDraftSteps(newSteps);
   };
 
   return (
     <div className="flex h-full gap-3 p-3">
-      {/* Left Panel: Grouped SOP List */}
+      {/* Left Panel: Grouped Hand List */}
       <aside className="w-72 flex flex-col rounded-2xl bg-white shadow-[0_8px_32px_rgba(139,92,246,0.08)] border border-white/50 overflow-hidden">
-        <GroupedSOPList
+        <GroupedHandList
           hands={hands}
           selectedHand={selectedHand}
           onSelect={(hand) => {
@@ -1258,7 +1281,7 @@ export function Hands() {
                         ? 'bg-[var(--primary-100)] text-[var(--primary-dark)]'
                         : 'bg-[var(--surface-secondary)] text-[var(--text-secondary)] hover:bg-[var(--border-default)]'
                     )}
-                    title={t('sop.editor', 'SOP Editor')}
+                    title={t('sop.editor', 'Hand Editor')}
                   >
                     <Settings className="w-4 h-4" />
                   </button>
@@ -1308,7 +1331,7 @@ export function Hands() {
                 {/* Editor or View Mode */}
                 {showEditor ? (
                   <div className="flex-1 p-5 rounded-2xl bg-white shadow-[0_4px_20px_rgba(139,92,246,0.06)] border border-white/50 overflow-hidden">
-                    <SOPEditor
+                    <HandEditor
                       hand={displayHand}
                       onSave={(updates) =>
                         saveMutation.mutate({ handId: displayHand.id, data: updates })
@@ -1374,15 +1397,14 @@ export function Hands() {
                           <List className="w-4 h-4 text-[var(--primary)]" />
                           {t('sop.executionSteps', 'Execution Steps')}
                         </h3>
-                        <StepsDiagram
-                          steps={displayHand.tools?.map((tool, index) => ({
-                            id: `step-${index}`,
-                            order: index + 1,
-                            title: `Execute ${tool}`,
-                            description: `Call ${tool} tool`,
-                            tool: tool,
-                          })) || []}
-                        />
+                        {stepsLoading ? (
+                          <div className="flex items-center justify-center py-12 text-[var(--text-muted)]">
+                            <Loader2 className="w-6 h-6 animate-spin mr-2" />
+                            <span className="text-sm">{t('common.loading', 'Loading...')}</span>
+                          </div>
+                        ) : (
+                          <StepsDiagram steps={steps} />
+                        )}
                       </div>
                     )}
 
@@ -1598,10 +1620,10 @@ export function Hands() {
               <HandIcon className="w-8 h-8 text-[var(--primary)]" />
             </div>
             <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-1">
-              {t('sop.selectSOP', 'Select a SOP')}
+              {t('sop.selectSOP', 'Select a Hand')}
             </h3>
             <p className="text-sm text-[var(--text-muted)]">
-              {t('sop.selectSOPDesc', 'Choose a SOP from the list to view details')}
+              {t('sop.selectSOPDesc', 'Choose a Hand from the list to view details')}
             </p>
           </div>
         )}

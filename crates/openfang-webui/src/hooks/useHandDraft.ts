@@ -1,5 +1,16 @@
 import { useState, useCallback, useMemo } from 'react';
-import type { HandStep } from '@/api/types';
+
+// Local HandStep type for UI state (matches Hands.tsx and FlowCanvas)
+interface HandStep {
+  id: string;
+  order: number;
+  title: string;
+  description?: string;
+  tool?: string;
+  input?: Record<string, unknown>;
+  output?: Record<string, unknown>;
+  nextSteps?: string[];
+}
 
 export interface UseHandDraftReturn {
   /** Current draft steps */
@@ -63,7 +74,7 @@ export function useHandDraft(
           newSteps.splice(afterIndex + 1, 0, step);
           // Update connections: new step takes afterStep's nextSteps
           // afterStep now points to new step
-          const afterStepNextSteps = [...afterStep.nextSteps];
+          const afterStepNextSteps = [...(afterStep.nextSteps ?? [])];
           afterStep.nextSteps = [step.id];
           step.nextSteps = afterStepNextSteps;
         } else {
@@ -90,7 +101,7 @@ export function useHandDraft(
       // Remove references from other steps
       return newSteps.map((step) => ({
         ...step,
-        nextSteps: step.nextSteps.filter((id) => id !== stepId),
+        nextSteps: (step.nextSteps ?? []).filter((id) => id !== stepId),
       }));
     });
   }, []);

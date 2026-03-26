@@ -17,7 +17,18 @@ import {
 import '@xyflow/react/dist/style.css';
 
 import { StepNode } from './StepNode';
-import type { HandStep } from '@/api/types';
+
+// Local HandStep type for UI state (matches Hands.tsx)
+interface HandStep {
+  id: string;
+  order: number;
+  title: string;
+  description?: string;
+  tool?: string;
+  input?: Record<string, unknown>;
+  output?: Record<string, unknown>;
+  nextSteps?: string[];
+}
 
 const nodeTypes: NodeTypes = {
   stepNode: StepNode,
@@ -41,7 +52,7 @@ function calculateLayout(steps: HandStep[]): Map<string, { x: number; y: number 
   const stepMap = new Map(steps.map(s => [s.id, s]));
 
   // Find root nodes (not targeted by any other step)
-  const allTargets = new Set(steps.flatMap(s => s.nextSteps));
+  const allTargets = new Set(steps.flatMap(s => s.nextSteps ?? []));
   const roots = steps.filter(s => !allTargets.has(s.id));
 
   const visited = new Set<string>();
@@ -63,7 +74,7 @@ function calculateLayout(steps: HandStep[]): Map<string, { x: number; y: number 
 
     // Layout children
     let childX = x;
-    step.nextSteps.forEach((childId, index) => {
+    (step.nextSteps ?? []).forEach((childId, index) => {
       if (index > 0) childX += 150;
       layoutNode(childId, depth + 1, childX);
     });
@@ -122,7 +133,7 @@ const FlowCanvasInner: React.FC<FlowCanvasProps> = ({
   const initialEdges: Edge[] = useMemo(() => {
     const edges: Edge[] = [];
     steps.forEach(step => {
-      step.nextSteps.forEach((nextId, index) => {
+      (step.nextSteps ?? []).forEach((nextId, index) => {
         edges.push({
           id: `${step.id}-${nextId}`,
           source: step.id,
@@ -171,7 +182,7 @@ const FlowCanvasInner: React.FC<FlowCanvasProps> = ({
     // Update steps with new connection
     const updatedSteps = steps.map(step => {
       if (step.id === connection.source) {
-        return { ...step, nextSteps: [...step.nextSteps, connection.target!] };
+        return { ...step, nextSteps: [...(step.nextSteps ?? []), connection.target!] };
       }
       return step;
     });
@@ -188,7 +199,7 @@ const FlowCanvasInner: React.FC<FlowCanvasProps> = ({
       if (hasDeletedEdge) {
         return {
           ...step,
-          nextSteps: step.nextSteps.filter(id =>
+          nextSteps: (step.nextSteps ?? []).filter(id =>
             !deletedEdges.some(e => e.source === step.id && e.target === id)
           ),
         };
@@ -225,9 +236,12 @@ const FlowCanvasInner: React.FC<FlowCanvasProps> = ({
       // Create new step with unique ID
       const newStep: HandStep = {
         id: `${stepType}-${Date.now()}`,
-        name: `New ${stepType}`,
-        type: stepType,
-        config: {} as HandStep['config'],
+        order: 0,
+        title: `New ${stepType}`,
+        description: '',
+        tool: stepType,
+        input: {},
+        output: {},
         nextSteps: [],
       };
 

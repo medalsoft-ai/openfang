@@ -1,8 +1,9 @@
 import React, { useMemo } from 'react';
-import type { HandStep, StepTypeVariant } from '../../api/types';
+import type { StepTypeVariant } from '../../api/types';
+import type { LocalHandStep } from '../../utils/stepAdapter';
 
 interface VariableAutocompleteProps {
-  steps: HandStep[];
+  steps: LocalHandStep[];
   currentStepId: string;
   onSelect: (variable: string) => void;
   onClose: () => void;
@@ -145,7 +146,7 @@ export const VariableAutocomplete: React.FC<VariableAutocompleteProps> = ({
             </div>
           ) : (
             availableSteps.map((step) => {
-              const outputs = outputFieldsByType[step.type] || [];
+              const outputs = outputFieldsByType[(step.tool as StepTypeVariant) || 'execute-tool'] || [];
               return (
                 <div key={step.id} style={{ marginBottom: '8px' }}>
                   <div
@@ -157,7 +158,7 @@ export const VariableAutocomplete: React.FC<VariableAutocompleteProps> = ({
                       backgroundColor: '#f3f4f6',
                     }}
                   >
-                    {step.name}
+                    {step.title}
                     <span
                       style={{
                         marginLeft: '6px',

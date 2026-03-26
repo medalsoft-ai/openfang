@@ -58,6 +58,14 @@ interface AgentDetails extends Agent {
 interface PartialGeneration {
   content: string;
   toolCalls?: ToolCall[];
+  tool_calls?: ToolCall[]; // Alpine-compatible alias
+  statusMessage?: string; // For showing typing/thinking status
+  toolTextDetected?: boolean; // Track if we detected tool call in text
+  canvas?: {
+    id: string;
+    title: string;
+    html: string;
+  };
 }
 
 // Pending user message for optimistic update
@@ -70,6 +78,26 @@ interface PendingMessage {
 // Extended message for WebSocket streaming
 interface ExtendedMessage extends Message {
   isStreaming?: boolean;
+}
+
+// Filter out system guidance messages from content
+// These are LLM prompts injected by the backend, not user-facing content
+function filterSystemGuidance(content: string): string {
+  if (!content) return '';
+  // Split by lines and filter out lines starting with [System:
+  const lines = content.split('\n');
+  const filteredLines = lines.filter(line => {
+    const trimmed = line.replace(/^\s+/, '');
+    return !trimmed.startsWith('[System:');
+  });
+  return filteredLines.join('\n').trim();
+}
+
+// Check if a message should be completely hidden (only contains system guidance)
+function isSystemOnlyMessage(content: string): boolean {
+  if (!content) return false;
+  const filtered = filterSystemGuidance(content);
+  return filtered.length === 0 && content.includes('[System:');
 }
 
 // Code block component
@@ -272,8 +300,14 @@ function MessageBubble({
   const isSystem = message.role === 'system' || message.role === 'System';
 
   const showPartial = isLast && isAssistant && partialGeneration;
-  const displayContent = showPartial ? partialGeneration!.content : (message.content || message.text || '');
+  const rawContent = showPartial ? partialGeneration!.content : (message.content || message.text || '');
+  const displayContent = filterSystemGuidance(rawContent);
   const displayToolCalls = showPartial ? partialGeneration!.toolCalls : message.tools;
+
+  // Skip rendering if this is a system-only message (no visible content after filtering)
+  if (isSystemOnlyMessage(rawContent) && !displayToolCalls?.length) {
+    return null;
+  }
 
   const timestamp = useMemo(() => {
     if (!message.timestamp) return '';
@@ -560,27 +594,193 @@ export default function Chat() {
     switch (data.type) {
       case 'generation_start':
       case 'typing':
-        // Backend sends 'typing' with state: 'start'/'stop'
+        // Backend sends 'typing' with state: 'start'/'stop'/'tool'
         if (data.state === 'start') {
           console.log('[Chat] Generation started (typing)');
           setIsGenerating(true);
           setPartialGeneration({ content: '' });
-          // Don't clear pending user message here - wait for first chunk or completion
-          // This ensures the message stays visible until server confirms it
+        } else if (data.state === 'tool') {
+          // Show tool usage in partial generation
+          setPartialGeneration((prev) => ({
+            content: prev?.content || '',
+            toolCalls: prev?.toolCalls || [],
+            statusMessage: `Using ${(data.tool as string) || 'tool'}...`,
+          }));
         } else if (data.state === 'stop') {
           console.log('[Chat] Generation stopped (typing)');
           setIsGenerating(false);
         }
         break;
 
+      case 'thinking':
+        // Legacy thinking event (backward compat)
+        if (!isGenerating) {
+          setIsGenerating(true);
+          setPartialGeneration({ content: '', statusMessage: data.level ? `Thinking (${data.level})...` : 'Processing...' });
+        }
+        break;
+
       case 'generation_chunk':
-        // Stream chunk received
-        setPartialGeneration((prev) => ({
-          content: (prev?.content || '') + (data.content || ''),
-          toolCalls: data.tool_calls as ToolCall[] | undefined,
-        }));
+      case 'text_delta':
+        // Stream chunk received (text_delta is Alpine-compatible format)
+        setPartialGeneration((prev) => {
+          let newContent = (prev?.content || '') + ((data.content as string) || '');
+          let toolCalls = prev?.toolCalls || [];
+          let toolTextDetected = prev?.toolTextDetected || false;
+
+          // Detect function-call patterns streamed as text and convert to tool cards
+          // Pattern: tool_name</function={...} or <function=tool_name>
+          if (!toolTextDetected) {
+            const fcIdx = newContent.search(/\w+<\/function[=,>]/) ?? newContent.search(/<function=\w+>/);
+            if (fcIdx !== -1) {
+              const fcPart = newContent.substring(fcIdx);
+              const toolMatch = fcPart.match(/^(\w+)<\/function/) || fcPart.match(/^<function=(\w+)>/);
+              if (toolMatch) {
+                newContent = newContent.substring(0, fcIdx).trim();
+                toolTextDetected = true;
+                const inputMatch = fcPart.match(/[=,>]\s*(\{[\s\S]*)/);
+                toolCalls = [...toolCalls, {
+                  id: `${toolMatch[1]}-txt-${Date.now()}`,
+                  name: toolMatch[1],
+                  running: true,
+                  expanded: true,
+                  input: inputMatch ? inputMatch[1].replace(/<\/function>?\s*$/, '').trim() : '',
+                  result: '',
+                  is_error: false,
+                }];
+              }
+            }
+          }
+
+          return {
+            content: newContent,
+            toolCalls,
+            toolTextDetected,
+            tool_calls: data.tool_calls as ToolCall[] | undefined,
+          };
+        });
         // Clear pending user message when we receive first chunk (server has processed user message)
         setPendingUserMessage(null);
+        break;
+
+      case 'tool_start':
+        // Tool call started - add to partial generation
+        setPartialGeneration((prev) => {
+          const existingTools = prev?.toolCalls || [];
+          const newTool: ToolCall = {
+            id: `${data.tool as string}-${Date.now()}`,
+            name: data.tool as string,
+            running: true,
+            expanded: true,
+            input: '',
+            result: '',
+            is_error: false,
+          };
+          return {
+            content: prev?.content || '',
+            toolCalls: [...existingTools, newTool],
+          };
+        });
+        break;
+
+      case 'tool_end':
+        // Tool call ended - update input params
+        setPartialGeneration((prev) => {
+          if (!prev?.toolCalls?.length) return prev;
+          const updatedTools = [...prev.toolCalls];
+          // Find the last running tool with matching name
+          for (let i = updatedTools.length - 1; i >= 0; i--) {
+            if (updatedTools[i].name === data.tool && updatedTools[i].running) {
+              updatedTools[i] = {
+                ...updatedTools[i],
+                input: data.input as string | undefined,
+              };
+              break;
+            }
+          }
+          return { ...prev, toolCalls: updatedTools };
+        });
+        break;
+
+      case 'tool_result':
+        // Tool execution completed - update result
+        setPartialGeneration((prev) => {
+          if (!prev?.toolCalls?.length) return prev;
+          const updatedTools = [...prev.toolCalls];
+          // Find the last running tool with matching name
+          for (let i = updatedTools.length - 1; i >= 0; i--) {
+            if (updatedTools[i].name === data.tool && updatedTools[i].running) {
+              const result = data.result as string | undefined;
+              let imageUrls: string[] | undefined;
+              let audioFile: string | undefined;
+              let audioDuration: number | undefined;
+
+              // Extract image URLs from image_generate or browser_screenshot results
+              if ((data.tool === 'image_generate' || data.tool === 'browser_screenshot') && !data.is_error) {
+                try {
+                  const parsed = JSON.parse(result || '{}');
+                  if (parsed.image_urls && parsed.image_urls.length) {
+                    imageUrls = parsed.image_urls;
+                  }
+                } catch { /* not JSON */ }
+              }
+
+              // Extract audio file path from text_to_speech results
+              if (data.tool === 'text_to_speech' && !data.is_error) {
+                try {
+                  const ttsResult = JSON.parse(result || '{}');
+                  if (ttsResult.saved_to) {
+                    audioFile = ttsResult.saved_to;
+                    audioDuration = ttsResult.duration_estimate_ms;
+                  }
+                } catch { /* not JSON */ }
+              }
+
+              updatedTools[i] = {
+                ...updatedTools[i],
+                running: false,
+                result,
+                is_error: !!data.is_error,
+                _imageUrls: imageUrls,
+                _audioFile: audioFile,
+                _audioDuration: audioDuration,
+              };
+              break;
+            }
+          }
+          return { ...prev, toolCalls: updatedTools };
+        });
+        break;
+
+      case 'phase':
+        // Phase progress updates - can be used to show thinking/tool_use states
+        if (data.phase === 'context_warning') {
+          toaster.error((data.detail as string) || 'Context limit reached');
+        } else if (data.phase === 'thinking' && partialGeneration) {
+          // Update status message during thinking phase
+          setPartialGeneration((prev) => prev ? { ...prev, statusMessage: 'Thinking...' } : null);
+        } else if (data.phase === 'tool_use' && partialGeneration) {
+          setPartialGeneration((prev) => prev ? { ...prev, statusMessage: `Using ${(data.detail as string) || 'tool'}...` } : null);
+        }
+        // Other phases (streaming, done) are internal progress - skip
+        break;
+
+      case 'command_result':
+        // Command execution result - show as system message
+        toaster.info((data.message as string) || 'Command executed');
+        break;
+
+      case 'canvas':
+        // Agent presented an interactive canvas - add to messages
+        setPartialGeneration((prev) => ({
+          content: prev?.content || '',
+          toolCalls: prev?.toolCalls || [],
+          canvas: {
+            id: data.canvas_id as string,
+            title: (data.title as string) || 'Canvas',
+            html: data.html as string,
+          },
+        }));
         break;
 
       case 'generation_complete':
@@ -597,6 +797,14 @@ export default function Chat() {
         queryClient.invalidateQueries({ queryKey: ['sessions', agentId] });
         break;
 
+      case 'silent_complete':
+        // Agent intentionally chose not to reply
+        console.log('[Chat] Silent complete (NO_REPLY)');
+        setIsGenerating(false);
+        setPartialGeneration(null);
+        setPendingUserMessage(null);
+        break;
+
       case 'generation_error':
       case 'error':
         // Backend sends 'error' on failure
@@ -610,14 +818,14 @@ export default function Chat() {
 
       case 'connected':
       case 'agents_updated':
-      case 'phase':
+      case 'pong':
         // Ignore these non-chat messages
         break;
 
       default:
         console.log('[Chat] Unknown WS message type:', data.type);
     }
-  }, [agentId, sessionId, queryClient, t]);
+  }, [agentId, sessionId, queryClient, t, isGenerating, partialGeneration]);
 
   const { connectionState, sendMessage: sendWsMessage, isConnected, reconnect } = useSessionWebSocket({
     agentId,
@@ -711,10 +919,17 @@ export default function Chat() {
     console.log('[Chat] messages count:', msgs.length);
 
     // Generate stable unique IDs for each message to ensure proper rendering
-    return msgs.map((m, idx) => ({
-      ...m,
-      id: m.id || `${sessionId}-${idx}-${m.timestamp || Date.now()}`,
-    }));
+    // and sort by timestamp to ensure correct chronological order
+    return msgs
+      .map((m, idx) => ({
+        ...m,
+        id: m.id || `${sessionId}-${idx}-${m.timestamp || Date.now()}`,
+      }))
+      .sort((a, b) => {
+        const timeA = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+        const timeB = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+        return timeA - timeB;
+      });
   }, [messagesData, sessionId]);
 
   // ============================================
@@ -826,6 +1041,10 @@ export default function Chat() {
     mutationFn: ({ agentId, sessionId }: { agentId: string; sessionId: string }) =>
       api.switchSession(agentId, sessionId),
     onMutate: (variables) => {
+      // Reset generating state when switching sessions to avoid showing thinking indicator from previous session
+      setIsGenerating(false);
+      setPartialGeneration(null);
+      setPendingUserMessage(null);
       // Immediately clear old messages for the NEW session to prevent showing stale data during transition
       queryClient.setQueryData(['messages', variables.agentId, variables.sessionId], { messages: [] });
     },

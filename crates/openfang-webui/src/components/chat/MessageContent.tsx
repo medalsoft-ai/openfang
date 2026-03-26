@@ -12,6 +12,18 @@ interface MessageContentProps {
   isStreaming?: boolean;
 }
 
+// Filter out all system guidance messages from content
+// These messages are LLM prompts injected by the backend, not user-facing content
+function filterSystemGuidance(content: string): string {
+  // Split by lines and filter out lines starting with [System:
+  const lines = content.split('\n');
+  const filteredLines = lines.filter(line => {
+    const trimmed = line.replace(/^\s+/, '');
+    return !trimmed.startsWith('[System:');
+  });
+  return filteredLines.join('\n').trim();
+}
+
 // Escape HTML for plain text display
 function escapeHtml(text: string): string {
   const div = document.createElement('div');
@@ -32,11 +44,13 @@ function highlightSearch(text: string, query: string): string {
 
 // Memoized component to prevent re-renders when parent updates
 function MessageContentComponent({ message, searchQuery, isStreaming }: MessageContentProps) {
-  const content = message.content || message.text || '';
+  const rawContent = message.content || message.text || '';
+
+  // Filter out system guidance messages (these are LLM prompts, not user-facing content)
+  const content = filterSystemGuidance(rawContent);
   // Align with Alpine: explicit role mapping (backend returns "User"/"Assistant"/"System")
   const normalizedRole = message.role === 'User' ? 'user' : (message.role === 'System' ? 'system' : 'agent');
   const isUser = normalizedRole === 'user';
-  const isAssistant = normalizedRole === 'agent';
   const isSystem = normalizedRole === 'system';
   const isHtml = message.isHtml;
 
@@ -87,6 +101,14 @@ function MessageContentComponent({ message, searchQuery, isStreaming }: MessageC
       </div>
     );
   }, [content, isHtml, shouldRenderMarkdown, searchQuery]);
+
+  // Check if message has any visible content after filtering
+  const hasVisibleContent = content.length > 0 || (message.images && message.images.length > 0) || (message.tools && message.tools.length > 0);
+
+  // Don't render anything if this is just a system guidance message with no other content
+  if (!hasVisibleContent) {
+    return null;
+  }
 
   return (
     <div className="message-content">
