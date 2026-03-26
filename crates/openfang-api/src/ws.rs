@@ -296,8 +296,8 @@ async fn handle_agent_ws(
     let agent_id_clone = agent_id.to_string();
     let state_clone = Arc::clone(&state);
     let status_handle = tokio::spawn(async move {
-        // Subscribe to step status changes
-        let mut status_rx = state_clone.kernel.hand_executor.subscribe();
+        // Subscribe to step status changes from kernel's broadcast channel
+        let mut status_rx = state_clone.kernel.hand_step_broadcast.subscribe();
 
         while let Ok(change) = status_rx.recv().await {
             // Only forward if this status change is for our agent

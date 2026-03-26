@@ -27,7 +27,6 @@ use openfang_runtime::python_runtime::{self, PythonConfig};
 use openfang_runtime::routing::ModelRouter;
 use openfang_runtime::sandbox::{SandboxConfig, WasmSandbox};
 use openfang_runtime::execution_store::ExecutionStore;
-use openfang_runtime::hand_executor::HandExecutor;
 use openfang_runtime::tool_runner::builtin_tool_definitions;
 use openfang_types::agent::*;
 use openfang_types::capability::Capability;
@@ -121,8 +120,8 @@ pub struct OpenFangKernel {
     pub hand_registry: openfang_hands::registry::HandRegistry,
     /// Execution store for Hand execution state tracking.
     pub execution_store: ExecutionStore,
-    /// Hand executor for coordinating Hand workflow execution.
-    pub hand_executor: Arc<HandExecutor>,
+    /// Broadcast channel for Hand step status changes (used by WebSocket clients).
+    pub hand_step_broadcast: tokio::sync::broadcast::Sender<openfang_runtime::hand_executor::StepStatusChange>,
     /// Credential resolver — vault → dotenv → env var priority chain.
     pub credential_resolver: std::sync::Mutex<openfang_extensions::credentials::CredentialResolver>,
     /// Extension/integration registry (bundled MCP templates + install state).
@@ -1005,9 +1004,9 @@ impl OpenFangKernel {
         let initial_broadcast = config.broadcast.clone();
         let auto_reply_engine = crate::auto_reply::AutoReplyEngine::new(config.auto_reply.clone());
 
-        // Initialize execution store and hand executor
+        // Initialize execution store and hand step broadcast
         let execution_store = ExecutionStore::new(memory.usage_conn());
-        let hand_executor = Arc::new(HandExecutor::new(execution_store.clone()));
+        let (hand_step_broadcast, _) = tokio::sync::broadcast::channel(100);
 
         let kernel = Self {
             config,
@@ -1040,7 +1039,7 @@ impl OpenFangKernel {
             embedding_driver,
             hand_registry,
             execution_store,
-            hand_executor,
+            hand_step_broadcast,
             credential_resolver: std::sync::Mutex::new(credential_resolver),
             extension_registry: std::sync::RwLock::new(extension_registry),
             extension_health,
@@ -1860,23 +1859,7 @@ impl OpenFangKernel {
                 ),
                 sender_id,
                 sender_name,
-                hand_execution_context: {
-                    // Check if this agent has an active Hand execution
-                    // Use block_on since we're in a non-async function
-                    let agent_id_str = agent_id.to_string();
-                    let exec_state = tokio::task::block_in_place(|| {
-                        tokio::runtime::Handle::current().block_on(async {
-                            self.hand_executor.get_execution_by_agent(&agent_id_str).await
-                        })
-                    });
-                    exec_state.map(|state| {
-                        openfang_runtime::hand_execution_prompt::build_hand_execution_prompt(
-                            &state.steps,
-                            state.current_step_id.as_deref(),
-                            &state.step_outputs,
-                        )
-                    })
-                },
+                hand_execution_context: None,
             };
             manifest.model.system_prompt =
                 openfang_runtime::prompt_builder::build_system_prompt(&prompt_ctx);
@@ -2421,23 +2404,7 @@ impl OpenFangKernel {
                 ),
                 sender_id,
                 sender_name,
-                hand_execution_context: {
-                    // Check if this agent has an active Hand execution
-                    // Use block_on since we're in a non-async function
-                    let agent_id_str = agent_id.to_string();
-                    let exec_state = tokio::task::block_in_place(|| {
-                        tokio::runtime::Handle::current().block_on(async {
-                            self.hand_executor.get_execution_by_agent(&agent_id_str).await
-                        })
-                    });
-                    exec_state.map(|state| {
-                        openfang_runtime::hand_execution_prompt::build_hand_execution_prompt(
-                            &state.steps,
-                            state.current_step_id.as_deref(),
-                            &state.step_outputs,
-                        )
-                    })
-                },
+                hand_execution_context: None,
             };
             manifest.model.system_prompt =
                 openfang_runtime::prompt_builder::build_system_prompt(&prompt_ctx);
@@ -3444,8 +3411,9 @@ impl OpenFangKernel {
             .unwrap_or(instance))
     }
 
-    /// Start Hand execution for an agent.
-    /// This creates an execution state and begins executing the first step.
+    /// Start Hand execution for an agent using Session mechanism.
+    ///
+    /// This creates a new Session and sends a system message to trigger Hand execution.
     pub async fn start_hand_execution(
         &self,
         hand_id: &str,
@@ -3461,15 +3429,6 @@ impl OpenFangKernel {
                 )))
             })?;
 
-        // Check if there's already an active execution for this agent
-        let existing = self.hand_executor.get_execution_by_agent(agent_id).await;
-        if let Some(exec) = existing {
-            return Err(KernelError::OpenFang(OpenFangError::Internal(format!(
-                "Agent already has an active execution: {}",
-                exec.execution_id
-            ))));
-        }
-
         // Get steps from hand definition
         let steps = def.steps.clone();
         if steps.is_empty() {
@@ -3478,37 +3437,62 @@ impl OpenFangKernel {
             )));
         }
 
-        // Start the execution
-        let execution_id = self
-            .hand_executor
-            .start_execution(
-                hand_id.to_string(),
-                agent_id.to_string(),
-                steps,
-            )
-            .await
-            .map_err(|e| KernelError::OpenFang(OpenFangError::Internal(e.to_string())))?;
+        // Generate execution ID
+        let execution_id = uuid::Uuid::new_v4().to_string();
 
-        // Automatically start the first step
-        if let Some(first_step) = self.hand_executor.get_execution_state(&execution_id).await {
-            if let Some(first_step_id) = first_step.current_step_id {
-                if let Err(e) = self.hand_executor.start_step(&execution_id, &first_step_id).await {
-                    // Log error but don't fail - execution is created, step can be started manually
-                    warn!(
-                        execution_id = %execution_id,
-                        step_id = %first_step_id,
-                        error = %e,
-                        "Failed to auto-start first step"
-                    );
-                }
-            }
-        }
+        // Parse agent_id
+        let agent_id_uuid = agent_id.parse::<uuid::Uuid>()
+            .map_err(|e| KernelError::OpenFang(OpenFangError::Internal(
+                format!("Invalid agent ID: {e}")
+            )))?;
+        let agent_id_typed = openfang_types::agent::AgentId(agent_id_uuid);
+
+        // Create a new session for Hand execution
+        let hand_name = def.name.clone();
+        let session_result = self.create_agent_session(
+            agent_id_typed,
+            Some(&format!("Hand: {}", hand_name)),
+        ).map_err(|e| KernelError::OpenFang(OpenFangError::Internal(
+            format!("Failed to create session for Hand execution: {e}")
+        )))?;
+
+        let session_id = session_result.get("session_id")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| KernelError::OpenFang(OpenFangError::Internal(
+                "Session creation did not return session_id".to_string()
+            )))?;
+
+        // Build the Hand execution message for the LLM
+        let steps_description = steps.iter()
+            .map(|s| format!("- {}: {}", s.id, s.name))
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        let hand_description = if def.description.is_empty() {
+            "No description"
+        } else {
+            &def.description
+        };
+        let hand_message = format!(
+            "Execute Hand: {}\n\nDescription: {}\n\nSteps:\n{}\n\nPlease start executing the first step by calling the hand_step_start tool with step_id '{}'.",
+            hand_name,
+            hand_description,
+            steps_description,
+            steps.first().map(|s| s.id.as_str()).unwrap_or("unknown")
+        );
+
+        // Send the Hand execution message to the agent (which will use the new session)
+        let _ = self.send_message(
+            agent_id_typed,
+            &hand_message,
+        ).await;
 
         info!(
             hand_id = %hand_id,
             agent_id = %agent_id,
             execution_id = %execution_id,
-            "Hand execution started"
+            session_id = %session_id,
+            "Hand execution started via Session"
         );
 
         Ok(execution_id)
@@ -3537,6 +3521,105 @@ impl OpenFangKernel {
             }
         }
 
+        None
+    }
+
+    /// Report the start of a Hand step execution.
+    /// Called by the LLM when it begins executing a step.
+    /// Broadcasts the step status change via Session WebSocket.
+    pub async fn hand_step_start(
+        &self,
+        hand_id: &str,
+        step_id: &str,
+        session_id: &str,
+    ) -> KernelResult<()> {
+        // Broadcast step status change via session WebSocket
+        self.broadcast_hand_step_status(
+            session_id,
+            hand_id,
+            step_id,
+            "running",
+            None,
+        ).await;
+
+        info!(
+            hand_id = %hand_id,
+            step_id = %step_id,
+            session_id = %session_id,
+            "Hand step started"
+        );
+
+        Ok(())
+    }
+
+    /// Report the completion of a Hand step execution.
+    /// Called by the LLM when it finishes executing a step.
+    /// Broadcasts the step status change via Session WebSocket.
+    pub async fn hand_step_complete(
+        &self,
+        hand_id: &str,
+        step_id: &str,
+        session_id: &str,
+        success: bool,
+        result: Option<&str>,
+    ) -> KernelResult<()> {
+        let status = if success { "completed" } else { "failed" };
+
+        // Broadcast step status change via session WebSocket
+        self.broadcast_hand_step_status(
+            session_id,
+            hand_id,
+            step_id,
+            status,
+            result,
+        ).await;
+
+        info!(
+            hand_id = %hand_id,
+            step_id = %step_id,
+            session_id = %session_id,
+            success = success,
+            "Hand step completed"
+        );
+
+        Ok(())
+    }
+
+    /// Broadcast Hand step status change via the broadcast channel.
+    /// WebSocket clients subscribe to this channel to receive real-time updates.
+    async fn broadcast_hand_step_status(
+        &self,
+        _session_id: &str,
+        hand_id: &str,
+        step_id: &str,
+        status: &str,
+        result: Option<&str>,
+    ) {
+        // Get agent_id from hand_id (look up the hand instance)
+        let agent_id = self.get_hand_id_for_agent_by_hand(hand_id).await.unwrap_or_default();
+
+        let change = openfang_runtime::hand_executor::StepStatusChange {
+            execution_id: format!("{}_{}", hand_id, _session_id),
+            hand_id: hand_id.to_string(),
+            agent_id,
+            step_id: step_id.to_string(),
+            status: status.to_string(),
+            timestamp: chrono::Utc::now().to_rfc3339(),
+            output: result.map(|r| serde_json::json!({ "result": r })),
+        };
+
+        // Broadcast to all subscribers (WebSocket clients will receive this)
+        let _ = self.hand_step_broadcast.send(change);
+    }
+
+    /// Helper to find agent_id associated with a hand_id
+    async fn get_hand_id_for_agent_by_hand(&self, hand_id: &str) -> Option<String> {
+        let instances = self.hand_registry.list_instances();
+        for instance in instances {
+            if instance.hand_id == hand_id {
+                return instance.agent_id.map(|id| id.to_string());
+            }
+        }
         None
     }
 
@@ -6443,6 +6526,30 @@ impl KernelHandle for OpenFangKernel {
         agent_id: &str,
     ) -> Result<String, String> {
         Self::start_hand_execution(self, hand_id, agent_id)
+            .await
+            .map_err(|e| e.to_string())
+    }
+
+    async fn hand_step_start(
+        &self,
+        hand_id: &str,
+        step_id: &str,
+        session_id: &str,
+    ) -> Result<(), String> {
+        Self::hand_step_start(self, hand_id, step_id, session_id)
+            .await
+            .map_err(|e| e.to_string())
+    }
+
+    async fn hand_step_complete(
+        &self,
+        hand_id: &str,
+        step_id: &str,
+        session_id: &str,
+        success: bool,
+        result: Option<&str>,
+    ) -> Result<(), String> {
+        Self::hand_step_complete(self, hand_id, step_id, session_id, success, result)
             .await
             .map_err(|e| e.to_string())
     }

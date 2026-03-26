@@ -562,6 +562,10 @@ export default function Chat() {
   const agentId = searchParams.get('agent');
   const sessionId = searchParams.get('session');
 
+  // LocalStorage persistence for last used agent and session
+  const [lastUsedAgent, setLastUsedAgent] = useLocalStorage<string | null>('chat:lastAgent', null);
+  const [lastUsedSession, setLastUsedSession] = useLocalStorage<string | null>('chat:lastSession', null);
+
   // Refs
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -1182,12 +1186,71 @@ export default function Chat() {
     }
   }, [messages.length, pendingUserMessage, partialGeneration, scrollToBottom]);
 
+  // Refs to prevent duplicate auto-selection attempts
+  const hasAutoSelectedAgent = useRef(false);
+  const hasAutoSelectedSession = useRef(false);
+
   // Select first agent if none selected and agents loaded
+  // Priority: 1. URL param, 2. localStorage, 3. First agent
   useEffect(() => {
-    if (!agentId && agents.length > 0) {
-      handleSelectAgent(agents[0].id);
+    if (!agentId && agents.length > 0 && !hasAutoSelectedAgent.current) {
+      hasAutoSelectedAgent.current = true;
+      // Try to restore last used agent from localStorage
+      const agentToSelect = lastUsedAgent && agents.find(a => a.id === lastUsedAgent)
+        ? lastUsedAgent
+        : agents[0].id;
+      handleSelectAgent(agentToSelect);
     }
-  }, [agentId, agents, handleSelectAgent]);
+  }, [agentId, agents, handleSelectAgent, lastUsedAgent]);
+
+  // Auto-select session when agent is selected
+  // Priority: 1. URL param, 2. localStorage (if matches current agent), 3. First session, 4. Create new
+  useEffect(() => {
+    if (agentId && !sessionId && !isLoadingSessions && !hasAutoSelectedSession.current) {
+      hasAutoSelectedSession.current = true;
+      if (sessions.length > 0) {
+        // Try to restore last used session if it belongs to current agent
+        const sessionToSelect = lastUsedSession && sessions.find(s => s.session_id === lastUsedSession)
+          ? lastUsedSession
+          : sessions[0].session_id;
+        // Use direct navigation instead of handler to avoid circular dependencies
+        setSearchParams({ agent: agentId, session: sessionToSelect });
+      } else if (!createSessionMutation.isPending) {
+        // No sessions exist for this agent, create one
+        createSessionMutation.mutate({ agent_id: agentId });
+      }
+    }
+  }, [agentId, sessionId, sessions, isLoadingSessions, lastUsedSession, createSessionMutation, setSearchParams]);
+
+  // Reset auto-selection refs when agent/session changes via URL
+  useEffect(() => {
+    if (agentId) {
+      hasAutoSelectedAgent.current = true;
+    } else {
+      hasAutoSelectedAgent.current = false;
+    }
+  }, [agentId]);
+
+  useEffect(() => {
+    if (sessionId) {
+      hasAutoSelectedSession.current = true;
+    } else {
+      hasAutoSelectedSession.current = false;
+    }
+  }, [sessionId]);
+
+  // Update localStorage when agent/session changes
+  useEffect(() => {
+    if (agentId) {
+      setLastUsedAgent(agentId);
+    }
+  }, [agentId, setLastUsedAgent]);
+
+  useEffect(() => {
+    if (sessionId) {
+      setLastUsedSession(sessionId);
+    }
+  }, [sessionId, setLastUsedSession]);
 
   // ============================================
   // RENDER

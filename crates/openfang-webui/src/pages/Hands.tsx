@@ -1086,8 +1086,27 @@ export function Hands() {
   });
 
   const startExecutionMutation = useMutation({
-    mutationFn: (handId: string) => api.startHandExecution(handId),
+    mutationFn: async (handId: string) => {
+      // Get the active instance for this hand to obtain agent_id
+      const instance = activeInstances.find((inst) => inst.hand_id === handId);
+      if (!instance?.agent_id) {
+        throw new Error('Hand is not activated. Please activate the Hand first.');
+      }
+      // Create a new session for Hand execution
+      const session = await api.createSession(instance.agent_id, `Hand: ${displayHand?.name || handId}`, handId);
+      return {
+        execution_id: session.id,
+        hand_id: handId,
+        agent_id: instance.agent_id,
+      };
+    },
     onSuccess: (data) => {
+      // Store execution ID for WebSocket connection
+      setExecutionState((prev) => ({
+        ...prev,
+        executionId: data.execution_id,
+        stepStatuses: {},
+      }));
       toaster.success(t('sop.executionStarted', 'Execution started: {{executionId}}', { executionId: data.execution_id.slice(0, 8) }));
     },
     onError: (error: Error) => {
@@ -1114,9 +1133,10 @@ export function Hands() {
   }, [displayHand, activeInstances]);
 
   // WebSocket connection for real-time execution updates (Wave 4)
+  // Uses the execution session ID created when Hand execution starts
   useSessionWebSocket({
     agentId: activeInstance?.agent_id || null,
-    sessionId: activeInstance?.instance_id || null,
+    sessionId: executionState.executionId || null,
     onMessage: (message) => {
       if (message.type === 'step_status_change') {
         const { step_id, status } = message.data as { step_id: string; status: 'pending' | 'running' | 'completed' | 'failed' | 'waiting' };

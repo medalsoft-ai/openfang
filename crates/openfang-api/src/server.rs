@@ -405,28 +405,12 @@ pub async fn build_router(
         )
         // Hand Execution endpoints
         .route(
-            "/api/hands/{hand_id}/steps/{step_id}/status",
-            axum::routing::get(routes::get_step_status),
-        )
-        .route(
-            "/api/hands/{hand_id}/steps/{step_id}/execute",
-            axum::routing::post(routes::execute_step),
-        )
-        .route(
             "/api/hands/{hand_id}/executions",
             axum::routing::get(routes::list_hand_executions),
         )
         .route(
             "/api/hands/{hand_id}/executions/{exec_id}",
             axum::routing::get(routes::get_hand_execution),
-        )
-        .route(
-            "/api/hands/{hand_id}/executions/{exec_id}/retry",
-            axum::routing::post(routes::retry_hand_execution),
-        )
-        .route(
-            "/api/hands/{hand_id}/executions/{exec_id}/input",
-            axum::routing::post(routes::submit_hand_input),
         )
         .route(
             "/api/hands/instances/{id}/pause",

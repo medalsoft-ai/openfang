@@ -341,6 +341,8 @@ pub async fn execute_tool(
         "hand_create" => tool_hand_create(input, kernel).await,
         "hand_update_steps" => tool_hand_update_steps(input, kernel).await,
         "hand_start_execution" => tool_hand_start_execution(input, kernel, caller_agent_id).await,
+        "hand_step_start" => tool_hand_step_start(input, kernel, caller_agent_id).await,
+        "hand_step_complete" => tool_hand_step_complete(input, kernel, caller_agent_id).await,
 
         // A2A outbound tools (cross-instance agent communication)
         "a2a_discover" => tool_a2a_discover(input).await,
@@ -1266,6 +1268,34 @@ pub fn builtin_tool_definitions() -> Vec<ToolDefinition> {
                     "hand_id": { "type": "string", "description": "The ID of the Hand to execute. Optional if the agent is already associated with a Hand." },
                     "agent_id": { "type": "string", "description": "The ID of the agent to execute the Hand. Defaults to the calling agent if not provided." }
                 }
+            }),
+        },
+        ToolDefinition {
+            name: "hand_step_start".to_string(),
+            description: "Report the start of a Hand step execution. Call this when you begin working on a step in the Hand/SOP. This notifies the system and user that step execution has started.".to_string(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "hand_id": { "type": "string", "description": "The ID of the Hand being executed. Optional if the agent is already associated with a Hand." },
+                    "step_id": { "type": "string", "description": "The ID of the step being started (e.g., 'step_001')." },
+                    "session_id": { "type": "string", "description": "The Session ID for the current execution context. Used to broadcast updates via WebSocket." }
+                },
+                "required": ["step_id", "session_id"]
+            }),
+        },
+        ToolDefinition {
+            name: "hand_step_complete".to_string(),
+            description: "Report the completion of a Hand step execution. Call this when you finish working on a step in the Hand/SOP. This updates the execution state and notifies the user of completion.".to_string(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "hand_id": { "type": "string", "description": "The ID of the Hand being executed. Optional if the agent is already associated with a Hand." },
+                    "step_id": { "type": "string", "description": "The ID of the step being completed (e.g., 'step_001')." },
+                    "session_id": { "type": "string", "description": "The Session ID for the current execution context. Used to broadcast updates via WebSocket." },
+                    "success": { "type": "boolean", "description": "Whether the step completed successfully. Default: true" },
+                    "result": { "type": "string", "description": "Optional summary of the step execution result or output." }
+                },
+                "required": ["step_id", "session_id"]
             }),
         },
         // --- A2A outbound tools ---
@@ -3525,6 +3555,79 @@ async fn tool_hand_start_execution(
     Ok(format!(
         "Hand execution started!\n  Hand: {}\n  Agent: {}\n  Execution ID: {}\n\nThe first step is now being executed. Watch for step status updates via step_status_change events.",
         hand_id, agent_id, execution_id
+    ))
+}
+
+async fn tool_hand_step_start(
+    input: &serde_json::Value,
+    kernel: Option<&Arc<dyn KernelHandle>>,
+    caller_agent_id: Option<&str>,
+) -> Result<String, String> {
+    let kh = require_kernel(kernel)?;
+
+    // Get hand_id (auto-detect if not provided)
+    let hand_id = if let Some(hid) = input["hand_id"].as_str() {
+        hid.to_string()
+    } else if let Some(agent_id) = caller_agent_id {
+        kh.get_hand_id_for_agent(agent_id)
+            .ok_or("Agent is not associated with a Hand. Please provide 'hand_id' parameter.")?
+    } else {
+        return Err("Missing 'hand_id' parameter and no caller agent context available".to_string());
+    };
+
+    let step_id = input["step_id"]
+        .as_str()
+        .ok_or("Missing 'step_id' parameter")?;
+
+    let session_id = input["session_id"]
+        .as_str()
+        .ok_or("Missing 'session_id' parameter")?;
+
+    kh.hand_step_start(&hand_id, step_id, session_id).await?;
+
+    Ok(format!(
+        "Step started: {} (Hand: {}, Session: {})",
+        step_id, hand_id, session_id
+    ))
+}
+
+async fn tool_hand_step_complete(
+    input: &serde_json::Value,
+    kernel: Option<&Arc<dyn KernelHandle>>,
+    caller_agent_id: Option<&str>,
+) -> Result<String, String> {
+    let kh = require_kernel(kernel)?;
+
+    // Get hand_id (auto-detect if not provided)
+    let hand_id = if let Some(hid) = input["hand_id"].as_str() {
+        hid.to_string()
+    } else if let Some(agent_id) = caller_agent_id {
+        kh.get_hand_id_for_agent(agent_id)
+            .ok_or("Agent is not associated with a Hand. Please provide 'hand_id' parameter.")?
+    } else {
+        return Err("Missing 'hand_id' parameter and no caller agent context available".to_string());
+    };
+
+    let step_id = input["step_id"]
+        .as_str()
+        .ok_or("Missing 'step_id' parameter")?;
+
+    let session_id = input["session_id"]
+        .as_str()
+        .ok_or("Missing 'session_id' parameter")?;
+
+    let success = input["success"].as_bool().unwrap_or(true);
+    let result = input["result"].as_str();
+
+    kh.hand_step_complete(&hand_id, step_id, session_id, success, result).await?;
+
+    Ok(format!(
+        "Step completed: {} (Hand: {}, Session: {}, Success: {}){}",
+        step_id,
+        hand_id,
+        session_id,
+        success,
+        result.map(|r| format!(", Result: {}", r)).unwrap_or_default()
     ))
 }
 

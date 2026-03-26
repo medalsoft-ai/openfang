@@ -245,8 +245,10 @@ class APIClient {
     return this.get(url);
   }
 
-  async createSession(agentId: string, title?: string): Promise<Session> {
-    return this.post(`/api/agents/${agentId}/sessions`, { title });
+  async createSession(agentId: string, title?: string, handId?: string): Promise<Session> {
+    const body: { title?: string; hand_id?: string } = { title };
+    if (handId) body.hand_id = handId;
+    return this.post(`/api/agents/${agentId}/sessions`, body);
   }
 
   async deleteSession(id: string): Promise<void> {

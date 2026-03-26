@@ -208,6 +208,32 @@ pub trait KernelHandle: Send + Sync {
         Err("Hands system not available".to_string())
     }
 
+    /// Report the start of a Hand step execution.
+    /// Called by the LLM when it begins executing a step.
+    async fn hand_step_start(
+        &self,
+        hand_id: &str,
+        step_id: &str,
+        session_id: &str,
+    ) -> Result<(), String> {
+        let _ = (hand_id, step_id, session_id);
+        Err("Hands system not available".to_string())
+    }
+
+    /// Report the completion of a Hand step execution.
+    /// Called by the LLM when it finishes executing a step.
+    async fn hand_step_complete(
+        &self,
+        hand_id: &str,
+        step_id: &str,
+        session_id: &str,
+        success: bool,
+        result: Option<&str>,
+    ) -> Result<(), String> {
+        let _ = (hand_id, step_id, session_id, success, result);
+        Err("Hands system not available".to_string())
+    }
+
     /// Get the Hand ID associated with an agent (if any).
     fn get_hand_id_for_agent(&self, agent_id: &str) -> Option<String> {
         let _ = agent_id;
