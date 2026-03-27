@@ -7348,14 +7348,16 @@ pub async fn create_agent_session(
     // Check if hand_id is provided - if so, start Hand execution via Session
     if let Some(hand_id) = req.get("hand_id").and_then(|v| v.as_str()) {
         match state.kernel.start_hand_execution(hand_id, &agent_id.to_string()).await {
-            Ok(execution_id) => {
+            Ok(session_id) => {
+                // Return the session object (same format as regular session creation)
                 return (
                     StatusCode::OK,
                     Json(serde_json::json!({
-                        "execution_id": execution_id,
-                        "hand_id": hand_id,
+                        "session_id": session_id,
                         "agent_id": agent_id.to_string(),
-                        "message": "Hand execution started via Session"
+                        "title": format!("Hand: {}", hand_id),
+                        "message_count": 0,
+                        "created_at": chrono::Utc::now().to_rfc3339()
                     })),
                 )
             }

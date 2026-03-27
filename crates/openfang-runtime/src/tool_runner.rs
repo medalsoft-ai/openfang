@@ -338,7 +338,7 @@ pub async fn execute_tool(
         "hand_activate" => tool_hand_activate(input, kernel).await,
         "hand_status" => tool_hand_status(input, kernel).await,
         "hand_deactivate" => tool_hand_deactivate(input, kernel).await,
-        "hand_create" => tool_hand_create(input, kernel).await,
+        "hand_create" => tool_hand_create(input, kernel, caller_agent_id).await,
         "hand_update_steps" => tool_hand_update_steps(input, kernel).await,
         "hand_start_execution" => tool_hand_start_execution(input, kernel, caller_agent_id).await,
         "hand_step_start" => tool_hand_step_start(input, kernel, caller_agent_id).await,
@@ -3530,6 +3530,7 @@ async fn tool_canvas_present(
 async fn tool_hand_create(
     input: &serde_json::Value,
     kernel: Option<&Arc<dyn KernelHandle>>,
+    caller_agent_id: Option<&str>,
 ) -> Result<String, String> {
     let kh = require_kernel(kernel)?;
 
@@ -3546,7 +3547,7 @@ async fn tool_hand_create(
     let steps = input["steps"].clone();
 
     let result = kh
-        .hand_create(name, description, category, icon, steps)
+        .hand_create(caller_agent_id, name, description, category, icon, steps)
         .await?;
 
     let hand_id = result["hand_id"].as_str().unwrap_or("?");

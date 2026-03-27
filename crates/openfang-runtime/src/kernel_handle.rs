@@ -175,13 +175,14 @@ pub trait KernelHandle: Send + Sync {
     /// Create a new Hand with steps.
     async fn hand_create(
         &self,
+        caller_agent_id: Option<&str>,
         name: &str,
         description: &str,
         category: &str,
         icon: Option<&str>,
         steps_json: serde_json::Value,
     ) -> Result<serde_json::Value, String> {
-        let _ = (name, description, category, icon, steps_json);
+        let _ = (caller_agent_id, name, description, category, icon, steps_json);
         Err("Hands system not available".to_string())
     }
 

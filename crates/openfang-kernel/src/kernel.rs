@@ -38,6 +38,7 @@ use openfang_types::tool::ToolDefinition;
 
 use async_trait::async_trait;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use std::sync::{Arc, OnceLock, Weak};
 use tracing::{debug, info, warn};
 
@@ -3429,17 +3430,6 @@ impl OpenFangKernel {
                 )))
             })?;
 
-        // Get steps from hand definition
-        let steps = def.steps.clone();
-        if steps.is_empty() {
-            return Err(KernelError::OpenFang(OpenFangError::Internal(
-                "Hand has no steps defined".to_string()
-            )));
-        }
-
-        // Generate execution ID
-        let execution_id = uuid::Uuid::new_v4().to_string();
-
         // Parse agent_id
         let agent_id_uuid = agent_id.parse::<uuid::Uuid>()
             .map_err(|e| KernelError::OpenFang(OpenFangError::Internal(
@@ -3461,6 +3451,29 @@ impl OpenFangKernel {
             .ok_or_else(|| KernelError::OpenFang(OpenFangError::Internal(
                 "Session creation did not return session_id".to_string()
             )))?;
+
+        // Parse session_id and switch agent to the new session
+        let session_id_uuid = session_id.parse::<uuid::Uuid>()
+            .map_err(|e| KernelError::OpenFang(OpenFangError::Internal(
+                format!("Invalid session ID: {e}")
+            )))?;
+        let session_id_typed = openfang_types::agent::SessionId(session_id_uuid);
+        
+        // Switch agent to the new session so messages go to the right place
+        self.switch_agent_session(agent_id_typed, session_id_typed)
+            .map_err(|e| KernelError::OpenFang(OpenFangError::Internal(
+                format!("Failed to switch to new session: {e}")
+            )))?;
+
+        // Get steps from hand definition
+        let steps = def.steps.clone();
+
+        // Validate steps are defined
+        if steps.is_empty() {
+            return Err(KernelError::OpenFang(OpenFangError::Internal(
+                "Hand has no steps defined".to_string()
+            )));
+        }
 
         // Build the Hand execution message for the LLM
         let steps_description = steps.iter()
@@ -3490,12 +3503,11 @@ impl OpenFangKernel {
         info!(
             hand_id = %hand_id,
             agent_id = %agent_id,
-            execution_id = %execution_id,
             session_id = %session_id,
             "Hand execution started via Session"
         );
 
-        Ok(execution_id)
+        Ok(session_id.to_string())
     }
 
     /// Get the Hand ID associated with an agent (if any).
@@ -6290,6 +6302,7 @@ impl KernelHandle for OpenFangKernel {
 
     async fn hand_create(
         &self,
+        caller_agent_id: Option<&str>,
         name: &str,
         description: &str,
         category: &str,
@@ -6351,6 +6364,22 @@ impl KernelHandle for OpenFangKernel {
             Vec::new()
         };
 
+        // Get provider/model from caller agent if available, otherwise use defaults
+        let (provider, model) = if let Some(agent_id_str) = caller_agent_id {
+            if let Ok(agent_id) = AgentId::from_str(agent_id_str) {
+                if let Some(agent_entry) = self.registry.get(agent_id) {
+                    let model_config = &agent_entry.manifest.model;
+                    (model_config.provider.clone(), model_config.model.clone())
+                } else {
+                    ("anthropic".to_string(), "claude-sonnet-4-20250514".to_string())
+                }
+            } else {
+                ("anthropic".to_string(), "claude-sonnet-4-20250514".to_string())
+            }
+        } else {
+            ("anthropic".to_string(), "claude-sonnet-4-20250514".to_string())
+        };
+
         // Create Hand definition
         let hand_def = HandDefinition {
             id: uuid::Uuid::new_v4().to_string(),
@@ -6367,8 +6396,8 @@ impl KernelHandle for OpenFangKernel {
                 name: format!("{}-hand", name.to_lowercase().replace(" ", "-")),
                 description: description.to_string(),
                 module: "builtin:chat".to_string(),
-                provider: "anthropic".to_string(),
-                model: "claude-sonnet-4-20250514".to_string(),
+                provider,
+                model,
                 api_key_env: None,
                 base_url: None,
                 max_tokens: 4096,
