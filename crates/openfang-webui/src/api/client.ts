@@ -183,7 +183,10 @@ class APIClient {
 
   // Agents
   async listAgents(): Promise<Agent[]> {
-    return this.get('/api/agents');
+    const res = await this.get<Agent[] | { agents?: Agent[] }>('/api/agents');
+    if (Array.isArray(res)) return res;
+    if (res && typeof res === 'object' && Array.isArray(res.agents)) return res.agents;
+    return [];
   }
 
   async getAgent(id: string): Promise<Agent> {

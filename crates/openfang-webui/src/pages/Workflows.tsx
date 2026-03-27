@@ -144,7 +144,12 @@ export function Workflows() {
 
   const { data: workflows = [], isLoading } = useQuery<Workflow[]>({
     queryKey: ['workflows'],
-    queryFn: () => api.get('/api/workflows'),
+    queryFn: async () => {
+      const data = await api.get<Workflow[] | { workflows?: Workflow[] }>('/api/workflows');
+      if (Array.isArray(data)) return data;
+      if (data && typeof data === 'object' && Array.isArray(data.workflows)) return data.workflows;
+      return [];
+    },
   });
 
   const createMutation = useMutation({

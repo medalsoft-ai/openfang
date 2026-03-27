@@ -46,7 +46,7 @@ const runtimeColors: Record<string, { bg: string; text: string; icon: string }> 
   wasm: { bg: 'bg-rose-100', text: 'text-rose-700', icon: 'text-rose-600' },
 };
 
-// Categories from ServiceMe Hub
+// Categories from SERVICEME Hub
 const categories = [
   { id: 'coding', name: 'Coding & IDEs' },
   { id: 'git', name: 'Git & GitHub' },
@@ -275,7 +275,7 @@ export function Skills() {
   const [search, setSearch] = useState('');
   const [activeFilter, setActiveFilter] = useState<'all' | 'enabled' | 'builtin'>('all');
 
-  // ServiceMe Hub state
+  // SERVICEME Hub state
   const [clawhubSearch, setClawhubSearch] = useState('');
   const [clawhubResults, setClawhubResults] = useState<ClawHubSkill[]>([]);
   const [clawhubBrowseResults, setClawhubBrowseResults] = useState<ClawHubSkill[]>([]);
@@ -344,7 +344,7 @@ export function Skills() {
     onError: (err) => toaster.error('Failed to create skill: ' + (err as Error).message),
   });
 
-  // ServiceMe Hub search with debounce
+  // SERVICEME Hub search with debounce
   const onSearchInput = useCallback((value: string) => {
     setClawhubSearch(value);
     if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
@@ -366,7 +366,7 @@ export function Skills() {
     }, 350);
   }, []);
 
-  // ServiceMe Hub browse with cache
+  // SERVICEME Hub browse with cache
   const browseClawHub = useCallback(async (sort: typeof clawhubSort) => {
     setClawhubSort(sort);
     const ckey = `browse:${sort}`;
@@ -390,7 +390,7 @@ export function Skills() {
     setClawhubLoading(false);
   }, []);
 
-  // Install from ServiceMe Hub
+  // Install from SERVICEME Hub
   const installFromClawHub = useCallback(async (slug: string) => {
     setInstallingSlug(slug);
     try {
@@ -474,7 +474,7 @@ export function Skills() {
       skill.description.toLowerCase().includes(q);
   });
 
-  // ServiceMe Hub display results
+  // SERVICEME Hub display results
   const clawhubDisplayResults = clawhubSearch ? clawhubResults : clawhubBrowseResults;
 
   const enabledCount = skills.filter(s => s.enabled).length;
@@ -501,7 +501,7 @@ export function Skills() {
           )}>
             {[
               { id: 'installed', label: 'Installed', icon: Puzzle },
-              { id: 'clawhub', label: 'ServiceMe Hub', icon: Globe },
+              { id: 'clawhub', label: 'SERVICEME Hub', icon: Globe },
               { id: 'mcp', label: 'MCP', icon: Server },
               { id: 'create', label: 'Create', icon: Plus },
             ].map(({ id, label, icon: Icon }) => (
@@ -597,7 +597,7 @@ export function Skills() {
           </>
         )}
 
-        {/* ServiceMe Hub Tab */}
+        {/* SERVICEME Hub Tab */}
         {activeTab === 'clawhub' && (
           <>
             {/* Search & Sort */}
@@ -608,7 +608,7 @@ export function Skills() {
                   type="text"
                   value={clawhubSearch}
                   onChange={(e) => onSearchInput(e.target.value)}
-                  placeholder="Search ServiceMe Hub..."
+                  placeholder="Search SERVICEME Hub..."
                   className={cn(
                     'w-full bg-white border-[3px] border-white shadow-[0_2px_8px_rgba(139,92,246,0.1)] rounded-xl pl-12 pr-4 py-3',
                     'text-gray-800 placeholder:text-gray-400 focus:outline-none focus:border-violet-200'
@@ -679,7 +679,7 @@ export function Skills() {
                   <Globe className="w-10 h-10 text-gray-300" />
                 </div>
                 <h3 className="text-xl font-semibold text-gray-800 mb-2">
-                  {clawhubSearch ? 'No results' : 'Browse ServiceMe Hub'}
+                  {clawhubSearch ? 'No results' : 'Browse SERVICEME Hub'}
                 </h3>
                 <p className="text-gray-500">
                   {clawhubSearch ? 'Try a different search term' : 'Discover and install skills from the community'}

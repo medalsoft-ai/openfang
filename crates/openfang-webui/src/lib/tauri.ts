@@ -9,7 +9,11 @@ let tauriPort: number | null = null
  */
 export function isTauri(): boolean {
   if (typeof window === 'undefined') return false
-  return !!(window as unknown as { __TAURI__?: unknown }).__TAURI__
+  const w = window as unknown as {
+    __TAURI__?: unknown
+    __TAURI_INTERNALS__?: unknown
+  }
+  return !!w.__TAURI__ || !!w.__TAURI_INTERNALS__
 }
 
 /**
@@ -43,12 +47,33 @@ export async function getApiPort(): Promise<number> {
  * In browser dev: uses Vite proxy (relative URL)
  */
 export async function getApiBaseUrl(): Promise<string> {
+  const envBase = (import.meta.env.VITE_OPENFANG_API_BASE_URL as string | undefined)?.trim();
+  if (envBase) {
+    return envBase.replace(/\/+$/, '');
+  }
+
   const port = await getApiPort()
-  // Always use full URL in production/Tauri
-  if (port !== 4200 || isTauri()) {
+
+  // Tauri and file:// builds must use absolute API URL.
+  if (isTauri() || window.location.protocol === 'file:' || window.location.origin === 'null') {
     return `http://127.0.0.1:${port}`
   }
-  // In dev mode with Vite proxy, use relative URL
+
+  // In Vite dev, rely on /api proxy.
+  if (import.meta.env.DEV) {
+    return ''
+  }
+
+  // In production web, if UI and API are on different local ports (e.g. 8080 -> 4200),
+  // use daemon port directly to avoid empty data caused by wrong same-origin /api calls.
+  if (window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost') {
+    const currentPort = Number(window.location.port || (window.location.protocol === 'https:' ? 443 : 80))
+    if (currentPort !== port) {
+      return `http://${window.location.hostname}:${port}`
+    }
+  }
+
+  // Same-origin deployment (reverse proxy) keeps relative /api.
   return ''
 }
 

@@ -182,6 +182,23 @@ export function MarkdownContent({ content, className, searchQuery }: MarkdownCon
             </a>
           ),
 
+          // Images
+          img: ({ src, alt }) => (
+            <a
+              href={src || '#'}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block my-4"
+            >
+              <img
+                src={src}
+                alt={alt || 'Image'}
+                loading="lazy"
+                className="max-w-full h-auto rounded-lg border border-[var(--border-default)] hover:border-[var(--border-hover)] transition-colors"
+              />
+            </a>
+          ),
+
           // Horizontal rule
           hr: () => (
             <hr className="my-6 border-[var(--border-default)]" />
