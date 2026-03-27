@@ -267,7 +267,7 @@ export function Scheduler() {
   // Fetch agents
   const { data: agents = [] } = useQuery<Agent[]>({
     queryKey: ['agents'],
-    queryFn: () => api.get('/api/agents'),
+    queryFn: () => api.listAgents(),
   });
 
   // Fetch jobs
@@ -315,7 +315,12 @@ export function Scheduler() {
   // Fetch triggers
   const { data: triggers = [], isLoading: triggersLoading } = useQuery<Trigger[]>({
     queryKey: ['triggers'],
-    queryFn: () => api.get('/api/triggers'),
+    queryFn: async () => {
+      const data = await api.get<Trigger[] | { triggers?: Trigger[] }>('/api/triggers');
+      if (Array.isArray(data)) return data;
+      if (data && typeof data === 'object' && Array.isArray(data.triggers)) return data.triggers;
+      return [];
+    },
     enabled: activeTab === 'triggers',
   });
 

@@ -130,7 +130,19 @@ function friendlyError(status, serverMsg) {
 
 // ── API Client ──
 var OpenFangAPI = (function() {
-  var BASE = window.location.origin;
+  function detectBaseUrl() {
+    // Allow explicit override for packaged/static deployments.
+    if (window.OPENFANG_API_BASE && typeof window.OPENFANG_API_BASE === 'string') {
+      return window.OPENFANG_API_BASE.replace(/\/+$/, '');
+    }
+    // file:// pages have "null" origin and cannot use relative API paths.
+    if (window.location.protocol === 'file:' || window.location.origin === 'null') {
+      return 'http://127.0.0.1:4200';
+    }
+    return window.location.origin;
+  }
+
+  var BASE = detectBaseUrl();
   var WS_BASE = BASE.replace(/^http/, 'ws');
   var _authToken = '';
 
